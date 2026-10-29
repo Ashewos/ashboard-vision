@@ -91,6 +91,35 @@ public class QuotaModInstallerTests : IDisposable
     }
 
     [Fact]
+    public async Task List_RunsPluginListAndReturnsItsOutput()
+    {
+        var calls = new List<(string File, string Args)>();
+
+        var result = await Installer(_mods, calls, _ => (0, "trofeo-quotas@trofeo-hb-dashboard")).ListAsync(CancellationToken.None);
+
+        Assert.Equal(new ModuleKitResult(true, "trofeo-quotas@trofeo-hb-dashboard"), Convert(result));
+        Assert.Equal([("claude", "plugin list")], calls);
+    }
+
+    [Fact]
+    public async Task List_CommandFails_ReportsTruncatedOutput()
+    {
+        var result = await Installer(_mods, [], _ => (1, "  boom  ")).ListAsync(CancellationToken.None);
+
+        Assert.Equal(new ModuleKitResult(false, "La liste des mods n'a pas pu être lue : boom"), Convert(result));
+    }
+
+    [Fact]
+    public async Task List_ClaudeMissing_SaysSo()
+    {
+        var installer = new QuotaModInstaller((_, _, _) => throw new Win32Exception(2, "introuvable"), null);
+
+        var result = await installer.ListAsync(CancellationToken.None);
+
+        Assert.Equal(new ModuleKitResult(false, QuotaModInstaller.ClaudeMissingMessage), Convert(result));
+    }
+
+    [Fact]
     public async Task Uninstall_RunsPluginUninstallThenMarketplaceRemove()
     {
         var calls = new List<(string File, string Args)>();

@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Trofeo.Core\Trofeo.Core.csproj" />
+    <!-- QuotaModInstaller et StatusLineInstaller : la préparation propre à l'utilisateur les réutilise. Agents n'est pas non plus Windows. -->
+    <ProjectReference Include="..\Trofeo.Modules.Agents\Trofeo.Modules.Agents.csproj" />
   </ItemGroup>
 
 </Project>

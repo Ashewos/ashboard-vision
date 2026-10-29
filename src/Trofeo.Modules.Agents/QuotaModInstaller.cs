@@ -24,6 +24,9 @@ public sealed class QuotaModInstaller(
     /// <summary>L'ancien marché de modules, d'avant le changement de nom : à retirer.</summary>
     public const string LegacyMarketplace = "trofeo-hb-dashboard";
 
+    /// <summary>Le message rendu quand <c>claude</c> n'est pas lançable : les appelants le reconnaissent pour sauter les étapes du mod.</summary>
+    public const string ClaudeMissingMessage = "Claude Code est introuvable sur ce PC.";
+
     private const int MaxOutputLength = 300;
 
     public async Task<ActionResult> InstallAsync(CancellationToken ct)
@@ -41,10 +44,29 @@ public sealed class QuotaModInstaller(
         }
         catch (Exception e) when (e is Win32Exception or FileNotFoundException)
         {
-            return new ActionResult(false, "Claude Code est introuvable sur ce PC.");
+            return new ActionResult(false, ClaudeMissingMessage);
         }
 
         return new ActionResult(true, "Mod installé : il sera chargé par les nouvelles sessions de Claude Code.");
+    }
+
+    /// <summary>
+    /// Lance <c>claude plugin list</c> : en cas de succès, le message est la sortie telle quelle (pour y chercher un mod) ; sinon un échec,
+    /// avec <see cref="ClaudeMissingMessage"/> quand <c>claude</c> est introuvable.
+    /// </summary>
+    public async Task<ActionResult> ListAsync(CancellationToken ct)
+    {
+        try
+        {
+            var (exitCode, output) = await run("claude", "plugin list", ct);
+            return exitCode == 0
+                ? new ActionResult(true, output)
+                : new ActionResult(false, "La liste des mods n'a pas pu être lue : " + Truncated(output));
+        }
+        catch (Exception e) when (e is Win32Exception or FileNotFoundException)
+        {
+            return new ActionResult(false, ClaudeMissingMessage);
+        }
     }
 
     /// <summary>
@@ -65,7 +87,7 @@ public sealed class QuotaModInstaller(
         }
         catch (Exception e) when (e is Win32Exception or FileNotFoundException)
         {
-            return new ActionResult(false, "Claude Code est introuvable sur ce PC.");
+            return new ActionResult(false, ClaudeMissingMessage);
         }
 
         return failure is null
