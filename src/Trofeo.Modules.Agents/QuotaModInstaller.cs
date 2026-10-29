@@ -51,14 +51,14 @@ public sealed class QuotaModInstaller(
     }
 
     /// <summary>
-    /// Lance <c>claude plugin list</c> : en cas de succès, le message est la sortie telle quelle (pour y chercher un mod) ; sinon un échec,
-    /// avec <see cref="ClaudeMissingMessage"/> quand <c>claude</c> est introuvable.
+    /// Lance <c>claude plugin list --json</c> : en cas de succès, le message est la sortie telle quelle (un tableau JSON dont chaque objet
+    /// a un <c>id</c> de la forme <c>mod@marché</c>, deux fois s'il est installé aux portées user et project) ; sinon un échec, avec <see cref="ClaudeMissingMessage"/> quand <c>claude</c> est introuvable.
     /// </summary>
     public async Task<ActionResult> ListAsync(CancellationToken ct)
     {
         try
         {
-            var (exitCode, output) = await run("claude", "plugin list", ct);
+            var (exitCode, output) = await run("claude", "plugin list --json", ct);
             return exitCode == 0
                 ? new ActionResult(true, output)
                 : new ActionResult(false, "La liste des mods n'a pas pu être lue : " + Truncated(output));
@@ -67,6 +67,32 @@ public sealed class QuotaModInstaller(
         {
             return new ActionResult(false, ClaudeMissingMessage);
         }
+    }
+
+    /// <summary>
+    /// Rafraîchit le mod déjà installé : met à jour le marché de modules (le dossier <c>mods</c> a pu changer avec la nouvelle version),
+    /// puis le mod. Les deux commandes sont lancées même si la première échoue ; le résultat est un échec si l'une d'elles a échoué,
+    /// avec la sortie de la première.
+    /// </summary>
+    public async Task<ActionResult> UpdateAsync(CancellationToken ct)
+    {
+        string? failure = null;
+        try
+        {
+            foreach (var arguments in new[] { $"plugin marketplace update {Marketplace}", $"plugin update {PluginName}" })
+            {
+                var (exitCode, output) = await run("claude", arguments, ct);
+                if (exitCode != 0) failure ??= Truncated(output);
+            }
+        }
+        catch (Exception e) when (e is Win32Exception or FileNotFoundException)
+        {
+            return new ActionResult(false, ClaudeMissingMessage);
+        }
+
+        return failure is null
+            ? new ActionResult(true, "Mod mis à jour : il sera rechargé par les nouvelles sessions de Claude Code.")
+            : new ActionResult(false, "La mise à jour a échoué : " + failure);
     }
 
     /// <summary>

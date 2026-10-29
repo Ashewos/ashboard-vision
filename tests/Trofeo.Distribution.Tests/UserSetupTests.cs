@@ -6,7 +6,16 @@ namespace Trofeo.Distribution.Tests;
 public sealed class UserSetupTests : IDisposable
 {
     private const string ServiceExe = @"C:\Program Files\Ashboard Vision\Trofeo.Display.exe";
-    private const string LegacyList = "  trofeo-quotas@trofeo-hb-dashboard\n    Version: 0.5.0\n";
+
+    // Le format réel de « claude plugin list --json » : un tableau, et un même id deux fois s'il est installé aux portées user et project.
+    private const string OtherPlugin =
+        """{"id":"claude-security@claude-plugins-official","version":"0.12.0","scope":"user","enabled":true,"installPath":"C:\\Users\\x\\.claude\\plugins\\cache\\claude-security","installedAt":"2026-09-30T21:20:25.475Z","lastUpdated":"2026-10-01T08:00:00.000Z","projectEnabled":true}""";
+    private const string LegacyList =
+        $$"""[{{OtherPlugin}},{"id":"trofeo-quotas@trofeo-hb-dashboard","version":"0.5.0","scope":"user","enabled":true,"installPath":"C:\\x"},{"id":"trofeo-quotas@trofeo-hb-dashboard","version":"0.5.0","scope":"project","enabled":true,"installPath":"C:\\x"}]""";
+    private const string NewModList =
+        $$"""[{{OtherPlugin}},{"id":"ashboard-quotas@ashboard-vision","version":"1.0.0","scope":"user","enabled":true,"installPath":"C:\\y"},{"id":"ashboard-quotas@ashboard-vision","version":"1.0.0","scope":"project","enabled":true,"installPath":"C:\\y"}]""";
+    private const string NoModList = $"[{OtherPlugin}]";
+
     private static readonly AppVersion Current = new(1, 0, 0, "beta.1");
 
     private readonly TempDir _dir = new();
@@ -78,6 +87,17 @@ public sealed class UserSetupTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_StateExists_InstallerOptionIsNotReapplied()
+    {
+        // Mise à jour : l'utilisateur a pu couper le démarrage avec Windows dans les Paramètres, l'installateur ne le rallume pas.
+        WriteState("0.9.0", modInstalled: false);
+
+        await Setup(new FakeClaude()).RunAsync(Current, new InstallOptions(StartWithWindows: true), CancellationToken.None);
+
+        Assert.Empty(_runKey.Values);
+    }
+
+    [Fact]
     public async Task Run_NewRunValueAlreadyThere_PointsItAtTheCurrentExe()
     {
         _runKey.Values["ashboard-vision"] = "\"C:\\ailleurs\\Trofeo.Display.exe\"";
@@ -112,7 +132,7 @@ public sealed class UserSetupTests : IDisposable
         Assert.Empty(report.Warnings);
         Assert.Equal(
             [
-                "plugin list",
+                "plugin list --json",
                 "plugin uninstall trofeo-quotas@trofeo-hb-dashboard",
                 "plugin marketplace remove trofeo-hb-dashboard",
                 $"plugin marketplace add \"{ModsDir}\"",
@@ -137,12 +157,12 @@ public sealed class UserSetupTests : IDisposable
     [Fact]
     public async Task Run_NoLegacyMod_NotRecorded_DoesNotInstallTheMod()
     {
-        var claude = new FakeClaude("aucun mod");
+        var claude = new FakeClaude(NoModList);
 
         var report = await Setup(claude).RunAsync(Current, null, CancellationToken.None);
 
         Assert.Empty(report.Warnings);
-        Assert.Equal(["plugin list"], claude.Calls); // c'est l'assistant de première ouverture qui le proposera
+        Assert.Equal(["plugin list --json"], claude.Calls); // c'est l'assistant de première ouverture qui le proposera
         Assert.False(ReadState()["modInstalle"]!.GetValue<bool>());
     }
 
@@ -150,7 +170,7 @@ public sealed class UserSetupTests : IDisposable
     public async Task Run_ModRecordedInstalled_ReinstallsAfterUpdate()
     {
         WriteState("0.9.0", modInstalled: true);
-        var claude = new FakeClaude("aucun mod");
+        var claude = new FakeClaude(NoModList);
 
         var report = await Setup(claude).RunAsync(Current, null, CancellationToken.None);
 
@@ -158,6 +178,63 @@ public sealed class UserSetupTests : IDisposable
         Assert.Equal($"plugin marketplace add \"{ModsDir}\"", claude.Calls[^2]);
         Assert.Equal("plugin install ashboard-quotas@ashboard-vision", claude.Calls[^1]);
         Assert.True(ReadState()["modInstalle"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Run_NewModInstalledButNothingRecorded_RefreshesIt()
+    {
+        // Le mod a été posé par l'assistant ou par l'action du module : aucun installation.json ne le sait.
+        var claude = new FakeClaude(NewModList);
+
+        var report = await Setup(claude).RunAsync(Current, null, CancellationToken.None);
+
+        Assert.Empty(report.Warnings);
+        Assert.Equal(
+            [
+                "plugin list --json",
+                "plugin marketplace update ashboard-vision",
+                "plugin update ashboard-quotas@ashboard-vision",
+            ],
+            claude.Calls);
+        Assert.True(ReadState()["modInstalle"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Run_NewModRefreshFails_WarnsAndKeepsWantingIt()
+    {
+        var claude = new FakeClaude(NewModList, failing: a => a.StartsWith("plugin update"));
+
+        var report = await Setup(claude).RunAsync(Current, null, CancellationToken.None);
+
+        Assert.Single(report.Warnings);
+        Assert.Contains("mis à jour", report.Warnings[0]);
+        Assert.True(ReadState()["modInstalle"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Run_ModListNotJson_WarnsAndSkipsModSteps()
+    {
+        WriteState("0.9.0", modInstalled: true);
+        var claude = new FakeClaude("pas du json");
+
+        var report = await Setup(claude).RunAsync(Current, null, CancellationToken.None);
+
+        Assert.Single(report.Warnings);
+        Assert.Contains("mods", report.Warnings[0]);
+        Assert.Equal(["plugin list --json"], claude.Calls);
+        Assert.True(ReadState()["modInstalle"]!.GetValue<bool>()); // le souhait est gardé
+        Assert.Equal(Current.ToString(), ReadState()["versionPreparee"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Run_ModListNotAnArray_WarnsAndSkipsModSteps()
+    {
+        var claude = new FakeClaude("""{"id":"ashboard-quotas@ashboard-vision"}""");
+
+        var report = await Setup(claude).RunAsync(Current, null, CancellationToken.None);
+
+        Assert.Single(report.Warnings);
+        Assert.Equal(["plugin list --json"], claude.Calls);
     }
 
     [Fact]

@@ -23,10 +23,10 @@ internal sealed class FakeRunKey : IRunKey
 }
 
 /// <summary>
-/// Un faux <c>claude</c> : note chaque commande, répond <paramref name="list"/> à <c>plugin list</c> et réussit le reste,
+/// Un faux <c>claude</c> : note chaque commande, répond <paramref name="list"/> à <c>plugin list --json</c> et réussit le reste,
 /// sauf les commandes dont <paramref name="failing"/> reconnaît les arguments. <paramref name="missing"/> : <c>claude</c> est introuvable.
 /// </summary>
-internal sealed class FakeClaude(string list = "", bool missing = false, Func<string, bool>? failing = null)
+internal sealed class FakeClaude(string list = "[]", bool missing = false, Func<string, bool>? failing = null)
 {
     public List<string> Calls { get; } = [];
 
@@ -34,7 +34,7 @@ internal sealed class FakeClaude(string list = "", bool missing = false, Func<st
     {
         if (missing) throw new Win32Exception(2, "introuvable");
         Calls.Add(arguments);
-        if (arguments == "plugin list") return Task.FromResult((0, list));
+        if (arguments == "plugin list --json") return Task.FromResult((0, list));
         return Task.FromResult(failing?.Invoke(arguments) == true ? (1, "boom") : (0, "ok"));
     }
 

@@ -91,14 +91,14 @@ public class QuotaModInstallerTests : IDisposable
     }
 
     [Fact]
-    public async Task List_RunsPluginListAndReturnsItsOutput()
+    public async Task List_RunsPluginListAsJsonAndReturnsItsOutput()
     {
         var calls = new List<(string File, string Args)>();
 
         var result = await Installer(_mods, calls, _ => (0, "trofeo-quotas@trofeo-hb-dashboard")).ListAsync(CancellationToken.None);
 
         Assert.Equal(new ModuleKitResult(true, "trofeo-quotas@trofeo-hb-dashboard"), Convert(result));
-        Assert.Equal([("claude", "plugin list")], calls);
+        Assert.Equal([("claude", "plugin list --json")], calls);
     }
 
     [Fact]
@@ -115,6 +115,43 @@ public class QuotaModInstallerTests : IDisposable
         var installer = new QuotaModInstaller((_, _, _) => throw new Win32Exception(2, "introuvable"), null);
 
         var result = await installer.ListAsync(CancellationToken.None);
+
+        Assert.Equal(new ModuleKitResult(false, QuotaModInstaller.ClaudeMissingMessage), Convert(result));
+    }
+
+    [Fact]
+    public async Task Update_RunsMarketplaceUpdateThenPluginUpdate()
+    {
+        var calls = new List<(string File, string Args)>();
+
+        var result = await Installer(null, calls, _ => (0, "ok")).UpdateAsync(CancellationToken.None);
+
+        Assert.Equal(new ModuleKitResult(true, "Mod mis à jour : il sera rechargé par les nouvelles sessions de Claude Code."), Convert(result));
+        Assert.Equal(
+            [
+                ("claude", "plugin marketplace update ashboard-vision"),
+                ("claude", "plugin update ashboard-quotas@ashboard-vision"),
+            ],
+            calls);
+    }
+
+    [Fact]
+    public async Task Update_FirstFails_StillRunsSecondAndReportsFirstOutput()
+    {
+        var calls = new List<(string File, string Args)>();
+
+        var result = await Installer(null, calls, n => n == 1 ? (1, "  boom  ") : (2, "autre")).UpdateAsync(CancellationToken.None);
+
+        Assert.Equal(new ModuleKitResult(false, "La mise à jour a échoué : boom"), Convert(result));
+        Assert.Equal(2, calls.Count);
+    }
+
+    [Fact]
+    public async Task Update_ClaudeMissing_SaysSo()
+    {
+        var installer = new QuotaModInstaller((_, _, _) => throw new Win32Exception(2, "introuvable"), null);
+
+        var result = await installer.UpdateAsync(CancellationToken.None);
 
         Assert.Equal(new ModuleKitResult(false, QuotaModInstaller.ClaudeMissingMessage), Convert(result));
     }

@@ -1,5 +1,6 @@
 using System.Security;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Trofeo.Modules.Agents;
 
@@ -35,7 +36,7 @@ public sealed class UserSetup(
         }
 
         var warnings = new List<string>();
-        PrepareRunValue(options, warnings);
+        PrepareRunValue(options, firstTime: state is null, warnings);
         RemoveOldStatusLine(warnings);
         var modWanted = await PrepareModAsync(state?.ModInstalle ?? false, warnings, ct);
         SaveState(new SetupState(current.ToString(), modWanted), warnings);
@@ -44,15 +45,16 @@ public sealed class UserSetup(
 
     /// <summary>
     /// L'ancienne valeur est remplacée par la nouvelle, qui pointe sur le service d'ici (une valeur déjà là est remise à jour : le
-    /// dossier d'installation a pu changer). Sans ancienne ni nouvelle valeur, c'est le choix de l'installateur qui décide ; un « non »
-    /// ne touche à rien.
+    /// dossier d'installation a pu changer). Sans ancienne ni nouvelle valeur, c'est le choix de l'installateur qui décide, mais à la
+    /// première préparation seulement (<paramref name="firstTime"/>) : plus tard, il rallumerait un démarrage que l'utilisateur a coupé
+    /// dans les Paramètres. Un « non » ne touche à rien.
     /// </summary>
-    private void PrepareRunValue(InstallOptions? options, List<string> warnings)
+    private void PrepareRunValue(InstallOptions? options, bool firstTime, List<string> warnings)
     {
         try
         {
             var hadLegacy = runKey.Read(LegacyRunValue) is not null;
-            if (hadLegacy || runKey.Read(RunValue) is not null || options?.StartWithWindows == true)
+            if (hadLegacy || runKey.Read(RunValue) is not null || (firstTime && options?.StartWithWindows == true))
             {
                 runKey.Write(RunValue, "\"" + serviceExePath + "\"");
             }
@@ -84,9 +86,10 @@ public sealed class UserSetup(
     }
 
     /// <summary>
-    /// Retire l'ancien mod s'il est là, puis installe le nouveau s'il était souhaité (l'ancien était là, ou la préparation précédente
-    /// l'avait noté). Rend si le mod est souhaité, pour que la prochaine préparation le réinstalle : un échec ou l'absence de Claude Code
-    /// n'efface pas ce souhait.
+    /// Retire l'ancien mod s'il est là. Le nouveau est ensuite rafraîchi s'il est déjà installé (par l'assistant, par l'action du module
+    /// ou par la préparation précédente : <c>claude plugin list --json</c> le dit, même si aucun <c>installation.json</c> ne le sait), ou
+    /// installé s'il était souhaité sans être là (l'ancien était là, ou la préparation précédente l'avait noté). Rend si le mod est
+    /// souhaité, pour que la prochaine préparation le retrouve : un échec ou l'absence de Claude Code n'efface pas ce souhait.
     /// </summary>
     private async Task<bool> PrepareModAsync(bool wasWanted, List<string> warnings, CancellationToken ct)
     {
@@ -97,12 +100,15 @@ public sealed class UserSetup(
             return wasWanted;
         }
 
-        if (!listing.Ok)
+        if (!listing.Ok || !TryReadPluginIds(listing.Message, out var ids))
         {
-            warnings.Add(listing.Message);
+            warnings.Add(listing.Ok
+                ? "La liste des mods de Claude Code n'a pas pu être lue : le mod des quotas n'a pas été préparé."
+                : listing.Message);
+            return wasWanted;
         }
 
-        var legacyInstalled = listing.Ok && listing.Message.Contains(QuotaModInstaller.LegacyPluginName, StringComparison.Ordinal);
+        var legacyInstalled = ids.Contains(QuotaModInstaller.LegacyPluginName);
         if (legacyInstalled)
         {
             // Un échec ici n'arrête rien : le nouveau mod s'installe quand même.
@@ -113,8 +119,17 @@ public sealed class UserSetup(
             }
         }
 
-        var wanted = wasWanted || legacyInstalled;
-        if (wanted && !Directory.Exists(modsDir))
+        var newInstalled = ids.Contains(QuotaModInstaller.PluginName);
+        var wanted = wasWanted || legacyInstalled || newInstalled;
+        if (newInstalled)
+        {
+            var update = await mods.UpdateAsync(ct);
+            if (!update.Ok)
+            {
+                warnings.Add("Le mod des quotas n'a pas pu être mis à jour : " + update.Message);
+            }
+        }
+        else if (wanted && !Directory.Exists(modsDir))
         {
             warnings.Add($"Le dossier du mod des quotas est introuvable ({modsDir}) : le mod n'a pas été installé.");
         }
@@ -128,6 +143,33 @@ public sealed class UserSetup(
         }
 
         return wanted;
+    }
+
+    /// <summary>Les <c>id</c> du tableau JSON de <c>claude plugin list --json</c> (un même id peut y figurer deux fois, une par portée).</summary>
+    private static bool TryReadPluginIds(string json, out HashSet<string> ids)
+    {
+        ids = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonArray plugins)
+            {
+                return false;
+            }
+
+            foreach (var plugin in plugins)
+            {
+                if (plugin is JsonObject { } obj && obj["id"] is JsonValue value && value.TryGetValue<string>(out var id))
+                {
+                    ids.Add(id);
+                }
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private SetupState? ReadState()
