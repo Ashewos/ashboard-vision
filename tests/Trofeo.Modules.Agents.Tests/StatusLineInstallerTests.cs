@@ -1,9 +1,11 @@
-using System.Text;
 using System.Text.Json.Nodes;
-using Trofeo.StatusLine;
 
 namespace Trofeo.Modules.Agents.Tests;
 
+/// <summary>
+/// Le retrait de l'ancienne barre d'état (<c>Trofeo.StatusLine.exe</c>) et le retour à la configuration d'avant. L'état
+/// « installé » est posé à la main, tel que l'ancienne version du logiciel le laissait dans <c>settings.json</c>.
+/// </summary>
 public sealed class StatusLineInstallerTests : IDisposable
 {
     private const string Exe = "C:/x/Trofeo.StatusLine.exe";
@@ -16,7 +18,6 @@ public sealed class StatusLineInstallerTests : IDisposable
     }
 
     private string SettingsPath => Path.Combine(_home, "settings.json");
-    private string BackupPath => SettingsPath + ".trofeo-bak";
     private string PreviousPath => Path.Combine(_home, "trofeo-HB-dashboard", "statusline-previous.json");
 
     private StatusLineInstaller Installer() => new(_home);
@@ -27,304 +28,77 @@ public sealed class StatusLineInstallerTests : IDisposable
         File.WriteAllText(SettingsPath, json);
     }
 
+    private void WritePrevious(string json)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(PreviousPath)!);
+        File.WriteAllText(PreviousPath, json);
+    }
+
     private JsonObject ReadSettings() => (JsonObject)JsonNode.Parse(File.ReadAllText(SettingsPath))!;
 
-    [Fact]
-    public void Install_NoSettings_CreatesCommand()
+    /// <summary>
+    /// Ce que l'ancienne installation laissait : la commande de <c>settings.json</c> (enveloppant éventuellement l'ancienne, dans un
+    /// tube) et la sauvegarde de l'ancien nœud <c>statusLine</c>. <paramref name="previous"/> est le JSON de l'ancien nœud, ou
+    /// <c>null</c> s'il n'y en avait pas ; <paramref name="otherKeys"/> les autres clés du fichier, sans accolades.
+    /// </summary>
+    private void WriteInstalled(string? previous, string? otherKeys = null)
     {
-        var result = Installer().Install(Exe);
+        var node = previous is null ? null : JsonNode.Parse(previous);
+        JsonNode statusLine;
+        if (node is JsonObject old && old["type"]?.GetValue<string>() == "command" && old["command"]?.GetValue<string>() is { } oldCommand)
+        {
+            var chained = (JsonObject)old.DeepClone();
+            chained["command"] = $"\"{Exe}\" --tee | ( {oldCommand} )";
+            statusLine = chained;
+        }
+        else
+        {
+            statusLine = new JsonObject { ["type"] = "command", ["command"] = $"\"{Exe}\"" };
+        }
 
-        Assert.Equal(StatusLineInstallResult.Installed, result);
-        var statusLine = ReadSettings()["statusLine"]!;
-        Assert.Equal("command", (string?)statusLine["type"]);
-        Assert.Equal("\"C:/x/Trofeo.StatusLine.exe\"", (string?)statusLine["command"]);
-        Assert.False(File.Exists(BackupPath)); // rien à sauvegarder
-        Assert.Null(JsonNode.Parse(File.ReadAllText(PreviousPath))!["previous"]);
+        WriteSettings("{" + (otherKeys is null ? "" : otherKeys + ",") + "\"statusLine\":" + statusLine.ToJsonString() + "}");
+        WritePrevious(new JsonObject { ["previous"] = node?.DeepClone() }.ToJsonString());
+    }
+
+    [Fact]
+    public void IsInstalled_OurCommand_True()
+    {
+        WriteInstalled(null);
+
         Assert.True(Installer().IsInstalled());
     }
 
     [Fact]
-    public void Install_WritesUtf8WithoutBom()
-    {
-        Installer().Install(Exe);
-
-        var bytes = File.ReadAllBytes(SettingsPath);
-        Assert.NotEqual(0xEF, bytes[0]);
-        Assert.Empty(Directory.GetFiles(_home, "*.tmp"));
-    }
-
-    [Fact]
-    public void Install_InvalidUtf8_ChangesNothing()
-    {
-        Directory.CreateDirectory(_home);
-        byte[] bytes = [.. "{\"note\":\"caf"u8, 0xE9, .. "\"}"u8]; // 0xE9 isolé : Windows-1252, pas de l'UTF-8
-        File.WriteAllBytes(SettingsPath, bytes);
-
-        var result = Installer().Install(Exe);
-
-        Assert.Equal(StatusLineInstallResult.InvalidSettings, result);
-        Assert.Equal(bytes, File.ReadAllBytes(SettingsPath));
-        Assert.False(File.Exists(BackupPath));
-        Assert.False(File.Exists(PreviousPath));
-    }
-
-    [Fact]
-    public void Install_Utf8Bom_IsAccepted()
-    {
-        Directory.CreateDirectory(_home);
-        File.WriteAllBytes(SettingsPath, [0xEF, 0xBB, 0xBF, .. "{\"model\":\"opus\"}"u8]);
-
-        Assert.Equal(StatusLineInstallResult.Installed, Installer().Install(Exe));
-        Assert.Equal("opus", (string?)ReadSettings()["model"]);
-    }
-
-    [Fact]
-    public void Install_BackslashesBecomeSlashes()
-    {
-        Installer().Install(@"C:\Outils\Trofeo.StatusLine.exe");
-
-        Assert.Equal("\"C:/Outils/Trofeo.StatusLine.exe\"", (string?)ReadSettings()["statusLine"]!["command"]);
-    }
-
-    [Fact]
-    public void Install_KeepsOtherKeys()
-    {
-        WriteSettings("""
-            {"model":"opus","hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo fini"}]}]},
-             "permissions":{"allow":["Bash(ls)"]}}
-            """);
-
-        Installer().Install(Exe);
-
-        var root = ReadSettings();
-        Assert.Equal("opus", (string?)root["model"]);
-        Assert.Equal("echo fini", (string?)root["hooks"]!["Stop"]![0]!["hooks"]![0]!["command"]);
-        Assert.Equal("Bash(ls)", (string?)root["permissions"]!["allow"]![0]);
-        Assert.NotNull(root["statusLine"]);
-    }
-
-    [Fact]
-    public void Install_CommentsAndTrailingCommas_AreAccepted()
-    {
-        WriteSettings("""
-            {
-              // mon modèle
-              "model": "opus", /* fin */
-            }
-            """);
-
-        var result = Installer().Install(Exe);
-
-        Assert.Equal(StatusLineInstallResult.Installed, result);
-        Assert.Equal("opus", (string?)ReadSettings()["model"]);
-        Assert.Contains("// mon modèle", File.ReadAllText(BackupPath)); // la copie garde les commentaires
-    }
-
-    [Fact]
-    public void Install_ChainsExistingCommand()
-    {
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh","padding":1}}""");
-
-        var result = Installer().Install(Exe);
-
-        Assert.Equal(StatusLineInstallResult.Installed, result);
-        var statusLine = ReadSettings()["statusLine"]!;
-        Assert.Equal("\"C:/x/Trofeo.StatusLine.exe\" --tee | ( bash ~/sl.sh )", (string?)statusLine["command"]);
-        Assert.Equal(1, (int?)statusLine["padding"]);
-        Assert.Equal("command", (string?)statusLine["type"]);
-    }
-
-    [Fact]
-    public void Install_ChainsCompoundCommand_InParentheses()
-    {
-        WriteSettings("""{"statusLine":{"type":"command","command":"cd ~/outils && ./sl.sh"}}""");
-
-        Installer().Install(Exe);
-
-        Assert.Equal(
-            "\"C:/x/Trofeo.StatusLine.exe\" --tee | ( cd ~/outils && ./sl.sh )",
-            (string?)ReadSettings()["statusLine"]!["command"]);
-    }
-
-    [Fact]
-    public void Install_NonCommandStatusLine_IsReplacedAndRemembered()
-    {
-        WriteSettings("""{"statusLine":"simple"}""");
-
-        Installer().Install(Exe);
-
-        Assert.Equal("\"C:/x/Trofeo.StatusLine.exe\"", (string?)ReadSettings()["statusLine"]!["command"]);
-        Assert.Equal("simple", (string?)JsonNode.Parse(File.ReadAllText(PreviousPath))!["previous"]);
-    }
-
-    [Fact]
-    public void Install_BacksUpOriginalOnlyTheFirstTime()
-    {
-        const string original = """{"model":"opus"}""";
-        WriteSettings(original);
-
-        Installer().Install(Exe);
-        Assert.Equal(original, File.ReadAllText(BackupPath));
-
-        Installer().Uninstall();
-        File.WriteAllText(SettingsPath, """{"model":"sonnet"}""");
-        Installer().Install(Exe);
-
-        Assert.Equal(original, File.ReadAllText(BackupPath)); // pas écrasée
-    }
-
-    [Fact]
-    public void Install_Twice_AlreadyInstalled()
-    {
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh"}}""");
-        Installer().Install(Exe);
-        var before = File.ReadAllBytes(SettingsPath);
-        var previousBefore = File.ReadAllBytes(PreviousPath);
-
-        var result = Installer().Install(Exe);
-
-        Assert.Equal(StatusLineInstallResult.AlreadyInstalled, result);
-        Assert.Equal(before, File.ReadAllBytes(SettingsPath));
-        Assert.Equal(previousBefore, File.ReadAllBytes(PreviousPath)); // la commande d'origine n'est pas perdue
-    }
-
-    [Fact]
-    public void Install_AlreadyInstalled_IgnoresCase()
+    public void IsInstalled_IgnoresCase()
     {
         WriteSettings("""{"statusLine":{"type":"command","command":"\"c:/X/TROFEO.STATUSLINE.exe\""}}""");
-        var before = File.ReadAllBytes(SettingsPath);
 
-        Assert.Equal(StatusLineInstallResult.AlreadyInstalled, Installer().Install(Exe));
-        Assert.Equal(before, File.ReadAllBytes(SettingsPath));
-    }
-
-    [Fact]
-    public void Install_MovedExe_RewritesPathKeepsChain()
-    {
-        const string moved = "D:/ailleurs/Trofeo.StatusLine.exe";
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh","padding":1}}""");
-        Installer().Install(Exe);
-        var previousBefore = File.ReadAllBytes(PreviousPath);
-        var backupBefore = File.ReadAllBytes(BackupPath);
-
-        var result = Installer().Install(moved);
-
-        Assert.Equal(StatusLineInstallResult.Updated, result);
-        var statusLine = ReadSettings()["statusLine"]!;
-        Assert.Equal("\"D:/ailleurs/Trofeo.StatusLine.exe\" --tee | ( bash ~/sl.sh )", (string?)statusLine["command"]);
-        Assert.Equal(1, (int?)statusLine["padding"]);
-        Assert.Equal(previousBefore, File.ReadAllBytes(PreviousPath));
-        Assert.Equal(backupBefore, File.ReadAllBytes(BackupPath));
-        Assert.Empty(Directory.GetFiles(_home, "*.tmp"));
-
-        Assert.Equal(StatusLineInstallResult.Uninstalled, Installer().Uninstall());
-        Assert.Equal("bash ~/sl.sh", (string?)ReadSettings()["statusLine"]!["command"]);
-        Assert.Equal(1, (int?)ReadSettings()["statusLine"]!["padding"]);
-    }
-
-    [Fact]
-    public void Install_MovedExe_PathsWithSpaces_RewritesPathKeepsChain()
-    {
-        const string old = "C:/dev/Thermalright custom dashboard/src/Trofeo.StatusLine/bin/Release/net10.0/Trofeo.StatusLine.exe";
-        const string moved = "D:/mes outils/Trofeo dashboard/Trofeo.StatusLine.exe";
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh"}}""");
-        Installer().Install(old);
-        var previousBefore = File.ReadAllBytes(PreviousPath);
-
-        var result = Installer().Install(moved);
-
-        Assert.Equal(StatusLineInstallResult.Updated, result);
-        Assert.Equal($"\"{moved}\" --tee | ( bash ~/sl.sh )", (string?)ReadSettings()["statusLine"]!["command"]);
-        Assert.Equal(previousBefore, File.ReadAllBytes(PreviousPath));
-
-        Assert.Equal(StatusLineInstallResult.Uninstalled, Installer().Uninstall());
-        Assert.Equal("{\"statusLine\":{\"type\":\"command\",\"command\":\"bash ~/sl.sh\"}}", JsonNode.Parse(File.ReadAllText(SettingsPath))!.ToJsonString());
-    }
-
-    [Fact]
-    public void Install_MarkerOnlyInLaterSegment_AlreadyInstalledNoWrite()
-    {
-        // Le premier segment entre guillemets n'est pas le nôtre : une commande d'Alex qui cite seulement Trofeo.StatusLine.
-        const string edited = """{"statusLine":{"type":"command","command":"\"C:/tools/other.exe\" --x Trofeo.StatusLine"}}""";
-        WriteSettings(edited);
-        var before = File.ReadAllBytes(SettingsPath);
-
-        Assert.Equal(StatusLineInstallResult.AlreadyInstalled, Installer().Install("D:/ailleurs/Trofeo.StatusLine.exe"));
-
-        Assert.Equal(before, File.ReadAllBytes(SettingsPath));
-        Assert.False(File.Exists(PreviousPath));
-    }
-
-    [Fact]
-    public void Install_MovedExe_WithoutChain_RewritesPath()
-    {
-        Installer().Install(Exe);
-
-        var result = Installer().Install(@"D:\ailleurs\Trofeo.StatusLine.exe");
-
-        Assert.Equal(StatusLineInstallResult.Updated, result);
-        Assert.Equal("\"D:/ailleurs/Trofeo.StatusLine.exe\"", (string?)ReadSettings()["statusLine"]!["command"]);
-    }
-
-    [Fact]
-    public void Install_SameExe_AlreadyInstalledNoWrite()
-    {
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh"}}""");
-        Installer().Install(Exe);
-        var before = File.ReadAllBytes(SettingsPath);
-        var writtenAt = File.GetLastWriteTimeUtc(SettingsPath);
-
-        Assert.Equal(StatusLineInstallResult.AlreadyInstalled, Installer().Install(Exe));
-
-        Assert.Equal(before, File.ReadAllBytes(SettingsPath));
-        Assert.Equal(writtenAt, File.GetLastWriteTimeUtc(SettingsPath));
-    }
-
-    [Fact]
-    public void Install_HandEditedUnquotedCommand_AlreadyInstalledNoWrite()
-    {
-        // Notre marque, mais pas de chemin entre guillemets en tête : on ne devine pas.
-        const string edited = """{"statusLine":{"type":"command","command":"echo Trofeo.StatusLine | cat"}}""";
-        WriteSettings(edited);
-        var before = File.ReadAllBytes(SettingsPath);
-
-        Assert.Equal(StatusLineInstallResult.AlreadyInstalled, Installer().Install(@"D:\ailleurs\Trofeo.StatusLine.exe"));
-        Assert.Equal(before, File.ReadAllBytes(SettingsPath));
-        Assert.False(File.Exists(PreviousPath));
+        Assert.True(Installer().IsInstalled());
     }
 
     [Theory]
-    [InlineData("{pas du json")]
-    [InlineData("[1,2,3]")]
-    [InlineData("null")]
-    [InlineData("\"texte\"")]
     [InlineData("")]
-    public void Install_InvalidJson_ChangesNothing(string content)
+    [InlineData("""{"statusLine":{"type":"command","command":"bash ~/sl.sh"}}""")]
+    [InlineData("""{"model":"opus"}""")]
+    [InlineData("{pas du json")]
+    public void IsInstalled_OtherwiseFalse(string content)
     {
-        WriteSettings(content);
-        var before = File.ReadAllBytes(SettingsPath);
+        if (content.Length > 0) WriteSettings(content);
 
-        var result = Installer().Install(Exe);
-
-        Assert.Equal(StatusLineInstallResult.InvalidSettings, result);
-        Assert.Equal(before, File.ReadAllBytes(SettingsPath));
-        Assert.False(File.Exists(BackupPath));
-        Assert.False(File.Exists(PreviousPath));
         Assert.False(Installer().IsInstalled());
     }
 
     [Fact]
     public void Uninstall_RestoresPreviousExactly()
     {
-        WriteSettings("""{"model":"opus","statusLine":{"type":"command","command":"bash ~/sl.sh","padding":2,"refreshInterval":5},"theme":"dark"}""");
-        var originalNode = ReadSettings()["statusLine"]!.ToJsonString();
-        Installer().Install(Exe);
+        const string original = """{"type":"command","command":"bash ~/sl.sh","padding":2,"refreshInterval":5}""";
+        WriteInstalled(original, "\"model\":\"opus\",\"theme\":\"dark\"");
 
         var result = Installer().Uninstall();
 
         Assert.Equal(StatusLineInstallResult.Uninstalled, result);
         var root = ReadSettings();
-        Assert.Equal(originalNode, root["statusLine"]!.ToJsonString());
+        Assert.Equal(JsonNode.Parse(original)!.ToJsonString(), root["statusLine"]!.ToJsonString());
         Assert.Equal("opus", (string?)root["model"]);
         Assert.Equal("dark", (string?)root["theme"]);
         Assert.False(File.Exists(PreviousPath));
@@ -332,10 +106,29 @@ public sealed class StatusLineInstallerTests : IDisposable
     }
 
     [Fact]
+    public void Uninstall_ChainedCompoundCommand_RestoresIt()
+    {
+        WriteInstalled("""{"type":"command","command":"cd ~/outils && ./sl.sh"}""");
+
+        Assert.Equal(StatusLineInstallResult.Uninstalled, Installer().Uninstall());
+
+        Assert.Equal("cd ~/outils && ./sl.sh", (string?)ReadSettings()["statusLine"]!["command"]);
+    }
+
+    [Fact]
+    public void Uninstall_NonCommandPrevious_IsRestored()
+    {
+        WriteInstalled("\"simple\"");
+
+        Assert.Equal(StatusLineInstallResult.Uninstalled, Installer().Uninstall());
+
+        Assert.Equal("simple", (string?)ReadSettings()["statusLine"]);
+    }
+
+    [Fact]
     public void Uninstall_NoPrevious_RemovesStatusLine()
     {
-        WriteSettings("""{"model":"opus"}""");
-        Installer().Install(Exe);
+        WriteInstalled(null, "\"model\":\"opus\"");
 
         var result = Installer().Uninstall();
 
@@ -347,9 +140,32 @@ public sealed class StatusLineInstallerTests : IDisposable
     }
 
     [Fact]
+    public void Uninstall_WritesUtf8WithoutBom_AndLeavesNoTempFile()
+    {
+        WriteInstalled(null);
+
+        Installer().Uninstall();
+
+        Assert.NotEqual(0xEF, File.ReadAllBytes(SettingsPath)[0]);
+        Assert.Empty(Directory.GetFiles(_home, "*.tmp"));
+    }
+
+    [Fact]
+    public void Uninstall_Utf8BomAndComments_AreAccepted()
+    {
+        Directory.CreateDirectory(_home);
+        File.WriteAllBytes(SettingsPath,
+            [0xEF, 0xBB, 0xBF, .. "{ // mon modèle\n \"model\": \"opus\", \"statusLine\": {\"type\":\"command\",\"command\":\"\\\"C:/x/Trofeo.StatusLine.exe\\\"\"}, }"u8]);
+
+        Assert.Equal(StatusLineInstallResult.Uninstalled, Installer().Uninstall());
+
+        Assert.Equal("opus", (string?)ReadSettings()["model"]);
+    }
+
+    [Fact]
     public void Uninstall_PreviousFileMissing_RemovesStatusLine()
     {
-        Installer().Install(Exe);
+        WriteInstalled(null);
         File.Delete(PreviousPath);
 
         Assert.Equal(StatusLineInstallResult.Uninstalled, Installer().Uninstall());
@@ -359,8 +175,7 @@ public sealed class StatusLineInstallerTests : IDisposable
     [Fact]
     public void Uninstall_PreviousFileMissing_ChainedCommand_ChangesNothing()
     {
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh"}}""");
-        Installer().Install(Exe);
+        WriteInstalled("""{"type":"command","command":"bash ~/sl.sh"}""");
         File.Delete(PreviousPath);
         var before = File.ReadAllBytes(SettingsPath);
 
@@ -374,9 +189,8 @@ public sealed class StatusLineInstallerTests : IDisposable
     [InlineData("{}")]
     public void Uninstall_PreviousFileWithoutPrevious_ChainedCommand_ChangesNothing(string saved)
     {
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh"}}""");
-        Installer().Install(Exe);
-        File.WriteAllText(PreviousPath, saved);
+        WriteInstalled("""{"type":"command","command":"bash ~/sl.sh"}""");
+        WritePrevious(saved);
         var before = File.ReadAllBytes(SettingsPath);
 
         Assert.Equal(StatusLineInstallResult.InvalidSettings, Installer().Uninstall());
@@ -388,36 +202,18 @@ public sealed class StatusLineInstallerTests : IDisposable
     [Fact]
     public void Uninstall_PreviousFileWithoutPrevious_UnchainedCommand_RemovesStatusLine()
     {
-        WriteSettings("""{"model":"opus"}""");
-        Installer().Install(Exe);
-        File.WriteAllText(PreviousPath, "{}");
+        WriteInstalled(null, "\"model\":\"opus\"");
+        WritePrevious("{}");
 
         Assert.Equal(StatusLineInstallResult.Uninstalled, Installer().Uninstall());
         Assert.False(ReadSettings().ContainsKey("statusLine"));
     }
 
-    [Theory]
-    [InlineData("""{"model":"opus","model":"sonnet"}""")]
-    [InlineData("""{"hooks":{"a":1,"a":2}}""")]
-    [InlineData("""{"list":[{"a":1,"a":2}]}""")]
-    public void Install_DuplicateKeys_ChangesNothing(string content)
-    {
-        WriteSettings(content);
-        var before = File.ReadAllBytes(SettingsPath);
-
-        Assert.Equal(StatusLineInstallResult.InvalidSettings, Installer().Install(Exe));
-        Assert.Equal(before, File.ReadAllBytes(SettingsPath));
-        Assert.False(File.Exists(BackupPath));
-        Assert.False(File.Exists(PreviousPath));
-        Assert.False(Installer().IsInstalled());
-    }
-
     [Fact]
     public void Uninstall_DuplicateKeysInSettingsOrPreviousFile_ChangesNothing()
     {
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh"}}""");
-        Installer().Install(Exe);
-        File.WriteAllText(PreviousPath, """{"previous":null,"previous":null}""");
+        WriteInstalled("""{"type":"command","command":"bash ~/sl.sh"}""");
+        WritePrevious("""{"previous":null,"previous":null}""");
         var before = File.ReadAllBytes(SettingsPath);
         Assert.Equal(StatusLineInstallResult.InvalidSettings, Installer().Uninstall());
         Assert.Equal(before, File.ReadAllBytes(SettingsPath));
@@ -426,16 +222,40 @@ public sealed class StatusLineInstallerTests : IDisposable
         Assert.Equal(StatusLineInstallResult.InvalidSettings, Installer().Uninstall());
     }
 
+    [Theory]
+    [InlineData("""{"model":"opus","model":"sonnet"}""")]
+    [InlineData("""{"hooks":{"a":1,"a":2}}""")]
+    [InlineData("""{"list":[{"a":1,"a":2}]}""")]
+    public void Uninstall_DuplicateKeysAnywhere_ChangesNothing(string content)
+    {
+        WriteSettings(content);
+        var before = File.ReadAllBytes(SettingsPath);
+
+        Assert.Equal(StatusLineInstallResult.InvalidSettings, Installer().Uninstall());
+        Assert.Equal(before, File.ReadAllBytes(SettingsPath));
+        Assert.False(Installer().IsInstalled());
+    }
+
     [Fact]
     public void Uninstall_CorruptPreviousFile_InvalidUtf8_ChangesNothing()
     {
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh"}}""");
-        Installer().Install(Exe);
+        WriteInstalled("""{"type":"command","command":"bash ~/sl.sh"}""");
         File.WriteAllBytes(PreviousPath, [.. "{\"previous\":\"caf"u8, 0xE9, .. "\"}"u8]);
         var before = File.ReadAllBytes(SettingsPath);
 
         Assert.Equal(StatusLineInstallResult.InvalidSettings, Installer().Uninstall());
         Assert.Equal(before, File.ReadAllBytes(SettingsPath));
+    }
+
+    [Fact]
+    public void Uninstall_InvalidUtf8Settings_ChangesNothing()
+    {
+        Directory.CreateDirectory(_home);
+        byte[] bytes = [.. "{\"note\":\"caf"u8, 0xE9, .. "\"}"u8]; // 0xE9 isolé : Windows-1252, pas de l'UTF-8
+        File.WriteAllBytes(SettingsPath, bytes);
+
+        Assert.Equal(StatusLineInstallResult.InvalidSettings, Installer().Uninstall());
+        Assert.Equal(bytes, File.ReadAllBytes(SettingsPath));
     }
 
     [Fact]
@@ -457,10 +277,15 @@ public sealed class StatusLineInstallerTests : IDisposable
         Assert.Equal(StatusLineInstallResult.NotInstalled, Installer().Uninstall());
     }
 
-    [Fact]
-    public void Uninstall_InvalidSettings_ChangesNothing()
+    [Theory]
+    [InlineData("{pas du json")]
+    [InlineData("[1,2,3]")]
+    [InlineData("null")]
+    [InlineData("\"texte\"")]
+    [InlineData("")]
+    public void Uninstall_InvalidSettings_ChangesNothing(string content)
     {
-        WriteSettings("{pas du json");
+        WriteSettings(content);
         var before = File.ReadAllBytes(SettingsPath);
 
         Assert.Equal(StatusLineInstallResult.InvalidSettings, Installer().Uninstall());
@@ -470,21 +295,12 @@ public sealed class StatusLineInstallerTests : IDisposable
     [Fact]
     public void Uninstall_CorruptPreviousFile_ChangesNothing()
     {
-        WriteSettings("""{"statusLine":{"type":"command","command":"bash ~/sl.sh"}}""");
-        Installer().Install(Exe);
-        File.WriteAllText(PreviousPath, "{abîmé");
+        WriteInstalled("""{"type":"command","command":"bash ~/sl.sh"}""");
+        WritePrevious("{abîmé");
         var before = File.ReadAllBytes(SettingsPath);
 
         Assert.Equal(StatusLineInstallResult.InvalidSettings, Installer().Uninstall());
         Assert.Equal(before, File.ReadAllBytes(SettingsPath));
         Assert.True(Installer().IsInstalled());
-    }
-
-    [Fact]
-    public void ClaudeHome_StatusLineDir()
-    {
-        Assert.Equal(
-            Path.Combine("h", "trofeo-HB-dashboard", "statusline"),
-            ClaudeHome.StatusLineDir("h"));
     }
 }

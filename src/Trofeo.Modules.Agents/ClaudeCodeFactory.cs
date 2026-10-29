@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Trofeo.ModuleKit;
-using Trofeo.StatusLine;
 
 namespace Trofeo.Modules.Agents;
 
@@ -36,8 +35,8 @@ public sealed class ClaudeCodeFactory(Func<ModuleContext, IAgentSource> createSo
         .. AgentSchema.CommonFields(),
         new ActionField(InstallQuotas, "Installer le mod des quotas")
         {
-            Confirm = "Le mod trofeo-quotas sera ajouté à Claude Code pour ton compte (claude plugin install). "
-                + "Tu pourras le retirer avec claude plugin uninstall trofeo-quotas@trofeo-hb-dashboard.",
+            Confirm = "Le mod ashboard-quotas sera ajouté à Claude Code pour ton compte (claude plugin install). "
+                + "Tu pourras le retirer avec claude plugin uninstall ashboard-quotas@ashboard-vision.",
         },
     ]);
 

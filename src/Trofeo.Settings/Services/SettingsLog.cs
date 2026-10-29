@@ -5,7 +5,7 @@ using Trofeo.Core.Logging;
 namespace Trofeo.Settings.Services;
 
 /// <summary>
-/// Le journal de la fenêtre de réglage, <c>%AppData%\trofeo-HB-dashboard\logs\settings.log</c> (comme <c>display.log</c> pour le
+/// Le journal de la fenêtre de réglage, <c>%AppData%\ashboard-vision\logs\settings.log</c> (comme <c>display.log</c> pour le
 /// service) : de quoi comprendre un plantage sans le revoir. Un confort : s'il ne peut pas s'ouvrir, la fenêtre tourne sans.
 /// </summary>
 internal static class SettingsLog

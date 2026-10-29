@@ -13,8 +13,8 @@ public sealed class FreeboxSource : IThroughputSource
 {
     internal const string TokenKey = "freebox.app_token";
 
-    private const string AppId = "trofeo-HB-dashboard";
-    private const string AppName = "Trofeo HB Dashboard";
+    internal const string AppId = "trofeo-HB-dashboard";
+    private const string AppName = "Ashboard Vision";
     private const int MinMajorVersion = 4;
 
     private const string ButtonMessage = "Appuie sur ► sur ta Freebox pour autoriser le dashboard";

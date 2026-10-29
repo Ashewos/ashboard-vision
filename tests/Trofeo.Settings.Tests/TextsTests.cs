@@ -65,7 +65,7 @@ public partial class TextsTests
     [Fact]
     public void Texts_UserFacingTexts_AreInFrenchWithTu()
     {
-        Assert.Equal("Réglages du Trofeo", Texts.WindowTitle);
+        Assert.Equal("Réglages d'Ashboard Vision", Texts.WindowTitle);
         Assert.Equal("Démarrer le service", Texts.StartService);
         Assert.Equal("Le service d'affichage est introuvable. Lance Trofeo.Display.exe toi-même.", Texts.ServiceNotFound);
         Assert.Equal("Le service d'affichage ne tourne pas. Sans lui, l'écran reste éteint et rien ne peut être réglé.", Texts.ServiceStoppedMessage);

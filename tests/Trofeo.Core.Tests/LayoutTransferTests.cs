@@ -64,7 +64,7 @@ public sealed class LayoutTransferTests
         var result = LayoutTransfer.Import(json);
 
         Assert.Null(result.Layout);
-        Assert.Equal("Ce fichier n'est pas une disposition Trofeo.", result.Error);
+        Assert.Equal("Ce fichier n'est pas une disposition Ashboard Vision.", result.Error);
     }
 
     [Fact]

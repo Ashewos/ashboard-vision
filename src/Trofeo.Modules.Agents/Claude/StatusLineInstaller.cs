@@ -3,21 +3,20 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Trofeo.StatusLine;
+namespace Trofeo.Modules.Agents;
+
+/// <summary>Résultat du retrait de l'ancienne commande de barre d'état.</summary>
+public enum StatusLineInstallResult { Uninstalled, NotInstalled, InvalidSettings }
 
 /// <summary>
-/// Résultat d'une installation ou d'une désinstallation de la commande de barre d'état. <c>Updated</c> : la commande était
-/// déjà la nôtre mais pointait vers un autre exécutable ; seul le chemin a été réécrit.
-/// </summary>
-public enum StatusLineInstallResult { Installed, AlreadyInstalled, Uninstalled, NotInstalled, InvalidSettings, Updated }
-
-/// <summary>
-/// Branche (ou débranche) <c>Trofeo.StatusLine.exe</c> dans le <c>settings.json</c> de Claude Code, de façon réversible.
-/// Une commande déjà présente est conservée : la nôtre la précède dans un tube (<c>"exe" --tee | ( commande )</c>).
-/// Si le fichier n'est pas lisible, rien n'est écrit.
+/// Débranche l'ancien <c>Trofeo.StatusLine.exe</c> du <c>settings.json</c> de Claude Code et remet la configuration d'avant : les
+/// quotas viennent maintenant du mod <c>ashboard-quotas</c>, et le logiciel n'installe plus de barre d'état. Une commande qui
+/// enveloppait celle d'origine dans un tube (<c>"exe" --tee | ( commande )</c>) est remplacée par l'originale, gardée dans
+/// <c>statusline-previous.json</c>. Si un fichier n'est pas lisible, rien n'est écrit.
 /// </summary>
 public sealed class StatusLineInstaller(string claudeHome)
 {
+    /// <summary>Ce que la commande de l'ancienne barre d'état contient toujours : le nom de son exécutable.</summary>
     private const string Marker = "Trofeo.StatusLine";
     private const string ChainSeparator = " --tee | ";
 
@@ -39,44 +38,12 @@ public sealed class StatusLineInstaller(string claudeHome)
     /// <summary>Le <c>settings.json</c> de Claude Code, tel que ce programme le lit et le réécrit.</summary>
     public string SettingsPath => Path.Combine(claudeHome, "settings.json");
 
-    /// <summary>La copie du fichier d'origine, faite à la première installation.</summary>
-    public string BackupPath => SettingsPath + ".trofeo-bak";
-    private string PreviousPath => Path.Combine(claudeHome, "trofeo-HB-dashboard", "statusline-previous.json");
-
-    public StatusLineInstallResult Install(string exePath)
-    {
-        if (!TryReadSettings(out var root)) return StatusLineInstallResult.InvalidSettings;
-        if (IsOurs(root["statusLine"])) return RefreshExePath(root, NormalizeExePath(exePath));
-
-        // Sauvegardes : copie du fichier d'origine la première fois seulement ; ancien nœud à chaque installation.
-        if (File.Exists(SettingsPath) && !File.Exists(BackupPath)) File.Copy(SettingsPath, BackupPath);
-        var previous = root["statusLine"];
-        WriteAtomic(PreviousPath, new JsonObject { ["previous"] = previous?.DeepClone() });
-
-        root["statusLine"] = BuildStatusLine(previous, NormalizeExePath(exePath));
-        WriteAtomic(SettingsPath, root);
-        return StatusLineInstallResult.Installed;
-    }
+    private string PreviousPath => ClaudeHome.LegacyStatusLinePreviousPath(claudeHome);
 
     /// <summary>
-    /// Notre commande est déjà là : si l'exécutable a changé de place, on remplace seulement le premier segment entre
-    /// guillemets (le tube vers l'ancienne commande et les autres champs restent). Une commande qui ne commence pas par un
-    /// segment entre guillemets a été modifiée à la main : on ne devine pas.
+    /// Retire notre commande et remet l'ancienne (ou aucune s'il n'y en avait pas). <see cref="StatusLineInstallResult.InvalidSettings"/> :
+    /// un fichier illisible, ou une commande chaînée dont l'originale est introuvable ; rien n'a été modifié.
     /// </summary>
-    private StatusLineInstallResult RefreshExePath(JsonObject root, string exe)
-    {
-        var statusLine = (JsonObject)root["statusLine"]!; // IsOurs a vérifié qu'il porte une commande
-        var command = CommandOf(statusLine)!;
-        var end = command.StartsWith('"') ? command.IndexOf('"', 1) : -1;
-        // Notre marque doit être dans ce premier segment lui-même : une commande qui la cite plus loin n'est pas la nôtre.
-        if (end < 0 || !command[1..end].Contains(Marker, StringComparison.OrdinalIgnoreCase)) return StatusLineInstallResult.AlreadyInstalled;
-        if (string.Equals(command[1..end], exe, StringComparison.OrdinalIgnoreCase)) return StatusLineInstallResult.AlreadyInstalled;
-
-        statusLine["command"] = $"\"{exe}\"" + command[(end + 1)..];
-        WriteAtomic(SettingsPath, root);
-        return StatusLineInstallResult.Updated;
-    }
-
     public StatusLineInstallResult Uninstall()
     {
         if (!TryReadSettings(out var root)) return StatusLineInstallResult.InvalidSettings;
@@ -96,16 +63,11 @@ public sealed class StatusLineInstaller(string claudeHome)
 
         if (previous is null) root.Remove("statusLine"); else root["statusLine"] = previous;
         WriteAtomic(SettingsPath, root);
-        File.Delete(PreviousPath);
+        if (File.Exists(PreviousPath)) File.Delete(PreviousPath); // pas de sauvegarde (ni de dossier) : rien à effacer
         return StatusLineInstallResult.Uninstalled;
     }
 
-    /// <summary>
-    /// La commande de barre d'état actuelle de <c>settings.json</c> (la nôtre ou une autre), ou <c>null</c> s'il n'y en a
-    /// pas ou si le fichier n'est pas lisible.
-    /// </summary>
-    public string? CurrentCommand() => TryReadSettings(out var root) ? CommandOf(root["statusLine"]) : null;
-
+    /// <summary>Vrai si la commande de barre d'état de <c>settings.json</c> est l'ancienne nôtre (fichier illisible : faux).</summary>
     public bool IsInstalled() => TryReadSettings(out var root) && IsOurs(root["statusLine"]);
 
     /// <summary>Fichier absent : objet vide. Sinon un objet JSON (commentaires et virgules finales admis).</summary>
@@ -169,30 +131,6 @@ public sealed class StatusLineInstaller(string claudeHome)
 
     private static string? CommandOf(JsonNode? statusLine) =>
         statusLine is JsonObject o && o["command"] is JsonValue v && v.TryGetValue<string>(out var command) ? command : null;
-
-    private static JsonNode BuildStatusLine(JsonNode? previous, string exe)
-    {
-        var ours = $"\"{exe}\"";
-        if (previous is JsonObject old
-            && old["type"] is JsonValue type && type.TryGetValue<string>(out var kind) && kind == "command"
-            && CommandOf(old) is { } oldCommand && !string.IsNullOrWhiteSpace(oldCommand))
-        {
-            var chained = (JsonObject)old.DeepClone(); // garde padding, refreshInterval…
-            // Parenthèses : sans elles, « | » lie plus fort que « && », « || » et « ; » et priverait la fin de l'entrée.
-            chained["command"] = $"{ours}{ChainSeparator}( {oldCommand} )";
-            return chained;
-        }
-        return new JsonObject { ["type"] = "command", ["command"] = ours };
-    }
-
-    /// <summary>Chemin absolu avec des <c>/</c> (la commande passe par un interpréteur de commandes).</summary>
-    private static string NormalizeExePath(string exePath)
-    {
-        var path = exePath.Replace('\\', '/');
-        var driveRooted = path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && path[2] == '/';
-        if (!driveRooted && !path.StartsWith('/')) path = Path.GetFullPath(exePath).Replace('\\', '/');
-        return path;
-    }
 
     private static void WriteAtomic(string path, JsonNode node)
     {

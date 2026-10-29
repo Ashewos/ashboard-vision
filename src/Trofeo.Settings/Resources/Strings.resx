@@ -6,11 +6,11 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <data name="WindowTitle" xml:space="preserve">
-    <value>Réglages du Trofeo</value>
+    <value>Réglages d'Ashboard Vision</value>
     <comment>Titre de la fenêtre.</comment>
   </data>
   <data name="AppName" xml:space="preserve">
-    <value>Trofeo</value>
+    <value>Ashboard Vision</value>
     <comment>Nom du produit, à gauche de l'en-tête.</comment>
   </data>
   <data name="TabsName" xml:space="preserve">
@@ -647,7 +647,7 @@
     <comment>Titre du sélecteur de fichier.</comment>
   </data>
   <data name="ShareFileType" xml:space="preserve">
-    <value>Disposition Trofeo</value>
+    <value>Disposition Ashboard Vision</value>
     <comment>Type de fichier des boîtes d'export et d'import.</comment>
   </data>
   <data name="ShareExported" xml:space="preserve">

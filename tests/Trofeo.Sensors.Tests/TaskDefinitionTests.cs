@@ -16,12 +16,24 @@ public class TaskDefinitionTests
 
     [Fact]
     public void TaskName_IsInTheProductFolder() =>
-        Assert.Equal(@"\trofeo-HB-dashboard\Capteurs", TaskDefinition.TaskName);
+        Assert.Equal(@"\Ashboard Vision\Capteurs", TaskDefinition.TaskName);
+
+    [Fact]
+    public void LegacyTaskName_IsTheTaskOfTheOldName() =>
+        Assert.Equal(@"\trofeo-HB-dashboard\Capteurs", TaskDefinition.LegacyTaskName);
+
+    [Fact]
+    public void Xml_DescribesTheTaskWithTheNewName()
+    {
+        var task = XDocument.Parse(TaskDefinition.Xml(@"C:\x\Trofeo.SensorHelper.exe")).Root!;
+
+        Assert.StartsWith("Assistant de capteurs d'Ashboard Vision", Text(task, "RegistrationInfo", "Description"));
+    }
 
     [Fact]
     public void Xml_RunsAsSystem_AtLogon_WithoutTimeLimit()
     {
-        const string exe = @"C:\Program Files\trofeo-HB-dashboard\sensors\Trofeo.SensorHelper.exe";
+        const string exe = @"C:\Program Files\Ashboard Vision\sensors\Trofeo.SensorHelper.exe";
         var task = XDocument.Parse(TaskDefinition.Xml(exe)).Root!;
 
         Assert.Equal(Ns + "Task", task.Name);

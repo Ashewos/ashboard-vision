@@ -27,7 +27,7 @@ public class QuotaModInstallerTests : IDisposable
         Assert.Equal(
             [
                 ("claude", $"plugin marketplace add \"{_mods}\""),
-                ("claude", "plugin install trofeo-quotas@trofeo-hb-dashboard"),
+                ("claude", "plugin install ashboard-quotas@ashboard-vision"),
             ],
             calls);
     }
@@ -88,6 +88,95 @@ public class QuotaModInstallerTests : IDisposable
 
         Assert.Equal(new ModuleKitResult(false, "Le dossier du mod est introuvable."), Convert(result));
         Assert.Empty(calls);
+    }
+
+    [Fact]
+    public async Task Uninstall_RunsPluginUninstallThenMarketplaceRemove()
+    {
+        var calls = new List<(string File, string Args)>();
+
+        var result = await Installer(_mods, calls, _ => (0, "ok"))
+            .UninstallAsync(QuotaModInstaller.LegacyPluginName, QuotaModInstaller.LegacyMarketplace, CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Equal(
+            [
+                ("claude", "plugin uninstall trofeo-quotas@trofeo-hb-dashboard"),
+                ("claude", "plugin marketplace remove trofeo-hb-dashboard"),
+            ],
+            calls);
+    }
+
+    [Fact]
+    public async Task Uninstall_NewMod_UsesTheNewNames()
+    {
+        var calls = new List<(string File, string Args)>();
+
+        await Installer(_mods, calls, _ => (0, "ok"))
+            .UninstallAsync(QuotaModInstaller.PluginName, "ashboard-vision", CancellationToken.None);
+
+        Assert.Equal(
+            [
+                ("claude", "plugin uninstall ashboard-quotas@ashboard-vision"),
+                ("claude", "plugin marketplace remove ashboard-vision"),
+            ],
+            calls);
+    }
+
+    [Fact]
+    public async Task Uninstall_DoesNotNeedTheModsFolder()
+    {
+        var calls = new List<(string File, string Args)>();
+
+        var result = await Installer(null, calls, _ => (0, ""))
+            .UninstallAsync(QuotaModInstaller.LegacyPluginName, QuotaModInstaller.LegacyMarketplace, CancellationToken.None);
+
+        Assert.True(result.Ok);
+        Assert.Equal(2, calls.Count);
+    }
+
+    [Fact]
+    public async Task Uninstall_ClaudeMissing_SaysSo()
+    {
+        var installer = new QuotaModInstaller((_, _, _) => throw new Win32Exception(2, "introuvable"), _mods);
+
+        var result = await installer.UninstallAsync(QuotaModInstaller.LegacyPluginName, QuotaModInstaller.LegacyMarketplace, CancellationToken.None);
+
+        Assert.Equal(new ModuleKitResult(false, "Claude Code est introuvable sur ce PC."), Convert(result));
+    }
+
+    [Fact]
+    public async Task Uninstall_PluginAlreadyGone_StillRemovesTheMarketplace()
+    {
+        var calls = new List<(string File, string Args)>();
+
+        // Le mod n'est pas installé (le premier retrait échoue) : la deuxième commande a lieu quand même.
+        var result = await Installer(_mods, calls, n => n == 1 ? (1, "Plugin not found") : (0, "ok"))
+            .UninstallAsync(QuotaModInstaller.LegacyPluginName, QuotaModInstaller.LegacyMarketplace, CancellationToken.None);
+
+        Assert.Equal(2, calls.Count);
+        Assert.False(result.Ok);
+        Assert.Equal("Le retrait a échoué : Plugin not found", result.Message);
+    }
+
+    [Fact]
+    public async Task Uninstall_Failure_ReturnsTruncatedOutput()
+    {
+        var calls = new List<(string File, string Args)>();
+
+        var result = await Installer(_mods, calls, _ => (1, new string('x', 500)))
+            .UninstallAsync(QuotaModInstaller.LegacyPluginName, QuotaModInstaller.LegacyMarketplace, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal("Le retrait a échoué : " + new string('x', 300), result.Message);
+    }
+
+    [Fact]
+    public void Names_NewModAndLegacyMod()
+    {
+        Assert.Equal("ashboard-quotas@ashboard-vision", QuotaModInstaller.PluginName);
+        Assert.Equal("trofeo-quotas@trofeo-hb-dashboard", QuotaModInstaller.LegacyPluginName);
+        Assert.Equal("trofeo-hb-dashboard", QuotaModInstaller.LegacyMarketplace);
     }
 
     private sealed record ModuleKitResult(bool Ok, string Message);

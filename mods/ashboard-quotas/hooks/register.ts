@@ -1,7 +1,7 @@
 import type { Register, SessionContextUsage, SessionRateLimit } from 'claude-code'
 
-// Même fichier, même format que Trofeo.StatusLine.exe (src/Trofeo.StatusLine/StatusLineFile.cs) :
-// <claudeHome>/trofeo-HB-dashboard/statusline/<sessionId>.json, en camelCase. Le module de l'écran les lit sans savoir
+// Un fichier par session, lu par src/Trofeo.Modules.Agents/Claude/StatusLineFile.cs :
+// <claudeHome>/ashboard-vision/statusline/<sessionId>.json, en camelCase. Le module de l'écran les lit sans savoir
 // qui les a écrits. Rien n'est lu d'autre que les chiffres que le moteur a déjà ; aucune connexion réseau.
 
 type Quota = { usedPercent: number; resetsAt: string | null }
@@ -16,7 +16,7 @@ export type Capture = {
   sevenDay: Quota | null
 }
 
-/** Un identifiant sûr comme nom de fichier : [A-Za-z0-9-], 1 à 64 caractères (comme StatusLineCapture.IsValidSessionId). */
+/** Un identifiant sûr comme nom de fichier : [A-Za-z0-9-], 1 à 64 caractères (comme StatusLineFile.IsValidSessionId). */
 export const isValidSessionId = (id: string): boolean => /^[A-Za-z0-9-]{1,64}$/.test(id)
 
 /** `<claudeHome>` : %CLAUDE_CONFIG_DIR% s'il est défini, sinon le dossier .claude du profil. */
@@ -59,7 +59,7 @@ export const register: Register = on => {
       const model = await $.session.model().catch(() => null)
       const capture = toCapture(await $.clock.now(), await $.session.id(), model || null, e.context, e.rateLimits)
       if (home && capture) {
-        await $.fs.write(`${home}/trofeo-HB-dashboard/statusline/${capture.sessionId}.json`, JSON.stringify(capture))
+        await $.fs.write(`${home}/ashboard-vision/statusline/${capture.sessionId}.json`, JSON.stringify(capture))
       }
     } catch {
       // Disque plein, dossier protégé… : pas de capture cette fois-ci.

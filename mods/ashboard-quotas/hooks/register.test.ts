@@ -30,13 +30,13 @@ const engine = (on: On, env: Record<string, string | undefined>, sessionId = 'ab
   return writes
 }
 
-test('une mesure écrit la capture au format de Trofeo.StatusLine', async ($, on) => {
+test('une mesure écrit la capture au format attendu par Ashboard Vision', async ($, on) => {
   const writes = engine(on, { USERPROFILE: 'C:/Users/alex' })
 
   await $.session.measure(MEASURE)
 
   expect(writes.length).toBe(1)
-  expect(slashes(writes[0]!.path)).toBe('C:/Users/alex/.claude/trofeo-HB-dashboard/statusline/abc-123.json')
+  expect(slashes(writes[0]!.path)).toBe('C:/Users/alex/.claude/ashboard-vision/statusline/abc-123.json')
   expect(JSON.parse(writes[0]!.text)).toEqual({
     capturedAt: '2026-10-25T15:07:36.000Z',
     sessionId: 'abc-123',
@@ -53,7 +53,7 @@ test('CLAUDE_CONFIG_DIR passe avant le profil', async ($, on) => {
 
   await $.session.measure(MEASURE)
 
-  expect(slashes(writes[0]!.path)).toBe('D:/claude/trofeo-HB-dashboard/statusline/abc-123.json')
+  expect(slashes(writes[0]!.path)).toBe('D:/claude/ashboard-vision/statusline/abc-123.json')
 })
 
 test('sans quotas ni remplissage connus, les champs valent null', async ($, on) => {

@@ -62,9 +62,9 @@ public sealed class TrayIcon : ApplicationContext
     {
         var text = state switch
         {
-            ScreenState.Ready => "Trofeo dashboard — écran : prêt",
-            ScreenState.Recovering => "Trofeo dashboard — écran : reprise…",
-            _ => "Trofeo dashboard — écran : " + (reason ?? "non branché"),
+            ScreenState.Ready => $"{ProductIdentity.DisplayName} — écran : prêt",
+            ScreenState.Recovering => $"{ProductIdentity.DisplayName} — écran : reprise…",
+            _ => $"{ProductIdentity.DisplayName} — écran : " + (reason ?? "non branché"),
         };
 
         return text.Length > MaxTooltipLength ? text[..MaxTooltipLength] : text;
@@ -101,7 +101,7 @@ public sealed class TrayIcon : ApplicationContext
         }
     }
 
-    private void ShowBalloon(string text) => _icon.ShowBalloonTip(5000, "Trofeo dashboard", text, ToolTipIcon.Warning);
+    private void ShowBalloon(string text) => _icon.ShowBalloonTip(5000, ProductIdentity.DisplayName, text, ToolTipIcon.Warning);
 
     protected override void ExitThreadCore()
     {

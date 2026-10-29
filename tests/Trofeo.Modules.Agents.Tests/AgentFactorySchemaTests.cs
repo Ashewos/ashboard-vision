@@ -48,8 +48,8 @@ public class AgentFactorySchemaTests
         var install = Assert.IsType<ActionField>(claude.Schema.Fields[4]);
         Assert.Equal("Installer le mod des quotas", install.Label);
         Assert.Equal(
-            "Le mod trofeo-quotas sera ajouté à Claude Code pour ton compte (claude plugin install). "
-            + "Tu pourras le retirer avec claude plugin uninstall trofeo-quotas@trofeo-hb-dashboard.",
+            "Le mod ashboard-quotas sera ajouté à Claude Code pour ton compte (claude plugin install). "
+            + "Tu pourras le retirer avec claude plugin uninstall ashboard-quotas@ashboard-vision.",
             install.Confirm);
 
         Assert.True(claude.Descriptor.AcceptsCommands);

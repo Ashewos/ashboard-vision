@@ -12,8 +12,16 @@ namespace Trofeo.Sensors;
 /// </summary>
 public static class HelperIdentity
 {
-    /// <summary><c>%ProgramFiles%\trofeo-HB-dashboard\sensors\</c>, séparateur final compris : dossier d'installation de l'assistant.</summary>
+    /// <summary><c>%ProgramFiles%\Ashboard Vision\sensors\</c>, séparateur final compris : dossier d'installation de l'assistant.</summary>
     public static string InstallDir { get; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Ashboard Vision", "sensors")
+        + Path.DirectorySeparatorChar;
+
+    /// <summary>
+    /// <c>%ProgramFiles%\trofeo-HB-dashboard\sensors\</c>, séparateur final compris : dossier d'installation d'avant le changement de
+    /// nom. L'installation de l'assistant le supprime.
+    /// </summary>
+    public static string LegacyInstallDir { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "trofeo-HB-dashboard", "sensors")
         + Path.DirectorySeparatorChar;
 

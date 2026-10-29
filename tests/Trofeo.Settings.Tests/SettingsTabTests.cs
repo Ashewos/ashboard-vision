@@ -527,7 +527,7 @@ public sealed class SettingsTabTests : IDisposable
 
         await tab.ImportAsync();
 
-        Assert.Equal("Ce fichier n'est pas une disposition Trofeo.", tab.ShareMessage);
+        Assert.Equal("Ce fichier n'est pas une disposition Ashboard Vision.", tab.ShareMessage);
         Assert.True(tab.ShareMessageIsError);
         Assert.Equal(before, File.ReadAllText(Path.Combine(_dir, "layout.json")));
         Assert.False(File.Exists(Path.Combine(_dir, "layout.json.avant-import")));

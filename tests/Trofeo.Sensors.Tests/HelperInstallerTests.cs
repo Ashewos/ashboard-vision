@@ -7,11 +7,13 @@ namespace Trofeo.Sensors.Tests;
 public sealed class HelperInstallerTests : IDisposable
 {
     private const string Task = "\"" + TaskDefinition.TaskName + "\"";
+    private const string LegacyTask = "\"" + TaskDefinition.LegacyTaskName + "\"";
     private const string PawnIoSetup = @"C:\dl\PawnIO_setup.exe";
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "trofeo-installer-" + Guid.NewGuid().ToString("N"));
     private readonly string _source;
     private readonly string _install;
+    private readonly string _legacy;
     private readonly FakeRunner _runner = new();
     private readonly FakePawnIo _pawnIo = new();
     private readonly List<TimeSpan> _sleeps = [];
@@ -20,12 +22,13 @@ public sealed class HelperInstallerTests : IDisposable
     {
         _source = Path.Combine(_root, "source");
         _install = Path.Combine(_root, "install") + Path.DirectorySeparatorChar;
+        _legacy = Path.Combine(_root, "legacy") + Path.DirectorySeparatorChar;
         Directory.CreateDirectory(_source);
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
-    private HelperInstaller Installer() => new(_runner, _pawnIo, _source, _install, _sleeps.Add);
+    private HelperInstaller Installer() => new(_runner, _pawnIo, _source, _install, _sleeps.Add, _legacy);
 
     [Fact]
     public void Install_PawnIoMissing_NoPath_ChangesNothing()
@@ -48,6 +51,8 @@ public sealed class HelperInstallerTests : IDisposable
         Assert.Equal(
         [
             (PawnIoSetup, "-install -silent"),
+            ("schtasks", $"/End /TN {LegacyTask}"),
+            ("schtasks", $"/Delete /TN {LegacyTask} /F"),
             ("schtasks", $"/End /TN {Task}"),
             ("schtasks", $"/Create /TN {Task} /XML \"{_runner.XmlPath}\" /F"),
             ("schtasks", $"/Run /TN {Task}"),
@@ -63,7 +68,73 @@ public sealed class HelperInstallerTests : IDisposable
 
         Assert.Equal(InstallResult.Installed, result);
         Assert.DoesNotContain(_runner.Calls, c => c.File == PawnIoSetup);
-        Assert.Equal(3, _runner.Calls.Count);
+        Assert.Equal(5, _runner.Calls.Count); // les deux commandes de l'ancienne tâche, puis arrêt, création et démarrage
+    }
+
+    [Fact]
+    public void Install_RemovesLegacyTaskAndFolderFirst()
+    {
+        _pawnIo.Installed = true;
+        Directory.CreateDirectory(Path.Combine(_legacy, "sub"));
+        File.WriteAllText(Path.Combine(_legacy, "Trofeo.SensorHelper.exe"), "ancien");
+        File.WriteAllText(Path.Combine(_legacy, "sub", "a.dll"), "a");
+        var legacyFolderGoneAtCreate = false;
+        _runner.OnRun = args =>
+        {
+            if (args.StartsWith("/Create", StringComparison.Ordinal)) legacyFolderGoneAtCreate = !Directory.Exists(_legacy);
+        };
+
+        var result = Installer().Install(null);
+
+        Assert.Equal(InstallResult.Installed, result);
+        var arguments = _runner.Calls.Select(c => c.Args).ToList();
+        Assert.Equal($"/End /TN {LegacyTask}", arguments[0]);
+        Assert.Equal($"/Delete /TN {LegacyTask} /F", arguments[1]);
+        Assert.True(arguments.FindIndex(a => a.StartsWith("/Create", StringComparison.Ordinal)) > 1); // avant la création de la nouvelle tâche
+        Assert.True(legacyFolderGoneAtCreate);
+        Assert.False(Directory.Exists(_legacy));
+    }
+
+    [Fact]
+    public void Install_LegacyTaskAbsent_IsSilent()
+    {
+        _pawnIo.Installed = true;
+        _runner.ExitCodes["schtasks /End"] = 1;
+        _runner.ExitCodes["schtasks /Delete"] = 1; // l'ancienne tâche n'existe pas : aucune erreur, aucun message
+
+        var result = Installer().Install(null);
+
+        Assert.Equal(InstallResult.Installed, result);
+        Assert.False(Directory.Exists(_legacy));
+    }
+
+    [Fact]
+    public void Install_LegacyFolderStaysLocked_StillInstalls()
+    {
+        _pawnIo.Installed = true;
+        Directory.CreateDirectory(_legacy);
+        var locked = Path.Combine(_legacy, "Trofeo.SensorHelper.exe");
+        File.WriteAllText(locked, "ancien");
+        using var hold = new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var result = Installer().Install(null); // l'ancien dossier est laissé en place : la nouvelle installation n'en dépend pas
+
+        Assert.Equal(InstallResult.Installed, result);
+        Assert.True(File.Exists(locked));
+        Assert.Contains(_runner.Calls, c => c.Args.StartsWith("/Run", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Install_RunFromTheLegacyFolder_KeepsIt()
+    {
+        _pawnIo.Installed = true;
+        File.WriteAllText(Path.Combine(_source, "Trofeo.SensorHelper.exe"), "exe");
+        var installer = new HelperInstaller(_runner, _pawnIo, _source, _install, _sleeps.Add, _source + Path.DirectorySeparatorChar);
+
+        Assert.Equal(InstallResult.Installed, installer.Install(null));
+
+        Assert.True(File.Exists(Path.Combine(_source, "Trofeo.SensorHelper.exe"))); // l'assistant en cours ne se supprime pas lui-même
+        Assert.True(File.Exists(Path.Combine(_install, "Trofeo.SensorHelper.exe")));
     }
 
     [Fact]
@@ -136,7 +207,7 @@ public sealed class HelperInstallerTests : IDisposable
         Assert.Equal(InstallResult.Installed, installer.Install(null));
 
         Assert.Equal("a", File.ReadAllText(Path.Combine(_source, "a.txt")));
-        Assert.Equal(3, _runner.Calls.Count);
+        Assert.Equal(5, _runner.Calls.Count);
     }
 
     [Fact]
@@ -317,6 +388,9 @@ public sealed class HelperInstallerTests : IDisposable
         /// <summary>Code de sortie par fichier, ou par « fichier /Verbe » ; 0 par défaut.</summary>
         public Dictionary<string, int> ExitCodes { get; } = [];
 
+        /// <summary>Appelé à chaque commande, avant sa réponse (pour observer le disque à ce moment-là).</summary>
+        public Action<string>? OnRun { get; set; }
+
         public string? XmlPath { get; private set; }
 
         public string? XmlAtCreate { get; private set; }
@@ -326,6 +400,7 @@ public sealed class HelperInstallerTests : IDisposable
         public int Run(string fileName, string arguments)
         {
             Calls.Add((fileName, arguments));
+            OnRun?.Invoke(arguments);
             if (arguments.StartsWith("/Create", StringComparison.Ordinal))
             {
                 var start = arguments.IndexOf("/XML \"", StringComparison.Ordinal) + 6;

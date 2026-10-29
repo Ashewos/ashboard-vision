@@ -9,7 +9,6 @@
     <ProjectReference Include="..\..\src\Trofeo.Core\Trofeo.Core.csproj" />
     <ProjectReference Include="..\..\src\Trofeo.Device\Trofeo.Device.csproj" />
     <ProjectReference Include="..\..\src\Trofeo.Modules.Clock\Trofeo.Modules.Clock.csproj" />
-    <ProjectReference Include="..\..\src\Trofeo.StatusLine\Trofeo.StatusLine.csproj" />
   </ItemGroup>
 
 </Project>

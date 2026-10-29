@@ -26,13 +26,19 @@ public enum InstallResult
 /// <param name="sourceDir">Dossier d'où copier l'assistant (celui de l'exécutable en cours).</param>
 /// <param name="installDir">Dossier d'installation (voir <see cref="HelperIdentity.InstallDir"/>).</param>
 /// <param name="sleep">Attente entre deux essais quand un fichier est encore tenu par l'ancien assistant ; sert aux tests à ne pas dormir.</param>
+/// <param name="legacyInstallDir">
+/// Dossier d'installation d'avant le changement de nom (voir <see cref="HelperIdentity.LegacyInstallDir"/>), supprimé à
+/// l'installation. <c>null</c> : aucun dossier à supprimer (l'ancienne tâche, elle, est toujours retirée).
+/// </param>
 public sealed class HelperInstaller(
-    ICommandRunner runner, IPawnIoDetector pawnIo, string sourceDir, string installDir, Action<TimeSpan>? sleep = null)
+    ICommandRunner runner, IPawnIoDetector pawnIo, string sourceDir, string installDir, Action<TimeSpan>? sleep = null,
+    string? legacyInstallDir = null)
 {
     private const string ExeName = "Trofeo.SensorHelper.exe";
     private const string StagedXmlName = "task.xml";
     private const int PawnIoRebootRequired = 3010;
     private static readonly string QuotedTask = "\"" + TaskDefinition.TaskName + "\"";
+    private static readonly string QuotedLegacyTask = "\"" + TaskDefinition.LegacyTaskName + "\"";
 
     // Attentes successives (environ 10 s au total) pour laisser l'ancien assistant, arrêté par « schtasks /End », relâcher ses fichiers.
     private static readonly TimeSpan[] RetryDelays =
@@ -55,6 +61,8 @@ public sealed class HelperInstaller(
             }
         }
 
+        RemoveLegacy();
+
         runner.Run("schtasks", $"/End /TN {QuotedTask}"); // ancienne version éventuelle ; absente ou arrêtée : sans importance
 
         if (!SameDirectory(sourceDir, installDir)) CopyDirectory(sourceDir, installDir);
@@ -63,6 +71,28 @@ public sealed class HelperInstaller(
 
         Check(runner.Run("schtasks", $"/Run /TN {QuotedTask}"), "démarrage de la tâche planifiée");
         return rebootRequired ? InstallResult.InstalledRebootRequired : InstallResult.Installed;
+    }
+
+    /// <summary>
+    /// Retire l'installation d'avant le changement de nom : la tâche (arrêtée d'abord, pour que l'ancien assistant relâche ses
+    /// fichiers), puis son dossier. Une tâche absente n'est pas une erreur : les codes de sortie sont ignorés, rien n'est signalé.
+    /// Le dossier n'est pas supprimé si c'est celui d'où l'on s'exécute ou celui où l'on installe. S'il reste tenu après les
+    /// attentes, il est laissé en place avec un avertissement dans la trace : la nouvelle installation n'en dépend pas.
+    /// </summary>
+    private void RemoveLegacy()
+    {
+        runner.Run("schtasks", $"/End /TN {QuotedLegacyTask}");
+        runner.Run("schtasks", $"/Delete /TN {QuotedLegacyTask} /F");
+        if (legacyInstallDir is null || SameDirectory(sourceDir, legacyInstallDir) || SameDirectory(installDir, legacyInstallDir)) return;
+        if (!Directory.Exists(legacyInstallDir)) return;
+        try
+        {
+            Retry(() => Directory.Delete(legacyInstallDir, recursive: true));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning($"Ancien dossier de l'assistant de capteurs non supprimé ({legacyInstallDir}) : {ex.Message}");
+        }
     }
 
     /// <summary>

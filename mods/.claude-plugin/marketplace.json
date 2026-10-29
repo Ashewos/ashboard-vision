@@ -1,13 +1,13 @@
 {
-  "name": "trofeo-hb-dashboard",
-  "description": "Mods Claude Code de trofeo-HB-dashboard (écran Thermalright Trofeo Vision).",
+  "name": "ashboard-vision",
+  "description": "Mods Claude Code d'Ashboard Vision (écran Thermalright Trofeo Vision).",
   "owner": {
     "name": "Ashewos"
   },
   "plugins": [
     {
-      "name": "trofeo-quotas",
-      "source": "./trofeo-quotas"
+      "name": "ashboard-quotas",
+      "source": "./ashboard-quotas"
     }
   ]
 }

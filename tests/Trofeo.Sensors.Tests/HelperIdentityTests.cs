@@ -8,9 +8,17 @@ public class HelperIdentityTests
     [Fact]
     public void InstallDir_IsProgramFilesSensorsFolder_WithTrailingSeparator()
     {
-        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "trofeo-HB-dashboard", "sensors")
+        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Ashboard Vision", "sensors")
             + Path.DirectorySeparatorChar;
         Assert.Equal(expected, HelperIdentity.InstallDir);
+    }
+
+    [Fact]
+    public void LegacyInstallDir_IsTheFolderOfTheOldName_WithTrailingSeparator()
+    {
+        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "trofeo-HB-dashboard", "sensors")
+            + Path.DirectorySeparatorChar;
+        Assert.Equal(expected, HelperIdentity.LegacyInstallDir);
     }
 
     [Theory]

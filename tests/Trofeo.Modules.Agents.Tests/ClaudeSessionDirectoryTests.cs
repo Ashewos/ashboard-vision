@@ -1,5 +1,3 @@
-using Trofeo.StatusLine;
-
 namespace Trofeo.Modules.Agents.Tests;
 
 public sealed class ClaudeSessionDirectoryTests : IDisposable

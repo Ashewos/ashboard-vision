@@ -127,7 +127,7 @@ public sealed class MainWindowTests : IDisposable
         _link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());
         var (window, _) = Open();
 
-        Assert.Equal("Réglages du Trofeo", window.Title);
+        Assert.Equal("Réglages d'Ashboard Vision", window.Title);
         Assert.Equal(1440, window.Width);
         Assert.Equal(900, window.Height);
         Assert.Equal(1200, window.MinWidth);
