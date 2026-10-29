@@ -1,0 +1,82 @@
+[
+  {
+    "url": "https://api.github.com/repos/Ashewos/ashboard-vision/releases/300",
+    "tag_name": "v1.2.0",
+    "name": "Ashboard Vision 1.2.0 (brouillon)",
+    "draft": true,
+    "prerelease": false,
+    "published_at": null,
+    "assets": [
+      {
+        "name": "Ashboard-Vision-Setup-1.2.0.exe",
+        "size": 52000000,
+        "browser_download_url": "https://github.com/Ashewos/ashboard-vision/releases/download/v1.2.0/Ashboard-Vision-Setup-1.2.0.exe"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/Ashewos/ashboard-vision/releases/200",
+    "tag_name": "v1.1.0-beta.1",
+    "name": "Ashboard Vision 1.1.0-beta.1",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-11-20T18:30:00Z",
+    "assets": [
+      {
+        "name": "Ashboard-Vision-Setup-1.1.0-beta.1.exe.sha256",
+        "size": 101,
+        "browser_download_url": "https://github.com/Ashewos/ashboard-vision/releases/download/v1.1.0-beta.1/Ashboard-Vision-Setup-1.1.0-beta.1.exe.sha256"
+      },
+      {
+        "name": "Ashboard-Vision-Setup-1.1.0-beta.1.exe",
+        "size": 51500000,
+        "browser_download_url": "https://github.com/Ashewos/ashboard-vision/releases/download/v1.1.0-beta.1/Ashboard-Vision-Setup-1.1.0-beta.1.exe"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/Ashewos/ashboard-vision/releases/190",
+    "tag_name": "nightly",
+    "name": "Version de nuit",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-11-19T03:00:00Z",
+    "assets": [
+      {
+        "name": "Ashboard-Vision-Setup-nightly.exe",
+        "size": 51000000,
+        "browser_download_url": "https://github.com/Ashewos/ashboard-vision/releases/download/nightly/Ashboard-Vision-Setup-nightly.exe"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/Ashewos/ashboard-vision/releases/150",
+    "tag_name": "v1.0.0",
+    "name": "Ashboard Vision 1.0.0",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2026-11-10T09:00:00Z",
+    "assets": [
+      {
+        "name": "Ashboard-Vision-Setup-1.0.0.exe",
+        "size": 50000000,
+        "browser_download_url": "https://github.com/Ashewos/ashboard-vision/releases/download/v1.0.0/Ashboard-Vision-Setup-1.0.0.exe"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/Ashewos/ashboard-vision/releases/100",
+    "tag_name": "v0.9.0",
+    "name": "Ashboard Vision 0.9.0",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2026-11-01T09:00:00Z",
+    "assets": [
+      {
+        "name": "notes.txt",
+        "size": 1200,
+        "browser_download_url": "https://github.com/Ashewos/ashboard-vision/releases/download/v0.9.0/notes.txt"
+      }
+    ]
+  }
+]
