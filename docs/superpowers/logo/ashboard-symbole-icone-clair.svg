@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title">
+  <title id="title">Ashboard Vision (icône, fond clair)</title>
+  <!-- Pendant clair de l'icône : bloc en cendre légèrement ombré, liseré gris, fente en braise. -->
+  <defs>
+    <linearGradient id="liseré" gradientUnits="userSpaceOnUse" x1="128" y1="32" x2="128" y2="224">
+      <stop offset="0" stop-color="#D4D5DA"/>
+      <stop offset="1" stop-color="#A9ABB2"/>
+    </linearGradient>
+    <linearGradient id="cendre" gradientUnits="userSpaceOnUse" x1="128" y1="32" x2="128" y2="224">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E2E3E7"/>
+    </linearGradient>
+    <linearGradient id="braise" gradientUnits="userSpaceOnUse" x1="56" y1="124" x2="200" y2="124">
+      <stop offset="0" stop-color="#E8401C"/>
+      <stop offset="0.5" stop-color="#FF8A3A"/>
+      <stop offset="1" stop-color="#E8401C"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#liseré)" d="M96 32 H160 C205 32 224 51 224 96 V160 C224 205 205 224 160 224 H96 C51 224 32 205 32 160 V96 C32 51 51 32 96 32 Z"/>
+  <path fill="url(#cendre)" d="M96 35 H160 C203 35 221 53 221 96 V160 C221 203 203 221 160 221 H96 C53 221 35 203 35 160 V96 C35 53 53 35 96 35 Z"/>
+  <path fill="url(#braise)" d="M56 124 C96 100 160 100 200 124 C160 148 96 148 56 124 Z"/>
+</svg>

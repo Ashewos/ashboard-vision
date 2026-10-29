@@ -101,7 +101,41 @@ Au premier lancement, l'assistant de première ouverture qui existe déjà prend
 ### 4.6 Construction des versions
 Par **GitHub Actions**, quand Alex le demande : stable depuis `main`, bêta depuis `Canary`. GitHub construit, lance tous les tests, fabrique l'installateur et publie la version. C'est aussi la preuve publique que l'installateur sort du code du dépôt.
 
-### 4.7 Page GitHub
+### 4.7 Logo
+Alex l'a validé le 29/10/2026. Il a été fait avec la méthode du skill [logo-design-skill](https://github.com/kaankiziltug/logo-design-skill) (MIT), en suivant son texte, sans lancer ses scripts. Les maquettes de travail sont dans `.superpowers/brainstorm/`, et les fichiers SVG dans `docs/superpowers/logo/`.
+
+- **L'idée : la « fente de braise ».** Un bloc de charbon aux coins adoucis (courbure continue) est fendu d'une seule fente incandescente en lentille. La fente, c'est l'écran en bandeau qui s'allume. Elle se lit aussi comme un œil : la vision, l'information d'un coup d'œil.
+- **Construction :**
+  - grille de 256, bloc de 192, coins de 64 avec raccord progressif ;
+  - fente de 144 × 36, centrée 4 unités au-dessus du centre (centre optique) ;
+  - pour 16 à 24 px, une coupe dédiée : le bloc remplit le carré et la fente est plus haute.
+- **Palette :**
+  - Charbon `#17181C` et Braise `#FF5B1F` ;
+  - Lueur en dégradé `#E8401C` → `#FFB04A` → `#E8401C`, seulement en grand ;
+  - Cendre `#ECECEE`.
+
+  Le turquoise reste la couleur du logiciel, pas du logo.
+- **Le logo suit le thème de Windows** (demande d'Alex). En thème sombre, le bloc est sombre : charbon éclairé, liseré discret. En thème clair, il est clair : cendre légèrement ombrée, liseré gris. Seule la braise ressort.
+  - **Zone de notification** : `ashboard-symbole-petit-sombre.svg` ou `ashboard-symbole-petit-clair.svg`, choisi selon le thème de la barre des tâches. Le logiciel change d'icône quand le thème change.
+  - **Grande icône et logo avec le nom** : `ashboard-symbole-icone.svg` sur fond sombre, `ashboard-symbole-icone-clair.svg` sur fond clair. Sur fond clair, Alex préfère l'icône claire au charbon.
+  - **L'installateur suit aussi le thème de Windows** (demande d'Alex) : pages claires ou sombres, avec l'image d'assistant et le petit logo assortis. Inno Setup sait le faire depuis la version 6.6, d'après ce dont Claude se souvient : réglage `WizardStyle` « dynamique » et images pour le mode sombre. **Le constructeur le vérifie.** Si ce n'est pas possible, il le dit à Alex avant de choisir un autre outil.
+  - **L'icône du fichier** (`.exe`, raccourcis, liste des applications) ne peut pas changer avec le thème. Elle utilise `ashboard-symbole-icone.svg`, lisible sur les deux fonds grâce à son liseré.
+- **Autres fichiers :**
+  - `ashboard-symbole-couleur.svg` (référence à plat) ;
+  - `ashboard-symbole-braise.svg` ;
+  - `ashboard-symbole-noir.svg` et `ashboard-symbole-blanc.svg` (une couleur ; la version blanche a une fente affinée) ;
+  - `ashboard-symbole-petit.svg`.
+- **Le nom, avec le symbole** : « Ashboard » en Manrope Medium, suivi de « VISION » en petites capitales espacées.
+  - Il existe une version horizontale et une version empilée.
+  - Espace libre autour : au moins un quart de la largeur du symbole.
+- **Reste à faire dans le plan 6 :**
+  - convertir le nom en tracés (par exemple avec SkiaSharp, à partir de la police du dépôt) ;
+  - générer les fichiers `.ico` multi-tailles (16, 20, 24, 32, 48, 256) et les PNG, avec un petit outil du dépôt plutôt qu'à la main ;
+  - les images de l'assistant d'installation ;
+  - le logo dans la fenêtre de réglage et dans l'image d'accueil (5.6).
+- **Avant la version publique**, Claude recommande une recherche dans les registres de marques et par image inversée. Il ne peut pas garantir qu'aucun logo proche n'existe.
+
+### 4.8 Page GitHub
 - **En haut**, l'image d'accueil animée retenue. La maquette est `docs/superpowers/maquettes/readme-accueil-v4.html` :
   - style « produit premium » sur fond noir ;
   - l'écran incliné à 10° vers l'arrière ;
@@ -110,7 +144,7 @@ Par **GitHub Actions**, quand Alex le demande : stable depuis `main`, bêta depu
 - **Sous l'image** : badges (version, bêta, Windows, licence, téléchargements), liens rapides et bouton « Télécharger pour Windows ».
 - La suite reste sobre (5.6).
 
-### 4.8 Écrans
+### 4.9 Écrans
 - Seul l'écran d'Alex est pris en charge.
 - Le logiciel **reconnaît le modèle exact** grâce à la poignée de main : `0416:5408`, avec `PM = 64 + octet 20`, les valeurs 0 à 3 de l'octet comptant pour 1, ce qui donne 65. Il **dit clairement** quand l'écran branché n'est pas encore pris en charge, au lieu de tenter de l'utiliser.
 - **La limite de 450 Ko par image reste la même pour tous.** Elle existe déjà (`JpegEncoder.MaxBytes`, `LyProtocol.MaxJpegSize`) et ne s'est jamais déclenchée sur l'écran d'Alex : sur 4 013 relevés, la médiane est de 164 Ko et le maximum de 280 Ko, à la qualité 88.

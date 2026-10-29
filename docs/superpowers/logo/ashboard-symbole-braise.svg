@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title">
+  <title id="title">Ashboard Vision</title>
+  <defs>
+    <linearGradient id="braise" gradientUnits="userSpaceOnUse" x1="56" y1="124" x2="200" y2="124">
+      <stop offset="0" stop-color="#E8401C"/>
+      <stop offset="0.5" stop-color="#FFB04A"/>
+      <stop offset="1" stop-color="#E8401C"/>
+    </linearGradient>
+  </defs>
+  <path id="charbon" fill="#17181C" d="M96 32 H160 C205 32 224 51 224 96 V160 C224 205 205 224 160 224 H96 C51 224 32 205 32 160 V96 C32 51 51 32 96 32 Z"/>
+  <path id="fente" fill="url(#braise)" d="M56 124 C96 100 160 100 200 124 C160 148 96 148 56 124 Z"/>
+</svg>

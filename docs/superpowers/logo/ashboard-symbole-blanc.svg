@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title">
+  <title id="title">Ashboard Vision</title>
+  <!-- Version inversée : fente un peu plus fine (le blanc sur noir paraît plus gras). -->
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M96 32 H160 C205 32 224 51 224 96 V160 C224 205 205 224 160 224 H96 C51 224 32 205 32 160 V96 C32 51 51 32 96 32 Z M56 124 C96 101 160 101 200 124 C160 147 96 147 56 124 Z"/>
+</svg>
