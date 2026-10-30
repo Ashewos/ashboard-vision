@@ -35,12 +35,15 @@ public sealed class ServiceControlHandler(
     LayoutStore store, DisplayLoop loop, ModuleRegistry registry, Func<ScreenInfo> screen, Func<SensorInfo> sensors,
     ProcessMeter meter, Func<DashboardLayout, LoopConfig?, LoopConfig> buildConfig, IHotkeyHost? hotkeys, WarningSink? buildWarnings = null,
     LoopConfig? initialConfig = null, UpdateService? updates = null)
-    : IControlHandler
+    : IControlHandler, IDisposable
 {
     private static readonly string ServiceVersion = ReadVersion();
 
     /// <summary>La version qui tourne (<c>AssemblyInformationalVersion</c>, sans le <c>+hash</c> du commit).</summary>
     internal static string InstalledVersion => ServiceVersion;
+
+    // La vie du service : les installations lancées par une requête n'en dépendent pas.
+    private readonly CancellationTokenSource _lifetime = new();
 
     // Un rechargement à la fois : deux fenêtres de réglage ne s'entremêlent pas.
     private readonly SemaphoreSlim _reloadGate = new(1, 1);
@@ -232,14 +235,26 @@ public sealed class ServiceControlHandler(
     public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable, CancellationToken ct) =>
         updates?.SetPreferencesAsync(new UpdatePreferences(ToChannel(channel), waitForNextStable), ct) ?? Task.CompletedTask;
 
-    /// <summary>Demandé par la fenêtre de réglage : elle est ouverte, on la rouvre après l'installation.</summary>
+    /// <summary>
+    /// Demandé par la fenêtre de réglage : elle est ouverte, on la rouvre après l'installation. Une mise à jour acceptée va jusqu'au bout
+    /// même si la fenêtre se ferme : l'installation suit la vie du service, la requête ne fait qu'attendre le résultat.
+    /// </summary>
     public async Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade, CancellationToken ct)
     {
         if (updates is null) return new ActionResult(false, "Les mises à jour ne sont pas disponibles pour l'instant.");
 
-        var (ok, message) = await updates.InstallAsync(confirmDowngrade, reopenSettings: true, ct).ConfigureAwait(false);
+        var install = updates.InstallAsync(confirmDowngrade, reopenSettings: true, _lifetime.Token);
+        // Si on n'attend plus la requête, l'échec éventuel de l'installation est tout de même journalisé.
+        _ = install.ContinueWith(
+            t => Trace.TraceError($"Mise à jour : l'installation a échoué : {t.Exception?.GetBaseException()}"),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+
+        var (ok, message) = await install.WaitAsync(ct).ConfigureAwait(false);
         return new ActionResult(ok, message);
     }
+
+    /// <summary>L'arrêt du service annule l'installation en cours.</summary>
+    public void Dispose() => _lifetime.Cancel();
 
     /// <summary>L'état des mises à jour tel que la fenêtre de réglage le connaît.</summary>
     public static UpdateInfo ToUpdateInfo(UpdateStatus status) => new(

@@ -691,14 +691,26 @@ public sealed class ServiceControlHandlerTests
         public UpdateService Service { get; }
         public List<string> Requests { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        /// <summary>Si renseignée, la demande de l'empreinte attend qu'on la libère (le téléchargement est « en cours »).</summary>
+        public TaskCompletionSource? HoldDownload { get; set; }
+
+        /// <summary>Résolue quand la demande de l'empreinte est arrivée ; rend le jeton d'annulation qu'elle a reçu.</summary>
+        public TaskCompletionSource<CancellationToken> DownloadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri!.AbsoluteUri;
             lock (Requests) Requests.Add(url);
+            if (HoldDownload is { } hold && url.EndsWith(".sha256", StringComparison.Ordinal))
+            {
+                DownloadStarted.TrySetResult(cancellationToken);
+                await hold.Task.WaitAsync(cancellationToken);
+            }
+
             var response = url == ReleaseFeed.Url
                 ? new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(Feed) }
                 : new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
-            return Task.FromResult(response);
+            return response;
         }
 
         protected override void Dispose(bool disposing)
@@ -801,5 +813,49 @@ public sealed class ServiceControlHandlerTests
         Assert.False(confirmed.Ok);
         Assert.StartsWith("Le téléchargement a échoué", confirmed.Message);
         Assert.Contains(updates.Requests, u => u.EndsWith(".sha256", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InstallUpdate_RequestCancelled_DoesNotCancelTheInstallation()
+    {
+        using var updates = new UpdateRig();
+        using var rig = new Rig(updates: updates.Service);
+        await rig.Handler.CheckUpdatesAsync(CancellationToken.None);
+        updates.HoldDownload = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var request = new CancellationTokenSource();
+
+        var install = rig.Handler.InstallUpdateAsync(confirmDowngrade: true, request.Token);
+        var downloadToken = await updates.DownloadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        request.Cancel(); // la fenêtre de réglage se ferme pendant le téléchargement
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => install);
+        Assert.False(downloadToken.IsCancellationRequested);
+
+        // Le téléchargement continue : libéré, il va jusqu'au bout (ici l'installateur est introuvable, donc « échec », pas « annulé »).
+        updates.HoldDownload.SetResult();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (updates.Service.Current.State is UpdateState.Downloading or UpdateState.Available)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "L'installation ne s'est pas terminée.");
+            await Task.Delay(10);
+        }
+
+        Assert.Equal(UpdateState.Failed, updates.Service.Current.State);
+    }
+
+    [Fact]
+    public async Task InstallUpdate_ServiceStops_CancelsTheInstallation()
+    {
+        using var updates = new UpdateRig();
+        using var rig = new Rig(updates: updates.Service);
+        await rig.Handler.CheckUpdatesAsync(CancellationToken.None);
+        updates.HoldDownload = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var install = rig.Handler.InstallUpdateAsync(confirmDowngrade: true, CancellationToken.None);
+        var downloadToken = await updates.DownloadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        rig.Handler.Dispose();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => install);
+        Assert.True(downloadToken.IsCancellationRequested);
     }
 }

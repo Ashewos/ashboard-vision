@@ -44,6 +44,14 @@ static class Program
 
             // Avant d'ouvrir le journal, qui vit dans le nouveau dossier ; le résultat se journalise juste après.
             var move = LegacySettingsMove.Run(AppPaths.LegacySettingsDir, AppPaths.SettingsDir);
+            if (StopMessage(move, AppPaths.LegacySettingsDir, AppPaths.SettingsDir) is { } stop)
+            {
+                // Rien n'est créé dans le nouveau dossier (ni journal ni disposition par défaut) : le démarrage suivant réessaie.
+                ApplicationConfiguration.Initialize();
+                MessageBox.Show(stop, ProductIdentity.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return 1;
+            }
+
             InitializeLog();
             LogSettingsMove(move);
             Trace.TraceInformation("Démarrage du service d'affichage.");
@@ -63,6 +71,16 @@ static class Program
     }
 
     internal static bool HasFlag(string[] args, string flag) => args.Contains(flag, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// <c>null</c> : le démarrage continue. Sinon le message à montrer avant de s'arrêter : un déménagement raté ne perd rien (l'ancien
+    /// dossier reste en place), mais démarrer créerait le nouveau dossier et les anciens réglages ne seraient plus jamais déplacés.
+    /// </summary>
+    internal static string? StopMessage(LegacySettingsMove.MoveResult move, string legacyDir, string newDir) =>
+        move == LegacySettingsMove.MoveResult.Failed
+            ? $"Tes réglages d'avant le changement de nom n'ont pas pu être déplacés vers {newDir}. Ils sont intacts dans {legacyDir}. "
+              + "Ferme ce qui les utilise (l'ancien tableau de bord, sa fenêtre de réglage), puis relance Ashboard Vision."
+            : null;
 
     /// <summary>Une désinstallation silencieuse (sans fenêtre) garde les réglages ; sinon, la réponse à la question décide.</summary>
     internal static bool ShouldDeleteSettings(bool silent, Func<bool> askKeep) => !silent && !askKeep();
@@ -100,10 +118,6 @@ static class Program
                 break;
             case LegacySettingsMove.MoveResult.AlreadyMoved:
                 Trace.TraceInformation($"Les anciens réglages ({AppPaths.LegacySettingsDir}) sont gardés tels quels : {AppPaths.SettingsDir} existe déjà.");
-                break;
-            case LegacySettingsMove.MoveResult.Failed:
-                Trace.TraceWarning(
-                    $"Les anciens réglages ({AppPaths.LegacySettingsDir}) n'ont pas pu être déménagés vers {AppPaths.SettingsDir} : un fichier est peut-être ouvert.");
                 break;
         }
     }
@@ -198,7 +212,7 @@ static class Program
             using var hotkeys = StartHotkeys(layout, loop, SynchronizationContext.Current);
 
             var meter = new ProcessMeter(SampleProcess, TimeProvider.System, Environment.ProcessorCount);
-            var handler = new ServiceControlHandler(
+            using var handler = new ServiceControlHandler(
                 store, loop, registry, () => ServiceControlHandler.ToScreenInfo(screen.Status), () => ReadSensors(sensorPipe),
                 meter, BuildConfig, hotkeys?.Host, buildWarnings, config, updates);
             using var control = StartControl(handler);

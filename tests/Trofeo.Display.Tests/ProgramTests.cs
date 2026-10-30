@@ -1,3 +1,5 @@
+using Trofeo.Distribution;
+
 namespace Trofeo.Display.Tests;
 
 public sealed class ProgramTests
@@ -34,5 +36,26 @@ public sealed class ProgramTests
         Assert.True(Program.HasFlag(args, "--silencieux"));
         Assert.False(Program.HasFlag([], "--silencieux"));
         Assert.False(Program.HasFlag(["--autre"], "--desinstaller-utilisateur"));
+    }
+
+    [Theory]
+    [InlineData(LegacySettingsMove.MoveResult.NothingToMove)]
+    [InlineData(LegacySettingsMove.MoveResult.Moved)]
+    [InlineData(LegacySettingsMove.MoveResult.AlreadyMoved)]
+    public void StopMessage_MoveDidNotFail_Continues(LegacySettingsMove.MoveResult move)
+    {
+        Assert.Null(Program.StopMessage(move, "ancien", "nouveau"));
+    }
+
+    [Fact]
+    public void StopMessage_MoveFailed_StopsWithAMessageNamingBothFolders()
+    {
+        var message = Program.StopMessage(LegacySettingsMove.MoveResult.Failed, "C:/ancien", "C:/nouveau");
+
+        Assert.NotNull(message);
+        Assert.Contains("C:/nouveau", message);
+        Assert.Contains("C:/ancien", message);
+        Assert.Contains("intacts", message);
+        Assert.Contains("relance", message);
     }
 }
