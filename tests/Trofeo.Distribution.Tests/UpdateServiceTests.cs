@@ -175,7 +175,7 @@ public sealed class UpdateServiceTests
 
         h.Service.Start();
 
-        await UpdateHarness.Until(() => !Directory.Exists(h.DownloadDir) || Directory.GetFileSystemEntries(h.DownloadDir).Length == 0);
+        await UpdateHarness.Until(() => !Directory.Exists(h.DownloadDir)); // le dossier vidé est retiré avec ses fichiers (il peut disparaître entre deux regards : on ne le liste pas)
         Assert.Equal(0, h.FeedRequests); // rien n'a été demandé à GitHub : c'est la première vérification qui attend ses 60 s
     }
 
