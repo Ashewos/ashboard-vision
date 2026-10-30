@@ -67,7 +67,7 @@ internal static partial class Program
         }
 
         var installer = new HelperInstaller(new ProcessCommandRunner(), new PawnIoDetector(), AppContext.BaseDirectory, HelperIdentity.InstallDir,
-            legacyInstallDir: HelperIdentity.LegacyInstallDir);
+            legacyInstallDirs: HelperIdentity.LegacyInstallDirs);
         try
         {
             return args[0] == "install" ? Install(installer, pawnIoSetup) : Uninstall(installer);

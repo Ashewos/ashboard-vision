@@ -12,18 +12,25 @@ namespace Trofeo.Sensors;
 /// </summary>
 public static class HelperIdentity
 {
-    /// <summary><c>%ProgramFiles%\Ashboard Vision\sensors\</c>, séparateur final compris : dossier d'installation de l'assistant.</summary>
+    /// <summary>
+    /// <c>%ProgramFiles%\ashboard-vision\sensors\</c>, séparateur final compris : dossier d'installation de l'assistant. Il est
+    /// nommé avec l'identifiant technique et se trouve hors du dossier de l'application (<c>%ProgramFiles%\Ashboard Vision</c>,
+    /// d'où l'installateur lance l'assistant) : la copie de l'application ne doit pas descendre dans sa propre destination.
+    /// </summary>
     public static string InstallDir { get; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Ashboard Vision", "sensors")
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ashboard-vision", "sensors")
         + Path.DirectorySeparatorChar;
 
     /// <summary>
-    /// <c>%ProgramFiles%\trofeo-HB-dashboard\sensors\</c>, séparateur final compris : dossier d'installation d'avant le changement de
-    /// nom. L'installation de l'assistant le supprime.
+    /// Dossiers d'installation d'avant, séparateur final compris : <c>%ProgramFiles%\trofeo-HB-dashboard\sensors\</c> (avant le
+    /// changement de nom) et <c>%ProgramFiles%\Ashboard Vision\sensors\</c> (au cas où une version intermédiaire l'aurait créé).
+    /// L'installation de l'assistant les supprime.
     /// </summary>
-    public static string LegacyInstallDir { get; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "trofeo-HB-dashboard", "sensors")
-        + Path.DirectorySeparatorChar;
+    public static IReadOnlyList<string> LegacyInstallDirs { get; } =
+    [
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "trofeo-HB-dashboard", "sensors") + Path.DirectorySeparatorChar,
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Ashboard Vision", "sensors") + Path.DirectorySeparatorChar,
+    ];
 
     /// <summary>Vrai si le tube connecté appartient à SYSTEM ou aux Administrateurs. Toute erreur de lecture donne faux.</summary>
     public static bool IsTrusted(NamedPipeClientStream pipe)

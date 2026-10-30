@@ -8,17 +8,29 @@ public class HelperIdentityTests
     [Fact]
     public void InstallDir_IsProgramFilesSensorsFolder_WithTrailingSeparator()
     {
-        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Ashboard Vision", "sensors")
+        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ashboard-vision", "sensors")
             + Path.DirectorySeparatorChar;
         Assert.Equal(expected, HelperIdentity.InstallDir);
     }
 
     [Fact]
-    public void LegacyInstallDir_IsTheFolderOfTheOldName_WithTrailingSeparator()
+    public void InstallDir_IsNotInsideTheApplicationFolder()
     {
-        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "trofeo-HB-dashboard", "sensors")
-            + Path.DirectorySeparatorChar;
-        Assert.Equal(expected, HelperIdentity.LegacyInstallDir);
+        // L'installateur met l'application dans « Program Files\Ashboard Vision » : l'assistant ne doit pas s'y installer,
+        // sinon la copie de l'application y descendrait sans fin.
+        var appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Ashboard Vision") + Path.DirectorySeparatorChar;
+        Assert.False(HelperIdentity.InstallDir.StartsWith(appFolder, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void LegacyInstallDirs_AreTheFoldersOfTheOldNameAndOfTheApplicationSubfolder_WithTrailingSeparator()
+    {
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        Assert.Equal(
+        [
+            Path.Combine(programFiles, "trofeo-HB-dashboard", "sensors") + Path.DirectorySeparatorChar,
+            Path.Combine(programFiles, "Ashboard Vision", "sensors") + Path.DirectorySeparatorChar,
+        ], HelperIdentity.LegacyInstallDirs);
     }
 
     [Theory]

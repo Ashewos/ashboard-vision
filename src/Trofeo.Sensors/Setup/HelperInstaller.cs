@@ -26,13 +26,13 @@ public enum InstallResult
 /// <param name="sourceDir">Dossier d'où copier l'assistant (celui de l'exécutable en cours).</param>
 /// <param name="installDir">Dossier d'installation (voir <see cref="HelperIdentity.InstallDir"/>).</param>
 /// <param name="sleep">Attente entre deux essais quand un fichier est encore tenu par l'ancien assistant ; sert aux tests à ne pas dormir.</param>
-/// <param name="legacyInstallDir">
-/// Dossier d'installation d'avant le changement de nom (voir <see cref="HelperIdentity.LegacyInstallDir"/>), supprimé à
-/// l'installation. <c>null</c> : aucun dossier à supprimer (l'ancienne tâche, elle, est toujours retirée).
+/// <param name="legacyInstallDirs">
+/// Dossiers d'installation d'avant (voir <see cref="HelperIdentity.LegacyInstallDirs"/>), supprimés à l'installation.
+/// <c>null</c> : aucun dossier à supprimer (l'ancienne tâche, elle, est toujours retirée).
 /// </param>
 public sealed class HelperInstaller(
     ICommandRunner runner, IPawnIoDetector pawnIo, string sourceDir, string installDir, Action<TimeSpan>? sleep = null,
-    string? legacyInstallDir = null)
+    IReadOnlyList<string>? legacyInstallDirs = null)
 {
     private const string ExeName = "Trofeo.SensorHelper.exe";
     private const string StagedXmlName = "task.xml";
@@ -65,7 +65,7 @@ public sealed class HelperInstaller(
 
         runner.Run("schtasks", $"/End /TN {QuotedTask}"); // ancienne version éventuelle ; absente ou arrêtée : sans importance
 
-        if (!SameDirectory(sourceDir, installDir)) CopyDirectory(sourceDir, installDir);
+        if (!SameDirectory(sourceDir, installDir)) CopyDirectory(sourceDir, installDir, installDir);
 
         CreateTask();
 
@@ -74,24 +74,27 @@ public sealed class HelperInstaller(
     }
 
     /// <summary>
-    /// Retire l'installation d'avant le changement de nom : la tâche (arrêtée d'abord, pour que l'ancien assistant relâche ses
-    /// fichiers), puis son dossier. Une tâche absente n'est pas une erreur : les codes de sortie sont ignorés, rien n'est signalé.
-    /// Le dossier n'est pas supprimé si c'est celui d'où l'on s'exécute ou celui où l'on installe. S'il reste tenu après les
+    /// Retire l'installation d'avant : la tâche (arrêtée d'abord, pour que l'ancien assistant relâche ses fichiers), puis les
+    /// anciens dossiers. Une tâche absente n'est pas une erreur : les codes de sortie sont ignorés, rien n'est signalé.
+    /// Un dossier n'est pas supprimé si c'est celui d'où l'on s'exécute ou celui où l'on installe. S'il reste tenu après les
     /// attentes, il est laissé en place avec un avertissement dans la trace : la nouvelle installation n'en dépend pas.
     /// </summary>
     private void RemoveLegacy()
     {
         runner.Run("schtasks", $"/End /TN {QuotedLegacyTask}");
         runner.Run("schtasks", $"/Delete /TN {QuotedLegacyTask} /F");
-        if (legacyInstallDir is null || SameDirectory(sourceDir, legacyInstallDir) || SameDirectory(installDir, legacyInstallDir)) return;
-        if (!Directory.Exists(legacyInstallDir)) return;
-        try
+        foreach (var legacyInstallDir in legacyInstallDirs ?? [])
         {
-            Retry(() => Directory.Delete(legacyInstallDir, recursive: true));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Trace.TraceWarning($"Ancien dossier de l'assistant de capteurs non supprimé ({legacyInstallDir}) : {ex.Message}");
+            if (SameDirectory(sourceDir, legacyInstallDir) || SameDirectory(installDir, legacyInstallDir)) continue;
+            if (!Directory.Exists(legacyInstallDir)) continue;
+            try
+            {
+                Retry(() => Directory.Delete(legacyInstallDir, recursive: true));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Trace.TraceWarning($"Ancien dossier de l'assistant de capteurs non supprimé ({legacyInstallDir}) : {ex.Message}");
+            }
         }
     }
 
@@ -166,13 +169,15 @@ public sealed class HelperInstaller(
     /// <summary>
     /// Copie récursive qui écrase les fichiers existants et ne supprime rien. Les fichiers créés héritent des droits du dossier
     /// de destination. Les jonctions et liens symboliques sont ignorés : la copie est élevée et ne doit pas suivre un lien vers
-    /// un autre dossier (ni tourner en boucle sur un lien vers un parent).
+    /// un autre dossier (ni tourner en boucle sur un lien vers un parent). Une destination placée dans la source est ignorée
+    /// elle aussi : sinon la copie y descendrait sans fin.
     /// </summary>
-    private void CopyDirectory(string source, string destination)
+    private void CopyDirectory(string source, string destination, string excluded)
     {
         Directory.CreateDirectory(destination);
         foreach (var entry in new DirectoryInfo(source).EnumerateFileSystemInfos())
         {
+            if (entry is DirectoryInfo && SameDirectory(entry.FullName, excluded)) continue; // la destination de toute la copie, quand elle est dans la source
             if (IsReparsePoint(entry))
             {
                 Trace.TraceWarning($"Lien ignoré lors de la copie : {entry.FullName}");
@@ -180,7 +185,7 @@ public sealed class HelperInstaller(
             }
 
             var target = Path.Combine(destination, entry.Name);
-            if (entry is DirectoryInfo) CopyDirectory(entry.FullName, target);
+            if (entry is DirectoryInfo) CopyDirectory(entry.FullName, target, excluded);
             else Retry(() => File.Copy(entry.FullName, target, overwrite: true));
         }
     }

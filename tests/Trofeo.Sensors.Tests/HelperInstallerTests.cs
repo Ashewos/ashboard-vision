@@ -28,7 +28,7 @@ public sealed class HelperInstallerTests : IDisposable
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
-    private HelperInstaller Installer() => new(_runner, _pawnIo, _source, _install, _sleeps.Add, _legacy);
+    private HelperInstaller Installer() => new(_runner, _pawnIo, _source, _install, _sleeps.Add, [_legacy]);
 
     [Fact]
     public void Install_PawnIoMissing_NoPath_ChangesNothing()
@@ -96,6 +96,58 @@ public sealed class HelperInstallerTests : IDisposable
     }
 
     [Fact]
+    public void Install_RemovesEveryLegacyFolder()
+    {
+        _pawnIo.Installed = true;
+        var otherLegacy = Path.Combine(_root, "legacy2") + Path.DirectorySeparatorChar;
+        Directory.CreateDirectory(_legacy);
+        Directory.CreateDirectory(otherLegacy);
+        File.WriteAllText(Path.Combine(_legacy, "a.dll"), "a");
+        File.WriteAllText(Path.Combine(otherLegacy, "b.dll"), "b");
+        var installer = new HelperInstaller(_runner, _pawnIo, _source, _install, _sleeps.Add, [_legacy, otherLegacy]);
+
+        Assert.Equal(InstallResult.Installed, installer.Install(null));
+
+        Assert.False(Directory.Exists(_legacy));
+        Assert.False(Directory.Exists(otherLegacy));
+    }
+
+    [Fact]
+    public void Install_DestinationInsideSource_DoesNotCopyIntoItself()
+    {
+        // Cas réel : l'installateur lance l'assistant depuis le dossier de l'application, et la destination s'y trouve.
+        _pawnIo.Installed = true;
+        File.WriteAllText(Path.Combine(_source, "Trofeo.SensorHelper.exe"), "exe");
+        Directory.CreateDirectory(Path.Combine(_source, "lib"));
+        File.WriteAllText(Path.Combine(_source, "lib", "a.dll"), "a");
+        var nested = Path.Combine(_source, "sensors") + Path.DirectorySeparatorChar;
+        var installer = new HelperInstaller(_runner, _pawnIo, _source, nested, _sleeps.Add);
+
+        Assert.Equal(InstallResult.Installed, installer.Install(null));
+
+        Assert.True(File.Exists(Path.Combine(nested, "Trofeo.SensorHelper.exe")));
+        Assert.True(File.Exists(Path.Combine(nested, "lib", "a.dll")));
+        Assert.False(Directory.Exists(Path.Combine(nested, "sensors"))); // pas de copie de la destination dans elle-même
+    }
+
+    [Fact]
+    public void Install_DestinationDeeperInsideSource_CopiesTheRestOnce()
+    {
+        _pawnIo.Installed = true;
+        File.WriteAllText(Path.Combine(_source, "Trofeo.SensorHelper.exe"), "exe");
+        Directory.CreateDirectory(Path.Combine(_source, "lib"));
+        File.WriteAllText(Path.Combine(_source, "lib", "a.dll"), "a");
+        var nested = Path.Combine(_source, "lib", "sensors") + Path.DirectorySeparatorChar;
+        var installer = new HelperInstaller(_runner, _pawnIo, _source, nested, _sleeps.Add);
+
+        Assert.Equal(InstallResult.Installed, installer.Install(null));
+
+        Assert.True(File.Exists(Path.Combine(nested, "Trofeo.SensorHelper.exe")));
+        Assert.True(File.Exists(Path.Combine(nested, "lib", "a.dll")));
+        Assert.False(Directory.Exists(Path.Combine(nested, "lib", "sensors")));
+    }
+
+    [Fact]
     public void Install_LegacyTaskAbsent_IsSilent()
     {
         _pawnIo.Installed = true;
@@ -129,7 +181,7 @@ public sealed class HelperInstallerTests : IDisposable
     {
         _pawnIo.Installed = true;
         File.WriteAllText(Path.Combine(_source, "Trofeo.SensorHelper.exe"), "exe");
-        var installer = new HelperInstaller(_runner, _pawnIo, _source, _install, _sleeps.Add, _source + Path.DirectorySeparatorChar);
+        var installer = new HelperInstaller(_runner, _pawnIo, _source, _install, _sleeps.Add, [_source + Path.DirectorySeparatorChar]);
 
         Assert.Equal(InstallResult.Installed, installer.Install(null));
 
