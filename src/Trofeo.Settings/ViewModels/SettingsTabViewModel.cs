@@ -15,7 +15,7 @@ namespace Trofeo.Settings.ViewModels;
 /// <summary>
 /// L'onglet Paramètres : l'orientation de l'écran, le démarrage avec Windows, le plafond d'images par seconde, l'aperçu en
 /// rendu réel, l'installation du pilote des températures, la consommation, l'export et l'import d'une disposition, la
-/// version, et de quoi relancer l'assistant de première ouverture. Ce qui touche à la disposition (orientation, images par seconde, import) passe par <see cref="EditSession"/> : le
+/// version, les mises à jour (le canal Stable ou Bêta, la recherche, l'installation), et de quoi relancer l'assistant de première ouverture. Ce qui touche à la disposition (orientation, images par seconde, import) passe par <see cref="EditSession"/> : le
 /// même historique que les autres onglets. L'orientation et l'import s'enregistrent tout de suite ; le curseur, au lâcher.
 /// </summary>
 public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
@@ -41,6 +41,10 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     private bool _sensorsMessageIsError;
     private string? _shareMessage;
     private bool _shareMessageIsError;
+    private bool _updateBusy;
+    private string? _updateActionMessage;
+    private LinkUpdateState? _updateActionState;
+    private DowngradeDialogViewModel? _downgrade;
 
     public SettingsTabViewModel(
         IServiceLink link, EditSession session, PreferencesStore preferences, SystemServices system, IFilePicker? picker = null)
@@ -87,6 +91,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
         OnPropertyChanged(nameof(ServiceUsageText));
         OnPropertyChanged(nameof(OwnUsageText));
         OnPropertyChanged(nameof(VersionText));
+        RefreshUpdates();
         if (SensorsAreActive && _sensorsMessage is not null)
             ReportSensors(null, isError: false); // l'installation a abouti : le message n'a plus lieu d'être
     }
@@ -541,6 +546,178 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     {
         var version = typeof(SettingsTabViewModel).Assembly.GetName().Version;
         return version is null ? "" : $"{version.Major}.{version.Minor}.{version.Build}";
+    }
+
+    // ---- Mises à jour ----
+
+    private UpdateInfo? CurrentUpdate => _link.Updates;
+
+    /// <summary>Le canal en vigueur dans le service ; « Stable » tant qu'on ne sait pas (c'est le choix par défaut).</summary>
+    public bool IsStableChannel => CurrentUpdate is null || CurrentUpdate.Channel == LinkUpdateChannel.Stable;
+    public bool IsBetaChannel => CurrentUpdate?.Channel == LinkUpdateChannel.Beta;
+
+    /// <summary>Le service répond et aucune demande n'est en cours : le canal se choisit, l'installation se lance.</summary>
+    public bool UpdateControlsEnabled => CurrentUpdate is not null && !_updateBusy;
+
+    /// <summary>
+    /// Le message du service, tel quel. Le résultat d'une demande refusée (installation déjà lancée, autorisation de Windows non
+    /// donnée, liaison coupée) passe devant jusqu'à ce que l'état des mises à jour change.
+    /// </summary>
+    public string UpdateStatusText => _updateActionMessage ?? CurrentUpdate?.Message ?? "";
+    public bool HasUpdateStatus => !string.IsNullOrEmpty(UpdateStatusText);
+
+    /// <summary>Pas pendant la recherche ni le téléchargement. L'installateur lancé (« Installing ») ne verrouille rien : il arrête le service.</summary>
+    public bool CanCheckUpdates =>
+        CurrentUpdate is { State: not (LinkUpdateState.Checking or LinkUpdateState.Downloading) } && !_updateBusy;
+
+    /// <summary>Une version est proposée. Après un échec, l'offre est gardée (comme l'icône de notification) : on peut réessayer.</summary>
+    public bool CanInstallUpdate =>
+        CurrentUpdate is { Version: not null, State: LinkUpdateState.Available or LinkUpdateState.Failed };
+
+    /// <summary>Le bouton « Installer… » : caché pendant que la boîte du retour en arrière pose la même question.</summary>
+    public bool ShowInstallUpdate => CanInstallUpdate && _downgrade is null;
+
+    public string InstallUpdateText => string.Format(Texts.UpdatesInstall, CurrentUpdate?.Version);
+
+    /// <summary>La boîte du retour de la bêta à la stable, tant qu'elle attend la réponse ; sinon <c>null</c>.</summary>
+    public DowngradeDialogViewModel? Downgrade
+    {
+        get => _downgrade;
+        private set
+        {
+            if (ReferenceEquals(value, _downgrade))
+                return;
+            _downgrade = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDowngrade));
+            OnPropertyChanged(nameof(ShowInstallUpdate));
+        }
+    }
+
+    public bool HasDowngrade => _downgrade is not null;
+
+    [RelayCommand]
+    private Task SetStableAsync() => SetChannelAsync(LinkUpdateChannel.Stable);
+
+    [RelayCommand]
+    private Task SetBetaAsync() => SetChannelAsync(LinkUpdateChannel.Beta);
+
+    /// <summary>
+    /// Choisit le canal. Repasser de la bêta à la stable fait proposer la dernière stable, plus ancienne : la boîte s'ouvre alors,
+    /// rien n'est installé avant la réponse.
+    /// </summary>
+    public async Task SetChannelAsync(LinkUpdateChannel channel)
+    {
+        if (_updateBusy || CurrentUpdate is not { } before || before.Channel == channel)
+            return;
+
+        var leavesBeta = before.Channel == LinkUpdateChannel.Beta && channel == LinkUpdateChannel.Stable;
+        if (await RunUpdateAsync(() => _link.SetUpdatePreferencesAsync(channel, false)).ConfigureAwait(true)
+            && leavesBeta && CurrentUpdate is { State: LinkUpdateState.Available, IsDowngrade: true, Version: { } version })
+            OpenDowngrade(version);
+    }
+
+    /// <summary>« Rechercher maintenant ».</summary>
+    [RelayCommand]
+    public async Task CheckUpdatesAsync()
+    {
+        if (!CanCheckUpdates)
+            return;
+        await RunUpdateAsync(() => _link.CheckUpdatesAsync()).ConfigureAwait(true);
+    }
+
+    /// <summary>« Installer la version… » : un retour en arrière passe d'abord par la boîte.</summary>
+    [RelayCommand]
+    public async Task InstallUpdateAsync()
+    {
+        if (_updateBusy || !CanInstallUpdate || CurrentUpdate is not { Version: { } version } offer)
+            return;
+        if (offer.IsDowngrade)
+        {
+            OpenDowngrade(version);
+            return;
+        }
+
+        await InstallAsync(confirmDowngrade: false).ConfigureAwait(true);
+    }
+
+    private void OpenDowngrade(string version) =>
+        Downgrade = new DowngradeDialogViewModel(version, ConfirmDowngradeAsync, () => Downgrade = null);
+
+    // « Garder ma bêta » (case cochée) enregistre le choix sans rien installer ; sinon, l'installation de la stable est confirmée.
+    private async Task ConfirmDowngradeAsync(bool waitForNextStable)
+    {
+        Downgrade = null;
+        if (waitForNextStable)
+            await RunUpdateAsync(() => _link.SetUpdatePreferencesAsync(LinkUpdateChannel.Stable, waitForNextStable: true)).ConfigureAwait(true);
+        else
+            await InstallAsync(confirmDowngrade: true).ConfigureAwait(true);
+    }
+
+    private Task<bool> InstallAsync(bool confirmDowngrade) => RunUpdateAsync(async () =>
+    {
+        var result = await _link.InstallUpdateAsync(confirmDowngrade).ConfigureAwait(true);
+        if (!result.Ok)
+            ReportUpdate(result.Message);
+    });
+
+    /// <summary>Une demande au service. Vrai si elle a abouti ; une liaison coupée affiche son message à la place de l'état.</summary>
+    private async Task<bool> RunUpdateAsync(Func<Task> request)
+    {
+        ReportUpdate(null);
+        _updateBusy = true;
+        NotifyUpdates();
+        try
+        {
+            await request().ConfigureAwait(true);
+            return true;
+        }
+        catch (ControlException ex)
+        {
+            ReportUpdate(ex.Message);
+            return false;
+        }
+        finally
+        {
+            _updateBusy = false;
+            NotifyUpdates();
+        }
+    }
+
+    private void ReportUpdate(string? message)
+    {
+        _updateActionMessage = message;
+        _updateActionState = message is null ? null : CurrentUpdate?.State;
+        OnPropertyChanged(nameof(UpdateStatusText));
+        OnPropertyChanged(nameof(HasUpdateStatus));
+    }
+
+    /// <summary>Le service a relu l'état des mises à jour : un message de demande refusée s'efface dès que l'état change, la boîte se ferme si l'offre a disparu.</summary>
+    private void RefreshUpdates()
+    {
+        if (_updateActionMessage is not null && CurrentUpdate?.State != _updateActionState)
+        {
+            _updateActionMessage = null;
+            _updateActionState = null;
+        }
+
+        if (_downgrade is not null && !(CanInstallUpdate && CurrentUpdate is { IsDowngrade: true }))
+            Downgrade = null;
+
+        NotifyUpdates();
+    }
+
+    private void NotifyUpdates()
+    {
+        OnPropertyChanged(nameof(IsStableChannel));
+        OnPropertyChanged(nameof(IsBetaChannel));
+        OnPropertyChanged(nameof(UpdateControlsEnabled));
+        OnPropertyChanged(nameof(UpdateStatusText));
+        OnPropertyChanged(nameof(HasUpdateStatus));
+        OnPropertyChanged(nameof(CanCheckUpdates));
+        OnPropertyChanged(nameof(CanInstallUpdate));
+        OnPropertyChanged(nameof(ShowInstallUpdate));
+        OnPropertyChanged(nameof(InstallUpdateText));
     }
 
     // ---- État ----

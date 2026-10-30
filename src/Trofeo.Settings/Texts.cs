@@ -421,4 +421,22 @@ public static class Texts
     public static string SettingsFirstRunHelp => Get();
     /// <summary>Bouton.</summary>
     public static string SettingsFirstRunRestart => Get();
+    /// <summary>Titre de section, dans Paramètres.</summary>
+    public static string SettingsUpdates => Get();
+    /// <summary>Nom du choix entre Stable et Bêta (et nom accessible de ses deux boutons).</summary>
+    public static string UpdatesChannel => Get();
+    /// <summary>Bouton du choix de version : seulement les versions stables.</summary>
+    public static string UpdatesStable => Get();
+    /// <summary>Bouton du choix de version : aussi les bêtas d'essai.</summary>
+    public static string UpdatesBeta => Get();
+    /// <summary>Bouton : cherche une mise à jour tout de suite.</summary>
+    public static string UpdatesCheck => Get();
+    /// <summary>Bouton. {0} : la version proposée.</summary>
+    public static string UpdatesInstall => Get();
+    /// <summary>Boîte du retour de la bêta à la stable. {0} : la version stable proposée.</summary>
+    public static string UpdatesDowngrade => Get();
+    /// <summary>Case de la boîte du retour en arrière : garde la bêta jusqu'à une stable plus récente.</summary>
+    public static string UpdatesWaitForStable => Get();
+    /// <summary>Bouton de la boîte du retour en arrière quand la case « attendre » est cochée : rien n'est installé.</summary>
+    public static string UpdatesKeepBeta => Get();
 }

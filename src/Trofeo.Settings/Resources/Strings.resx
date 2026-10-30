@@ -802,4 +802,40 @@
     <value>Relancer l'assistant</value>
     <comment>Bouton.</comment>
   </data>
+  <data name="SettingsUpdates" xml:space="preserve">
+    <value>Mises à jour</value>
+    <comment>Titre de section, dans Paramètres.</comment>
+  </data>
+  <data name="UpdatesChannel" xml:space="preserve">
+    <value>Version</value>
+    <comment>Nom du choix entre Stable et Bêta (et nom accessible de ses deux boutons).</comment>
+  </data>
+  <data name="UpdatesStable" xml:space="preserve">
+    <value>Stable</value>
+    <comment>Bouton du choix de version : seulement les versions stables.</comment>
+  </data>
+  <data name="UpdatesBeta" xml:space="preserve">
+    <value>Bêta</value>
+    <comment>Bouton du choix de version : aussi les bêtas d'essai.</comment>
+  </data>
+  <data name="UpdatesCheck" xml:space="preserve">
+    <value>Rechercher maintenant</value>
+    <comment>Bouton : cherche une mise à jour tout de suite.</comment>
+  </data>
+  <data name="UpdatesInstall" xml:space="preserve">
+    <value>Installer la version {0}</value>
+    <comment>Bouton. {0} : la version proposée.</comment>
+  </data>
+  <data name="UpdatesDowngrade" xml:space="preserve">
+    <value>Tu repasses à la version stable {0}, plus ancienne que ta bêta. Les réglages enregistrés par la bêta pourraient mal se relire : une copie en est faite avant.</value>
+    <comment>Boîte du retour de la bêta à la stable. {0} : la version stable proposée.</comment>
+  </data>
+  <data name="UpdatesWaitForStable" xml:space="preserve">
+    <value>Attendre la prochaine version stable</value>
+    <comment>Case de la boîte du retour en arrière : garde la bêta jusqu'à une stable plus récente.</comment>
+  </data>
+  <data name="UpdatesKeepBeta" xml:space="preserve">
+    <value>Garder ma bêta</value>
+    <comment>Bouton de la boîte du retour en arrière quand la case « attendre » est cochée : rien n'est installé.</comment>
+  </data>
 </root>

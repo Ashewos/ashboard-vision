@@ -45,11 +45,30 @@ public class ServiceLinkTests
         public Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct) =>
             Task.FromResult(new ActionResult(true, "ok"));
 
-        public UpdateInfo GetUpdate() => new(LinkUpdateState.Unknown, null, false, null, null, LinkUpdateChannel.Stable, false);
-        public Task CheckUpdatesAsync(CancellationToken ct) => Task.CompletedTask;
-        public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable, CancellationToken ct) => Task.CompletedTask;
-        public Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade, CancellationToken ct) =>
-            Task.FromResult(new ActionResult(false, "Pas de mise à jour."));
+        public volatile UpdateInfo Update = new(LinkUpdateState.Unknown, null, false, null, null, LinkUpdateChannel.Stable, false);
+        public readonly ConcurrentQueue<string> UpdateCalls = new();
+
+        public UpdateInfo GetUpdate() => Update;
+
+        public Task CheckUpdatesAsync(CancellationToken ct)
+        {
+            UpdateCalls.Enqueue("check");
+            Update = new UpdateInfo(LinkUpdateState.Available, "0.9.0", false, null, "La version 0.9.0 est disponible.", Update.Channel, Update.WaitForNextStable);
+            return Task.CompletedTask;
+        }
+
+        public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable, CancellationToken ct)
+        {
+            UpdateCalls.Enqueue($"prefs {channel} {waitForNextStable}");
+            Update = Update with { Channel = channel, WaitForNextStable = waitForNextStable };
+            return Task.CompletedTask;
+        }
+
+        public Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade, CancellationToken ct)
+        {
+            UpdateCalls.Enqueue($"install {confirmDowngrade}");
+            return Task.FromResult(new ActionResult(false, "Mise à jour annulée : l'autorisation n'a pas été donnée."));
+        }
 
         public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame)
         {
@@ -88,6 +107,34 @@ public class ServiceLinkTests
         again.Start();
         await WaitUntilAsync(() => link.State == LinkState.Connected, "reconnexion");
         Assert.NotNull(link.Welcome);
+    }
+
+    [Fact]
+    public async Task Link_ReadsTheUpdates_AndSendsTheRequests()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler();
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+
+        await WaitUntilAsync(() => link.Updates is not null, "premier état des mises à jour");
+        Assert.Equal(LinkUpdateState.Unknown, link.Updates!.State);
+
+        // La recherche et le choix du canal rendent la main avec l'état déjà à jour (sans attendre la relecture suivante).
+        await link.CheckUpdatesAsync();
+        Assert.Equal(LinkUpdateState.Available, link.Updates!.State);
+        await link.SetUpdatePreferencesAsync(LinkUpdateChannel.Beta, waitForNextStable: false);
+        Assert.Equal(LinkUpdateChannel.Beta, link.Updates!.Channel);
+
+        var result = await link.InstallUpdateAsync(confirmDowngrade: true);
+        Assert.False(result.Ok);
+        Assert.Equal("Mise à jour annulée : l'autorisation n'a pas été donnée.", result.Message);
+        Assert.Equal(["check", "prefs Beta False", "install True"], handler.UpdateCalls.ToArray());
+
+        // L'état change côté service : la relecture de chaque seconde le rapporte.
+        handler.Update = handler.Update with { State = LinkUpdateState.UpToDate };
+        await WaitUntilAsync(() => link.Updates!.State == LinkUpdateState.UpToDate, "relecture des mises à jour");
     }
 
     [Fact]

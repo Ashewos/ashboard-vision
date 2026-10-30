@@ -10,6 +10,7 @@ public sealed class FakeServiceLink : IServiceLink
     public LinkState State { get; set; } = LinkState.Connected;
     public Welcome? Welcome { get; set; }
     public ServiceStatus? Status { get; set; }
+    public UpdateInfo? Updates { get; set; }
 
     public event Action? Changed;
     public event Action<PreviewFrame>? FrameReceived;
@@ -75,6 +76,51 @@ public sealed class FakeServiceLink : IServiceLink
     {
         Restarts.Add(instanceId);
         return OnRestart(instanceId);
+    }
+
+    /// <summary>Change l'état des mises à jour et prévient les abonnés.</summary>
+    public void SetUpdates(UpdateInfo? updates)
+    {
+        Updates = updates;
+        Changed?.Invoke();
+    }
+
+    /// <summary>Les recherches de mise à jour demandées.</summary>
+    public int CheckUpdatesCount { get; private set; }
+
+    public Func<Task> OnCheckUpdates { get; set; } = () => Task.CompletedTask;
+
+    public Task CheckUpdatesAsync()
+    {
+        CheckUpdatesCount++;
+        return OnCheckUpdates();
+    }
+
+    /// <summary>Les choix de canal envoyés, dans l'ordre.</summary>
+    public List<(LinkUpdateChannel Channel, bool WaitForNextStable)> UpdatePreferences { get; } = [];
+
+    /// <summary>Par défaut, comme le service : le choix est gardé dans l'état des mises à jour.</summary>
+    public Func<LinkUpdateChannel, bool, Task> OnSetUpdatePreferences { get; set; } = null!;
+
+    public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable)
+    {
+        UpdatePreferences.Add((channel, waitForNextStable));
+        if (OnSetUpdatePreferences is not null)
+            return OnSetUpdatePreferences(channel, waitForNextStable);
+        if (Updates is { } current)
+            SetUpdates(current with { Channel = channel, WaitForNextStable = waitForNextStable });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Les installations demandées (la valeur de <c>confirmDowngrade</c>), dans l'ordre.</summary>
+    public List<bool> UpdateInstalls { get; } = [];
+
+    public Func<bool, Task<ActionResult>> OnInstallUpdate { get; set; } = _ => Task.FromResult(new ActionResult(true, ""));
+
+    public Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade)
+    {
+        UpdateInstalls.Add(confirmDowngrade);
+        return OnInstallUpdate(confirmDowngrade);
     }
 
     public Task<bool> StartServiceAsync()

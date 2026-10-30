@@ -56,6 +56,7 @@ public sealed class ServiceLink : IServiceLink
     public LinkState State { get; private set; } = LinkState.Connecting;
     public Welcome? Welcome { get; private set; }
     public ServiceStatus? Status { get; private set; }
+    public UpdateInfo? Updates { get; private set; }
 
     public event Action? Changed;
     public event Action<PreviewFrame>? FrameReceived;
@@ -101,6 +102,24 @@ public sealed class ServiceLink : IServiceLink
 
     public Task<bool> RestartModuleAsync(Guid instanceId) =>
         RequestAsync((client, ct) => client.RestartModuleAsync(instanceId, ct));
+
+    public Task CheckUpdatesAsync() => RequestAsync(async (client, ct) =>
+    {
+        await client.CheckUpdatesAsync(ct).ConfigureAwait(false);
+        await RefreshUpdatesAsync(client, ct).ConfigureAwait(false);
+        return true;
+    });
+
+    public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable) => RequestAsync(async (client, ct) =>
+    {
+        await client.SetUpdatePreferencesAsync(channel, waitForNextStable, ct).ConfigureAwait(false);
+        await RefreshUpdatesAsync(client, ct).ConfigureAwait(false);
+        return true;
+    });
+
+    // Pas de relecture après l'installation : l'installateur arrête le service, la fenêtre se ferme avec lui.
+    public Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade) =>
+        RequestAsync((client, ct) => client.InstallUpdateAsync(confirmDowngrade, ct));
 
     /// <summary>
     /// Une demande au service. Une liaison fermée ou coupée en route (annulation, objet libéré) devient une
@@ -168,7 +187,7 @@ public sealed class ServiceLink : IServiceLink
                 // Pas de service, version de protocole différente, tube qui se ferme, erreur inattendue du système : un échec
                 // de plus. Aucune exception ne remonte vers l'interface.
                 if (client is null && Interlocked.Increment(ref _failures) >= FailuresBeforeStopped)
-                    Update(() => { State = LinkState.ServiceStopped; Welcome = null; Status = null; }, onlyIf: () => State != LinkState.ServiceStopped);
+                    Update(() => { State = LinkState.ServiceStopped; Welcome = null; Status = null; Updates = null; }, onlyIf: () => State != LinkState.ServiceStopped);
             }
             finally
             {
@@ -182,7 +201,7 @@ public sealed class ServiceLink : IServiceLink
 
             // Connectée puis coupée : on repart à « Connecting » ; ServiceStopped ne se déclare qu'après trois échecs de connexion.
             if (client is not null && !ct.IsCancellationRequested)
-                Update(() => { State = LinkState.Connecting; Welcome = null; Status = null; });
+                Update(() => { State = LinkState.Connecting; Welcome = null; Status = null; Updates = null; });
 
             var wait = _retryDelay - (DateTime.UtcNow - attemptStarted);
             if (wait > TimeSpan.Zero)
@@ -209,7 +228,8 @@ public sealed class ServiceLink : IServiceLink
 
         await client.SubscribePreviewAsync(fps, ct).ConfigureAwait(false);
         var status = await client.GetStatusAsync(ct).ConfigureAwait(false);
-        Update(() => { State = LinkState.Connected; Welcome = client.Welcome; Status = status; });
+        var updates = await TryGetUpdateAsync(client, ct).ConfigureAwait(false);
+        Update(() => { State = LinkState.Connected; Welcome = client.Welcome; Status = status; Updates = updates; });
 
         while (true)
         {
@@ -217,8 +237,23 @@ public sealed class ServiceLink : IServiceLink
             if (finished == lost.Task)
                 return;
             status = await client.GetStatusAsync(ct).ConfigureAwait(false);
-            Update(() => Status = status);
+            updates = await TryGetUpdateAsync(client, ct).ConfigureAwait(false) ?? updates;
+            Update(() => { Status = status; Updates = updates; });
         }
+    }
+
+    /// <summary>Relit l'état des mises à jour et le publie tout de suite (sans attendre la relecture de la seconde suivante).</summary>
+    private async Task RefreshUpdatesAsync(ControlClient client, CancellationToken ct)
+    {
+        if (await TryGetUpdateAsync(client, ct).ConfigureAwait(false) is { } updates)
+            Update(() => Updates = updates);
+    }
+
+    // Un service qui refuse la demande (version plus ancienne) ne coupe pas la liaison : on garde ce qu'on avait.
+    private static async Task<UpdateInfo?> TryGetUpdateAsync(ControlClient client, CancellationToken ct)
+    {
+        try { return await client.GetUpdateAsync(ct).ConfigureAwait(false); }
+        catch (ControlException) { return null; }
     }
 
     private static async Task SubscribeQuietlyAsync(ControlClient client, int fps)
