@@ -100,7 +100,7 @@ public sealed class FakeServiceLink : IServiceLink
     public List<(LinkUpdateChannel Channel, bool WaitForNextStable)> UpdatePreferences { get; } = [];
 
     /// <summary>Par défaut, comme le service : le choix est gardé dans l'état des mises à jour.</summary>
-    public Func<LinkUpdateChannel, bool, Task> OnSetUpdatePreferences { get; set; } = null!;
+    public Func<LinkUpdateChannel, bool, Task>? OnSetUpdatePreferences { get; set; }
 
     public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable)
     {

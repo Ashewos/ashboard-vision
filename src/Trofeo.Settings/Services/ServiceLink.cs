@@ -30,6 +30,7 @@ public sealed class ServiceLink : IServiceLink
     private PreviewFrame? _pendingFrame;
     private int _failures;
     private int _disposed;
+    private long _updatesGeneration;
 
     /// <param name="pipeName">Le tube du service.</param>
     /// <param name="retryDelay">Délai entre deux tentatives de connexion (2 s).</param>
@@ -228,8 +229,9 @@ public sealed class ServiceLink : IServiceLink
 
         await client.SubscribePreviewAsync(fps, ct).ConfigureAwait(false);
         var status = await client.GetStatusAsync(ct).ConfigureAwait(false);
+        var generation = Volatile.Read(ref _updatesGeneration);
         var updates = await TryGetUpdateAsync(client, ct).ConfigureAwait(false);
-        Update(() => { State = LinkState.Connected; Welcome = client.Welcome; Status = status; Updates = updates; });
+        Update(() => { ApplyUpdates(updates, generation); State = LinkState.Connected; Welcome = client.Welcome; Status = status; });
 
         while (true)
         {
@@ -237,16 +239,31 @@ public sealed class ServiceLink : IServiceLink
             if (finished == lost.Task)
                 return;
             status = await client.GetStatusAsync(ct).ConfigureAwait(false);
-            updates = await TryGetUpdateAsync(client, ct).ConfigureAwait(false) ?? updates;
-            Update(() => { Status = status; Updates = updates; });
+            generation = Volatile.Read(ref _updatesGeneration);
+            updates = await TryGetUpdateAsync(client, ct).ConfigureAwait(false);
+            Update(() => { Status = status; ApplyUpdates(updates, generation); });
         }
+    }
+
+    /// <summary>
+    /// Publie une lecture des mises à jour (sur le fil de l'interface), sauf si elle est périmée : une demande de la fenêtre
+    /// (<see cref="RefreshUpdatesAsync"/>) a relu l'état depuis, et cette lecture-ci a pu partir avant. Une valeur égale à l'actuelle
+    /// n'est pas republiée.
+    /// </summary>
+    private void ApplyUpdates(UpdateInfo? updates, long generation)
+    {
+        if (updates is null || generation != Volatile.Read(ref _updatesGeneration) || Equals(Updates, updates))
+            return;
+        Updates = updates;
     }
 
     /// <summary>Relit l'état des mises à jour et le publie tout de suite (sans attendre la relecture de la seconde suivante).</summary>
     private async Task RefreshUpdatesAsync(ControlClient client, CancellationToken ct)
     {
-        if (await TryGetUpdateAsync(client, ct).ConfigureAwait(false) is { } updates)
-            Update(() => Updates = updates);
+        // Le compteur change avant la lecture : toute lecture de la boucle déjà partie sera écartée à son arrivée.
+        var generation = Interlocked.Increment(ref _updatesGeneration);
+        var updates = await TryGetUpdateAsync(client, ct).ConfigureAwait(false);
+        Update(() => ApplyUpdates(updates, generation));
     }
 
     // Un service qui refuse la demande (version plus ancienne) ne coupe pas la liaison : on garde ce qu'on avait.

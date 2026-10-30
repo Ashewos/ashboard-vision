@@ -45,10 +45,25 @@ public class ServiceLinkTests
         public Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct) =>
             Task.FromResult(new ActionResult(true, "ok"));
 
+        /// <summary>Si posé, la prochaine lecture des mises à jour rend l'état d'avant puis attend <see cref="ReleaseStale"/> : une lecture périmée.</summary>
+        public volatile bool StallNextRead;
+        public readonly ManualResetEventSlim Stalled = new(false);
+        public readonly ManualResetEventSlim ReleaseStale = new(false);
         public volatile UpdateInfo Update = new(LinkUpdateState.Unknown, null, false, null, null, LinkUpdateChannel.Stable, false);
         public readonly ConcurrentQueue<string> UpdateCalls = new();
 
-        public UpdateInfo GetUpdate() => Update;
+        public UpdateInfo GetUpdate()
+        {
+            var current = Update;
+            if (StallNextRead)
+            {
+                StallNextRead = false;
+                Stalled.Set();
+                ReleaseStale.Wait(TimeSpan.FromSeconds(15));
+            }
+
+            return current;
+        }
 
         public Task CheckUpdatesAsync(CancellationToken ct)
         {
@@ -135,6 +150,28 @@ public class ServiceLinkTests
         // L'état change côté service : la relecture de chaque seconde le rapporte.
         handler.Update = handler.Update with { State = LinkUpdateState.UpToDate };
         await WaitUntilAsync(() => link.Updates!.State == LinkUpdateState.UpToDate, "relecture des mises à jour");
+    }
+
+    [Fact]
+    public async Task Link_StaleUpdateRead_DoesNotOverwriteANewerOne()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler { StallNextRead = true };
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        // Relecture de la boucle toutes les 30 s : la lecture périmée est la seule qui puisse écraser.
+        await using var link = new ServiceLink(
+            pipe, retryDelay: TimeSpan.FromMilliseconds(60), connectTimeout: TimeSpan.FromMilliseconds(150), statusInterval: TimeSpan.FromSeconds(30));
+
+        // La première lecture (Stable) est partie, mais n'est pas encore arrivée.
+        Assert.True(handler.Stalled.Wait(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken));
+        await link.SetUpdatePreferencesAsync(LinkUpdateChannel.Beta, waitForNextStable: false);
+        Assert.Equal(LinkUpdateChannel.Beta, link.Updates!.Channel);
+
+        handler.ReleaseStale.Set();
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+
+        Assert.Equal(LinkUpdateChannel.Beta, link.Updates!.Channel); // la lecture périmée (Stable) est écartée
     }
 
     [Fact]

@@ -311,6 +311,35 @@ public sealed class SettingsTabUpdateTests : IDisposable
         Assert.Contains(nameof(SettingsTabViewModel.CanCheckUpdates), changed);
     }
 
+    [Theory]
+    [InlineData(LinkUpdateState.Checking)]
+    [InlineData(LinkUpdateState.Downloading)]
+    public async Task ChannelChoice_DisabledWhileCheckingOrDownloading(LinkUpdateState state)
+    {
+        var tab = Open(Info(state, "0.9.0"));
+
+        Assert.False(tab.UpdateControlsEnabled);
+        await tab.SetChannelAsync(LinkUpdateChannel.Beta);
+
+        Assert.Empty(_link.UpdatePreferences); // une demande attendrait le verrou du service jusqu'à 45 s
+    }
+
+    [Fact]
+    public void UpdateProperties_NotRaisedAgain_WhenTheServiceReportsTheSameState()
+    {
+        var tab = Open(Info(LinkUpdateState.UpToDate, message: "Tu as la dernière version."));
+        _link.SetUpdates(Info(LinkUpdateState.UpToDate, message: "Tu as la dernière version.")); // première relecture : prise en compte
+        var changed = new List<string?>();
+        tab.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        _link.SetUpdates(Info(LinkUpdateState.UpToDate, message: "Tu as la dernière version.")); // la même chose, une seconde plus tard
+        Assert.DoesNotContain(nameof(SettingsTabViewModel.UpdateStatusText), changed);
+        Assert.DoesNotContain(nameof(SettingsTabViewModel.CanCheckUpdates), changed);
+
+        _link.SetUpdates(Info(LinkUpdateState.Available, "0.9.0", message: "La version 0.9.0 est disponible."));
+        Assert.Contains(nameof(SettingsTabViewModel.UpdateStatusText), changed);
+    }
+
     // ---- Dans la vraie fenêtre ----
 
     [AvaloniaFact]

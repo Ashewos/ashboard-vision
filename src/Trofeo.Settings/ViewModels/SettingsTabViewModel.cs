@@ -45,6 +45,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     private string? _updateActionMessage;
     private LinkUpdateState? _updateActionState;
     private DowngradeDialogViewModel? _downgrade;
+    private UpdateInfo? _seenUpdate;
 
     public SettingsTabViewModel(
         IServiceLink link, EditSession session, PreferencesStore preferences, SystemServices system, IFilePicker? picker = null)
@@ -556,8 +557,11 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     public bool IsStableChannel => CurrentUpdate is null || CurrentUpdate.Channel == LinkUpdateChannel.Stable;
     public bool IsBetaChannel => CurrentUpdate?.Channel == LinkUpdateChannel.Beta;
 
-    /// <summary>Le service répond et aucune demande n'est en cours : le canal se choisit, l'installation se lance.</summary>
-    public bool UpdateControlsEnabled => CurrentUpdate is not null && !_updateBusy;
+    /// <summary>
+    /// Le service répond, aucune demande n'est en cours et il ne cherche ni ne télécharge : le canal se choisit, l'installation se
+    /// lance. Pendant la recherche, une demande attendrait le verrou du service jusqu'au délai (45 s).
+    /// </summary>
+    public bool UpdateControlsEnabled => CanCheckUpdates;
 
     /// <summary>
     /// Le message du service, tel quel. Le résultat d'une demande refusée (installation déjà lancée, autorisation de Windows non
@@ -608,7 +612,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     /// </summary>
     public async Task SetChannelAsync(LinkUpdateChannel channel)
     {
-        if (_updateBusy || CurrentUpdate is not { } before || before.Channel == channel)
+        if (!UpdateControlsEnabled || CurrentUpdate is not { } before || before.Channel == channel)
             return;
 
         var leavesBeta = before.Channel == LinkUpdateChannel.Beta && channel == LinkUpdateChannel.Stable;
@@ -630,7 +634,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     [RelayCommand]
     public async Task InstallUpdateAsync()
     {
-        if (_updateBusy || !CanInstallUpdate || CurrentUpdate is not { Version: { } version } offer)
+        if (!UpdateControlsEnabled || !CanInstallUpdate || CurrentUpdate is not { Version: { } version } offer)
             return;
         if (offer.IsDowngrade)
         {
@@ -695,6 +699,11 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     /// <summary>Le service a relu l'état des mises à jour : un message de demande refusée s'efface dès que l'état change, la boîte se ferme si l'offre a disparu.</summary>
     private void RefreshUpdates()
     {
+        // L'état est relu chaque seconde : tant qu'il est le même, rien n'a changé et rien n'est notifié.
+        if (Equals(CurrentUpdate, _seenUpdate))
+            return;
+        _seenUpdate = CurrentUpdate;
+
         if (_updateActionMessage is not null && CurrentUpdate?.State != _updateActionState)
         {
             _updateActionMessage = null;
