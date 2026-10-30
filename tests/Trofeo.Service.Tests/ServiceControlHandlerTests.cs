@@ -682,9 +682,11 @@ public sealed class ServiceControlHandlerTests
         public UpdateRig(string installed = "1.1.0-beta.1")
         {
             var http = new HttpClient(this);
+            // Le scénario est une bêta installée qui suit la stable : ce choix est enregistré, sinon une bêta suivrait le canal bêta.
+            var store = new UpdatePreferencesStore(Path.Combine(_dir, "mises-a-jour.json"));
+            store.Save(UpdatePreferences.Default);
             Service = new UpdateService(
-                new UpdateChecker(http), new UpdateDownloader(http), new RefusingLauncher(),
-                new UpdatePreferencesStore(Path.Combine(_dir, "mises-a-jour.json")),
+                new UpdateChecker(http), new UpdateDownloader(http), new RefusingLauncher(), store,
                 AppVersion.TryParse(installed, out var version) ? version : throw new ArgumentException(installed),
                 Path.Combine(_dir, "reglages"), Path.Combine(_dir, "sauvegardes"), Path.Combine(_dir, "telechargement"), TimeProvider.System);
         }
@@ -764,7 +766,7 @@ public sealed class ServiceControlHandlerTests
         var update = rig.Handler.GetUpdate();
 
         Assert.Equal(
-            new UpdateInfo(LinkUpdateState.Available, "1.0.0", true, null, "La version 1.0.0 est disponible.", LinkUpdateChannel.Stable, false),
+            new UpdateInfo(LinkUpdateState.Available, "1.0.0", true, null, "La version stable 1.0.0 est disponible (retour depuis la bêta).", LinkUpdateChannel.Stable, false),
             update);
     }
 
