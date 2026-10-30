@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Trofeo.BrandAssets.Tests" />
+    <!-- L'outil de l'image d'accueil lit le logo avec le même SvgRaster. -->
+    <InternalsVisibleTo Include="Trofeo.ReadmeHero" />
   </ItemGroup>
 
 </Project>

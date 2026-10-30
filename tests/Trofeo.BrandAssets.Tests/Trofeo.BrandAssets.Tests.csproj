@@ -14,4 +14,9 @@
     <None Include="..\..\src\Trofeo.Core\Assets\Fonts\Manrope-Medium.ttf" Link="Manrope-Medium.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Le déroulé de l'image d'accueil est du calcul pur : on compile son fichier ici plutôt que de dépendre de l'outil, qui est un projet Windows. -->
+  <ItemGroup>
+    <Compile Include="..\..\tools\Trofeo.ReadmeHero\HeroTimeline.cs" Link="HeroTimeline.cs" />
+  </ItemGroup>
+
 </Project>

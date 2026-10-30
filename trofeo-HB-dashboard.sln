@@ -81,6 +81,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trofeo.BrandAssets", "tools
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trofeo.BrandAssets.Tests", "tests\Trofeo.BrandAssets.Tests\Trofeo.BrandAssets.Tests.csproj", "{1589EC62-7F76-4C61-8CB6-9ADD3F51AAF9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trofeo.ReadmeHero", "tools\Trofeo.ReadmeHero\Trofeo.ReadmeHero.csproj", "{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -523,6 +525,18 @@ Global
 		{1589EC62-7F76-4C61-8CB6-9ADD3F51AAF9}.Release|x64.Build.0 = Release|Any CPU
 		{1589EC62-7F76-4C61-8CB6-9ADD3F51AAF9}.Release|x86.ActiveCfg = Release|Any CPU
 		{1589EC62-7F76-4C61-8CB6-9ADD3F51AAF9}.Release|x86.Build.0 = Release|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Debug|x64.Build.0 = Debug|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Debug|x86.Build.0 = Debug|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Release|Any CPU.Build.0 = Release|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Release|x64.ActiveCfg = Release|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Release|x64.Build.0 = Release|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Release|x86.ActiveCfg = Release|Any CPU
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -564,5 +578,6 @@ Global
 		{D4EA800D-8969-401F-BCD9-93585DC8AB32} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{5BC02AE2-6946-443F-939C-26A1D03C4841} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{1589EC62-7F76-4C61-8CB6-9ADD3F51AAF9} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{298AF392-30F0-413E-A6F7-7CA8AEF7DF96} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal
