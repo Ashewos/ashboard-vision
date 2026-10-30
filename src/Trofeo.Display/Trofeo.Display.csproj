@@ -5,6 +5,9 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Le nom que voient le Gestionnaire des tâches et « Applications de démarrage » (le fichier garde son nom). -->
+    <AssemblyTitle>Ashboard Vision</AssemblyTitle>
+    <Description>Ashboard Vision : le tableau de bord de l'écran Thermalright Trofeo Vision.</Description>
     <ApplicationIcon>..\..\assets\brand\ashboard-vision.ico</ApplicationIcon>
   </PropertyGroup>
 

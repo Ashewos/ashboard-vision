@@ -6,6 +6,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>latest</LangVersion>
     <Version>0.5.0</Version>
+    <Product>Ashboard Vision</Product>
+    <Company>Ashewos</Company>
   </PropertyGroup>
 
   <!-- Sous Linux, permet de construire les projets net10.0-windows (tests compris) sans les packs Windows. -->

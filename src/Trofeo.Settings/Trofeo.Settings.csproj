@@ -6,6 +6,9 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <AssemblyName>Trofeo.Settings</AssemblyName>
     <RootNamespace>Trofeo.Settings</RootNamespace>
+    <!-- Le nom que voit le Gestionnaire des tâches (le fichier garde son nom). -->
+    <AssemblyTitle>Ashboard Vision - Réglages</AssemblyTitle>
+    <Description>La fenêtre de réglage d'Ashboard Vision.</Description>
     <!-- Les liaisons de données sont compilées partout (x:DataType) : une faute de nom est une erreur de compilation. -->
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationIcon>..\..\assets\brand\ashboard-vision.ico</ApplicationIcon>
