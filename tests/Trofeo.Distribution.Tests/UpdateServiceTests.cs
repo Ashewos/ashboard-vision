@@ -229,6 +229,57 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task Install_TwiceInARow_OneDownloadOneLaunch()
+    {
+        using var h = new UpdateHarness("1.0.0", Stable100, Stable110);
+        await h.Service.CheckNowAsync(CancellationToken.None);
+
+        // Deux fenêtres, ou la fenêtre et le menu de l'icône : la seconde demande attend la première, puis est refusée.
+        var results = await Task.WhenAll(
+            h.Service.InstallAsync(false, true, CancellationToken.None),
+            h.Service.InstallAsync(false, true, CancellationToken.None));
+
+        Assert.Single(results, r => r.Ok);
+        var refused = Assert.Single(results, r => !r.Ok);
+        Assert.Equal("L'installation de la mise à jour est déjà lancée.", refused.Message);
+        Assert.Equal(1, h.SetupRequests);
+        Assert.Single(h.Launcher.Launched);
+        Assert.Equal(UpdateState.Installing, h.Service.Current.State);
+        Assert.True(File.Exists(h.Launcher.Launched[0]));
+
+        // Une demande tardive est refusée de la même façon.
+        var late = await h.Service.InstallAsync(false, false, CancellationToken.None);
+        Assert.False(late.Ok);
+        Assert.Equal(1, h.SetupRequests);
+        Assert.Single(h.Launcher.Launched);
+    }
+
+    [Fact]
+    public async Task Install_SetupChangedBeforeLaunch_StateFailed_NeverLaunches()
+    {
+        using var h = new UpdateHarness("1.0.0", Stable110);
+        await h.Service.CheckNowAsync(CancellationToken.None);
+        var setupPath = Path.Combine(h.DownloadDir, ProductIdentity.SetupFileName("1.1.0"));
+        // Le fichier est remplacé juste avant le lancement (l'état « installation » est publié à ce moment-là).
+        h.Service.Changed += (_, _) =>
+        {
+            if (h.Service.Current.State == UpdateState.Installing)
+            {
+                File.WriteAllBytes(setupPath, [1, 2, 3]);
+            }
+        };
+
+        var (ok, message) = await h.Service.InstallAsync(false, reopenSettings: true, CancellationToken.None);
+
+        Assert.False(ok);
+        Assert.Contains("a changé", message);
+        Assert.Equal(UpdateState.Failed, h.Service.Current.State);
+        Assert.Empty(h.Launcher.Launched);
+        Assert.False(File.Exists(setupPath));
+        Assert.False(ReopenSettingsMarker.Consume(h.SettingsDir));
+    }
+
+    [Fact]
     public async Task Install_NothingOffered_DoesNothing()
     {
         using var h = new UpdateHarness("1.0.0", Stable100);

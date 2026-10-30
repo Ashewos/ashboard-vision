@@ -24,6 +24,7 @@ public sealed class TrayIcon : ApplicationContext
     private readonly Font _boldFont;
     private readonly SynchronizationContext? _ui;
     private readonly UserPreferenceChangedEventHandler _onUserPreferenceChanged;
+    private readonly CancellationTokenSource _lifetime = new(); // annulé quand on quitte : une mise à jour lancée d'ici s'arrête avec elle
     private Icon? _ownedIcon; // l'icône incorporée en cours ; SystemIcons.Application n'est jamais libérée
     private bool _lightTaskbar;
     private bool _disposed;
@@ -106,8 +107,14 @@ public sealed class TrayIcon : ApplicationContext
         return entries;
     }
 
-    /// <summary>La version proposée, seulement quand elle attend ton accord (état « disponible »).</summary>
-    private string? AvailableVersion => _updates?.Current is { State: UpdateState.Available, Version: { } version } ? version : null;
+    /// <summary>
+    /// La version proposée, seulement quand on peut l'installer : « disponible », ou « échec » avec l'offre gardée (pour réessayer).
+    /// Pendant le téléchargement et l'installation, elle n'est plus proposée.
+    /// </summary>
+    internal static string? OfferedVersion(UpdateStatus? status) =>
+        status is { State: UpdateState.Available or UpdateState.Failed, Version: { } version } ? version : null;
+
+    private string? AvailableVersion => OfferedVersion(_updates?.Current);
 
     private string CurrentTooltip()
     {
@@ -147,7 +154,8 @@ public sealed class TrayIcon : ApplicationContext
     /// </summary>
     private async Task InstallUpdateAsync()
     {
-        if (_updates is null || _updates.Current is not { State: UpdateState.Available, Version: { } version } status) return;
+        var status = _updates?.Current; // d'un bloc : l'état peut changer pendant qu'on lit
+        if (_updates is null || status is null || OfferedVersion(status) is not { } version) return;
 
         if (status.IsDowngrade)
         {
@@ -159,7 +167,7 @@ public sealed class TrayIcon : ApplicationContext
 
         try
         {
-            var (ok, message) = await _updates.InstallAsync(status.IsDowngrade, reopenSettings: false, CancellationToken.None);
+            var (ok, message) = await _updates.InstallAsync(status.IsDowngrade, reopenSettings: false, _lifetime.Token);
             if (!ok && !_disposed) ShowBalloon(message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -214,6 +222,7 @@ public sealed class TrayIcon : ApplicationContext
         _screen.StateChanged -= OnStateChanged; // plus rien à poster une fois la boucle d'interface terminée
         if (_updates is not null) _updates.Changed -= OnStateChanged;
         SystemEvents.UserPreferenceChanged -= _onUserPreferenceChanged; // sinon le gestionnaire fuit
+        _lifetime.Cancel(); // une mise à jour en cours depuis le menu s'arrête avec l'icône
     }
 
     protected override void ExitThreadCore()
@@ -232,6 +241,7 @@ public sealed class TrayIcon : ApplicationContext
             _icon.Dispose();
             _ownedIcon?.Dispose();
             _menu.Dispose();
+            _lifetime.Dispose();
             _boldFont.Dispose();
         }
 

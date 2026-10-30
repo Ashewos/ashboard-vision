@@ -43,7 +43,7 @@ internal static class TaskbarTheme
         try
         {
             using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
-            return stream is null ? null : new Icon(stream);
+            return stream is null ? null : new Icon(stream, SystemInformation.SmallIconSize);
         }
         catch (Exception ex) when (ex is ArgumentException or IOException)
         {

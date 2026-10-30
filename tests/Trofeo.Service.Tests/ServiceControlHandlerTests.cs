@@ -137,6 +137,7 @@ public sealed class ServiceControlHandlerTests
 
         public void Dispose()
         {
+            Handler.Dispose();
             LoopRig.Dispose();
             try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
         }

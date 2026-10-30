@@ -1,3 +1,4 @@
+using Trofeo.Distribution;
 using Trofeo.Device;
 
 namespace Trofeo.Display.Tests;
@@ -65,4 +66,23 @@ public sealed class TrayIconTests
 
         Assert.Equal([(TrayMenuAction.OpenSettings, "Ouvrir les réglages"), (TrayMenuAction.Quit, "Quitter")], entries);
     }
+
+    private static UpdateStatus Status(UpdateState state, string? version) =>
+        new(state, version, false, null, null, UpdatePreferences.Default);
+
+    [Theory]
+    [InlineData(UpdateState.Available, "1.2.0", "1.2.0")]
+    [InlineData(UpdateState.Failed, "1.2.0", "1.2.0")] // l'offre est gardée après un échec : on peut réessayer
+    [InlineData(UpdateState.Failed, null, null)] // une vérification ratée n'offre rien
+    [InlineData(UpdateState.Downloading, "1.2.0", null)]
+    [InlineData(UpdateState.Installing, "1.2.0", null)]
+    [InlineData(UpdateState.UpToDate, null, null)]
+    [InlineData(UpdateState.Checking, null, null)]
+    public void OfferedVersion_ShowsAnOfferOnlyWhenItCanBeInstalled(UpdateState state, string? version, string? expected)
+    {
+        Assert.Equal(expected, TrayIcon.OfferedVersion(Status(state, version)));
+    }
+
+    [Fact]
+    public void OfferedVersion_NoUpdateService_IsNull() => Assert.Null(TrayIcon.OfferedVersion(null));
 }

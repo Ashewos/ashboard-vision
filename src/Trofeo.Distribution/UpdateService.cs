@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 
 namespace Trofeo.Distribution;
 
@@ -121,6 +122,13 @@ public sealed class UpdateService(
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // Une seconde demande (deux fenêtres, fenêtre et icône) arrive ici une fois la première finie : l'installateur est lancé et
+            // son fichier en cours d'emploi, on ne télécharge ni ne lance rien de plus.
+            if (_current.State is UpdateState.Downloading or UpdateState.Installing)
+            {
+                return (false, "L'installation de la mise à jour est déjà lancée.");
+            }
+
             if (_offer is not { } offer)
             {
                 return (false, "Il n'y a pas de mise à jour à installer : vérifie d'abord les mises à jour.");
@@ -153,11 +161,11 @@ public sealed class UpdateService(
 
     private async Task<(bool Ok, string Message)> InstallOfferAsync(UpdateOffer offer, bool reopenSettings, CancellationToken ct)
     {
-        string setupPath;
+        DownloadedSetup downloaded;
         PublishDownload(offer, 0);
         try
         {
-            setupPath = await downloader.DownloadAsync(offer.Release, downloadDir, new StepProgress(f => PublishDownload(offer, f)), ct)
+            downloaded = await downloader.DownloadVerifiedAsync(offer.Release, downloadDir, new StepProgress(f => PublishDownload(offer, f)), ct)
                 .ConfigureAwait(false);
         }
         catch (UpdateException ex)
@@ -176,6 +184,7 @@ public sealed class UpdateService(
             return Fail(offer, "Le téléchargement a échoué de façon inattendue : la mise à jour n'est pas installée.");
         }
 
+        var setupPath = downloaded.Path;
         if (offer.IsDowngrade)
         {
             try
@@ -205,6 +214,19 @@ public sealed class UpdateService(
         const string installing = "Windows va demander l'autorisation d'installer la mise à jour.";
         Publish(UpdateState.Installing, installing, offer.Release.Version.ToString(), offer.IsDowngrade);
 
+        // Le fichier a attendu dans un dossier temporaire (la sauvegarde, la réponse à Windows) : on revérifie son empreinte juste avant de
+        // le passer au lanceur, qui l'exécute avec des droits d'administrateur.
+        if (!await StillMatchesAsync(setupPath, downloaded.Sha256).ConfigureAwait(false))
+        {
+            if (reopenSettings)
+            {
+                ReopenSettingsMarker.Consume(settingsDir);
+            }
+
+            DeleteQuietly(setupPath);
+            return Fail(offer, "L'installateur téléchargé a changé avant son lancement : par prudence, il n'est pas installé.");
+        }
+
         InstallerLaunch launch;
         try
         {
@@ -219,6 +241,8 @@ public sealed class UpdateService(
 
         if (launch == InstallerLaunch.Started)
         {
+            // L'installateur tourne : l'offre est consommée (une seconde demande n'a rien à relancer).
+            _offer = null;
             return (true, installing);
         }
 
@@ -237,6 +261,21 @@ public sealed class UpdateService(
         }
 
         return Fail(offer, "L'installateur n'a pas pu être lancé.");
+    }
+
+    // Vrai si le fichier a toujours l'empreinte vérifiée au téléchargement. Un fichier illisible vaut « changé ».
+    private static async Task<bool> StillMatchesAsync(string path, string expectedSha256)
+    {
+        try
+        {
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+            var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream).ConfigureAwait(false));
+            return string.Equals(actual, expectedSha256, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     // Le minuteur : si une autre opération est en cours, elle compte aussi comme une vérification, on passe.

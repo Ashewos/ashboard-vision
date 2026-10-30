@@ -185,7 +185,7 @@ static class Program
         // ce que celui de la Freebox ne doit jamais faire. L'API de GitHub exige un User-Agent. Déclarés avant le service des mises à jour :
         // libérés après lui.
         using var updateHttp = new HttpClient(new SocketsHttpHandler()) { Timeout = UpdateHttpTimeout };
-        updateHttp.DefaultRequestHeaders.UserAgent.ParseAdd($"{ProductIdentity.Id}/{ServiceControlHandler.InstalledVersion}");
+        updateHttp.DefaultRequestHeaders.UserAgent.TryParseAdd($"{ProductIdentity.Id}/{ServiceControlHandler.InstalledVersion}");
         AppVersion? installed = AppVersion.TryParse(ServiceControlHandler.InstalledVersion, out var parsed) ? parsed : null;
         if (installed is null)
             Trace.TraceWarning($"Version « {ServiceControlHandler.InstalledVersion} » illisible : ni mises à jour ni préparation de l'utilisateur.");

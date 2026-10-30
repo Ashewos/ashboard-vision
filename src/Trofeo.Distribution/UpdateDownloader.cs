@@ -6,6 +6,9 @@ using Trofeo.Core;
 
 namespace Trofeo.Distribution;
 
+/// <summary>L'installateur téléchargé et son empreinte SHA-256 (hexadécimal) vérifiée contre celle qui est publiée.</summary>
+public sealed record DownloadedSetup(string Path, string Sha256);
+
 /// <summary>
 /// Télécharge l'installateur d'une version et vérifie son empreinte SHA-256 avant de le rendre. Rien n'est lancé ici,
 /// et un fichier qui n'a pas passé toutes les vérifications n'existe sous son vrai nom à aucun moment.
@@ -30,7 +33,11 @@ public sealed partial class UpdateDownloader(HttpClient http)
     /// différente de celle de la version, empreinte différente. Une annulation lève <see cref="OperationCanceledException"/>.
     /// </summary>
     /// <param name="progress">Reçoit la part téléchargée, de 0 à 1.</param>
-    public async Task<string> DownloadAsync(GitHubRelease release, string targetDir, IProgress<double>? progress, CancellationToken ct)
+    public async Task<string> DownloadAsync(GitHubRelease release, string targetDir, IProgress<double>? progress, CancellationToken ct) =>
+        (await DownloadVerifiedAsync(release, targetDir, progress, ct).ConfigureAwait(false)).Path;
+
+    /// <summary>Comme <see cref="DownloadAsync"/>, et rend aussi l'empreinte vérifiée : de quoi s'en assurer de nouveau juste avant le lancement.</summary>
+    public async Task<DownloadedSetup> DownloadVerifiedAsync(GitHubRelease release, string targetDir, IProgress<double>? progress, CancellationToken ct)
     {
         RequireGitHubUrl(release.SetupUrl);
         if (release.ChecksumUrl is null)
@@ -59,7 +66,7 @@ public sealed partial class UpdateDownloader(HttpClient http)
 
             File.Move(partPath, setupPath, overwrite: true);
             verified = true;
-            return setupPath;
+            return new DownloadedSetup(setupPath, actual);
         }
         catch (HttpRequestException ex)
         {
