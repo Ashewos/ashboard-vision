@@ -62,6 +62,9 @@ internal sealed class UpdateHarness : IDisposable
     /// <summary>Remplace le contenu du fichier d'empreinte (par défaut, la bonne empreinte).</summary>
     public string? ChecksumOverride { get; set; }
 
+    /// <summary>Si renseignée, tout téléchargement de l'installateur ou de son empreinte lève cette exception.</summary>
+    public Exception? DownloadFailure { get; set; }
+
     public int FeedRequests => Server.Requests.Count(u => u.AbsoluteUri == ReleaseFeed.Url);
     public int SetupRequests => Server.Requests.Count(u => u.AbsoluteUri.EndsWith(".exe", StringComparison.Ordinal));
 
@@ -80,6 +83,11 @@ internal sealed class UpdateHarness : IDisposable
         if (url == ReleaseFeed.Url)
         {
             return FeedOverride?.Invoke() ?? FakeHandler.Text(FeedJson());
+        }
+
+        if (DownloadFailure is not null)
+        {
+            throw DownloadFailure;
         }
 
         return url.EndsWith(".sha256", StringComparison.Ordinal)
@@ -325,6 +333,29 @@ public sealed class UpdateServiceTests
         Assert.Empty(h.Launcher.Launched);
         Assert.Equal(UpdateState.Failed, h.Service.Current.State);
         Assert.False(ReopenSettingsMarker.Consume(h.SettingsDir));
+    }
+
+    [Fact]
+    public async Task Install_UnexpectedDownloadException_StateFailed_SoberMessage_OfferKept()
+    {
+        using var h = new UpdateHarness("1.0.0", Stable110);
+        await h.Service.CheckNowAsync(CancellationToken.None);
+        h.DownloadFailure = new InvalidOperationException("détail interne qui ne doit pas s'afficher");
+
+        var (ok, message) = await h.Service.InstallAsync(false, reopenSettings: true, CancellationToken.None);
+
+        Assert.False(ok);
+        Assert.Equal("Le téléchargement a échoué de façon inattendue : la mise à jour n'est pas installée.", message);
+        Assert.DoesNotContain("détail interne", message);
+        Assert.Equal(UpdateState.Failed, h.Service.Current.State);
+        Assert.Equal(message, h.Service.Current.Message);
+        Assert.Equal("1.1.0", h.Service.Current.Version);
+        Assert.Empty(h.Launcher.Launched);
+        Assert.False(ReopenSettingsMarker.Consume(h.SettingsDir));
+
+        // L'offre est gardée : on peut réessayer sans revérifier.
+        h.DownloadFailure = null;
+        Assert.True((await h.Service.InstallAsync(false, false, CancellationToken.None)).Ok);
     }
 
     [Fact]

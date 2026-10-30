@@ -169,6 +169,12 @@ public sealed class UpdateService(
             PublishAvailable(offer, null);
             throw;
         }
+        catch (Exception ex)
+        {
+            // Une panne qu'on n'a pas prévue ne doit pas laisser l'état figé sur « Téléchargement » : le détail va au journal.
+            Trace.TraceError($"Mise à jour : le téléchargement a échoué de façon inattendue : {ex}");
+            return Fail(offer, "Le téléchargement a échoué de façon inattendue : la mise à jour n'est pas installée.");
+        }
 
         if (offer.IsDowngrade)
         {
