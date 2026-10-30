@@ -86,7 +86,7 @@ public sealed class DisplayLoopTests
             IBackground? background = null)
         {
             Module = module ?? new FakeModule();
-            Screen = new ScreenDevice(Usb, Time);
+            Screen = new ScreenDevice(Usb, Time, static () => []);
             Scheduler = new FrameScheduler(Time);
             var registry = new ModuleRegistry(
                 [new FakeModuleFactory("fake", new GridSize(2, 1), () => Module), .. extraFactories ?? []],

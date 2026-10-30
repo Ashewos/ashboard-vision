@@ -89,7 +89,7 @@ internal sealed class LoopRig : IDisposable
         DashboardLayout? layout = null, IBackground? background = null, ThemeDefinition? theme = null,
         IReadOnlyList<IModuleFactory>? extraFactories = null, Func<string, ISecretStore>? secrets = null)
     {
-        Screen = new ScreenDevice(Usb, Time);
+        Screen = new ScreenDevice(Usb, Time, static () => []);
         Scheduler = new FrameScheduler(Time);
         IModuleFactory[] factories = [new ProbeFactory("fake", this), new ProbeFactory("other", this), .. extraFactories ?? []];
         Registry = new ModuleRegistry(factories, secrets ?? (_ => new FakeSecretStore()));

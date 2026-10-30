@@ -21,7 +21,7 @@ public static partial class KnownThermalrightDevices
         [(0x0416, 0x5302)] = new("HID type 2", "Frozen Warframe SE, Assassin Spirit 120 Vision, Trofeo Vision LCD 1280 × 480"),
         [(0x0418, 0x5303)] = new("HID type 3", "TARAN ARMS"),
         [(0x0418, 0x5304)] = new("HID type 3", "TARAN ARMS"),
-        [(0x0416, 0x5409)] = new("LY1", "Trofeo Vision 1920 × 462 ou 1920 × 440 (variante LY1)"),
+        [(0x0416, 0x5409)] = new("LY1", "Trofeo Vision de révision LY1, au protocole différent"),
         [(0x0416, 0x8001)] = new("HID, série Digital", "série Digital (afficheur à segments et LED, sans écran)"),
     };
 
