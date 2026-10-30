@@ -73,16 +73,19 @@ public sealed class TrayIcon : ApplicationContext
     /// <summary>Longueur maximale d'une info-bulle de la zone de notification (127 caractères + le zéro final).</summary>
     private const int MaxTooltipLength = 127;
 
-    internal static string InstallUpdateText(string version) => $"Installer la mise à jour {version}";
+    /// <summary>Le texte de l'entrée du menu : une mise à jour, ou le retour à la stable quand la version proposée est plus ancienne.</summary>
+    internal static string InstallUpdateText(string version, bool isDowngrade = false) =>
+        isDowngrade ? $"Revenir à la version {version}" : $"Installer la mise à jour {version}";
 
-    private static string UpdateTooltipSuffix(string version) => $" — Mise à jour {version} disponible";
+    private static string UpdateTooltipSuffix(string version, bool isDowngrade) =>
+        isDowngrade ? $" — Version stable {version} disponible" : $" — Mise à jour {version} disponible";
 
     /// <summary>
     /// Texte de l'info-bulle : l'état de l'écran et, quand il est déconnecté, le motif ; puis, si une version est proposée
-    /// (<paramref name="updateVersion"/>), « Mise à jour {version} disponible ». Les 127 caractères tiennent : c'est l'état de l'écran
-    /// qui est coupé, pas la mise à jour.
+    /// (<paramref name="updateVersion"/>), « Mise à jour {version} disponible » (ou « Version stable {version} disponible » pour un retour
+    /// en arrière, <paramref name="isDowngrade"/>). Les 127 caractères tiennent : c'est l'état de l'écran qui est coupé, pas la mise à jour.
     /// </summary>
-    public static string Tooltip(ScreenState state, string? reason, string? updateVersion = null)
+    public static string Tooltip(ScreenState state, string? reason, string? updateVersion = null, bool isDowngrade = false)
     {
         var text = state switch
         {
@@ -91,17 +94,17 @@ public sealed class TrayIcon : ApplicationContext
             _ => $"{ProductIdentity.DisplayName} — écran : " + (reason ?? "non branché"),
         };
 
-        var suffix = updateVersion is null ? "" : UpdateTooltipSuffix(updateVersion);
+        var suffix = updateVersion is null ? "" : UpdateTooltipSuffix(updateVersion, isDowngrade);
         var room = Math.Max(0, MaxTooltipLength - suffix.Length);
         var tooltip = (text.Length > room ? text[..room] : text) + suffix;
         return tooltip.Length > MaxTooltipLength ? tooltip[^MaxTooltipLength..] : tooltip;
     }
 
     /// <summary>Les éléments du menu, dans l'ordre : « Installer la mise à jour {version} » en tête quand une version est proposée.</summary>
-    internal static IReadOnlyList<(TrayMenuAction Action, string Text)> MenuEntries(string? updateVersion)
+    internal static IReadOnlyList<(TrayMenuAction Action, string Text)> MenuEntries(string? updateVersion, bool isDowngrade = false)
     {
         var entries = new List<(TrayMenuAction, string)>();
-        if (updateVersion is not null) entries.Add((TrayMenuAction.InstallUpdate, InstallUpdateText(updateVersion)));
+        if (updateVersion is not null) entries.Add((TrayMenuAction.InstallUpdate, InstallUpdateText(updateVersion, isDowngrade)));
         entries.Add((TrayMenuAction.OpenSettings, OpenSettingsText));
         entries.Add((TrayMenuAction.Quit, QuitText));
         return entries;
@@ -116,10 +119,12 @@ public sealed class TrayIcon : ApplicationContext
 
     private string? AvailableVersion => OfferedVersion(_updates?.Current);
 
+    private bool OfferIsDowngrade => _updates?.Current is { IsDowngrade: true };
+
     private string CurrentTooltip()
     {
         var status = _screen.Status; // d'un bloc : l'affichage peut le remplacer pendant qu'on lit depuis l'interface
-        return Tooltip(status.State, status.Reason, AvailableVersion);
+        return Tooltip(status.State, status.Reason, AvailableVersion, OfferIsDowngrade);
     }
 
     private void RebuildMenu()
@@ -128,7 +133,7 @@ public sealed class TrayIcon : ApplicationContext
         _menu.Items.Clear();
         foreach (var item in old) item.Dispose();
 
-        foreach (var (action, text) in MenuEntries(AvailableVersion))
+        foreach (var (action, text) in MenuEntries(AvailableVersion, OfferIsDowngrade))
         {
             switch (action)
             {

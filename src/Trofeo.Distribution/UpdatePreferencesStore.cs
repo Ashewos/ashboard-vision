@@ -12,21 +12,24 @@ public sealed class UpdatePreferencesStore(string path)
         Converters = { new JsonStringEnumConverter(allowIntegerValues: false) },
     };
 
-    /// <summary>Ne lève jamais d'exception : fichier absent, verrouillé ou illisible, c'est le canal stable.</summary>
-    public UpdatePreferences Load()
+    /// <summary>
+    /// Ne lève jamais d'exception : fichier absent, verrouillé ou illisible, ce sont les choix par défaut de la version installée
+    /// (<see cref="UpdatePreferences.DefaultFor"/>). Un choix enregistré l'emporte toujours.
+    /// </summary>
+    public UpdatePreferences Load(AppVersion installed)
     {
         try
         {
             if (!File.Exists(path))
             {
-                return UpdatePreferences.Default;
+                return UpdatePreferences.DefaultFor(installed);
             }
 
-            return JsonSerializer.Deserialize<UpdatePreferences>(File.ReadAllText(path), Options) ?? UpdatePreferences.Default;
+            return JsonSerializer.Deserialize<UpdatePreferences>(File.ReadAllText(path), Options) ?? UpdatePreferences.DefaultFor(installed);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return UpdatePreferences.Default;
+            return UpdatePreferences.DefaultFor(installed);
         }
     }
 

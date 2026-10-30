@@ -53,11 +53,12 @@ public sealed class UpdateService(
     private readonly CancellationTokenSource _lifetime = new();
 
     // Sous _gate : les choix en vigueur et la version que la dernière vérification propose (null : aucune).
-    private UpdatePreferences _preferences = prefs.Load();
+    private UpdatePreferences _preferences = prefs.Load(installed);
     private UpdateOffer? _offer;
 
     private volatile UpdateStatus _current = new(UpdateState.Unknown, null, false, null, null, UpdatePreferences.Default);
     private ITimer? _timer;
+    private Task _startupCleanup = Task.CompletedTask; // ne lève jamais ; la vérification planifiée l'attend pour ne pas trouver la porte fermée
     private bool _disposed;
 
     public UpdateStatus Current => _current with { Preferences = _preferences };
@@ -65,11 +66,64 @@ public sealed class UpdateService(
     /// <summary>Levé à chaque changement de <see cref="Current"/>, sur le fil qui l'a provoqué.</summary>
     public event EventHandler? Changed;
 
-    /// <summary>Première vérification 60 s plus tard, puis toutes les 24 h. Sans effet si le service est déjà démarré.</summary>
+    /// <summary>
+    /// Première vérification 60 s plus tard, puis toutes les 24 h. Sans effet si le service est déjà démarré. Vide aussi, en tâche de
+    /// fond, l'installateur resté dans le dossier de téléchargement par une mise à jour précédente.
+    /// </summary>
     public void Start()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _timer ??= time.CreateTimer(_ => _ = CheckScheduledAsync(), null, FirstCheckDelay, CheckInterval);
+        if (_timer is not null) return;
+
+        _startupCleanup = Task.Run(CleanDownloadDirectoryAsync);
+        _timer = time.CreateTimer(_ => _ = CheckScheduledAsync(), null, FirstCheckDelay, CheckInterval);
+    }
+
+    /// <summary>
+    /// Supprime ce qui reste dans le dossier de téléchargement (l'installateur de la mise à jour précédente, une centaine de Mo).
+    /// Attend son tour derrière un téléchargement en cours, ne lève jamais : un fichier encore tenu (installateur toujours lancé) reste,
+    /// les autres partent, et le prochain démarrage réessaie.
+    /// </summary>
+    public async Task CleanDownloadDirectoryAsync()
+    {
+        try
+        {
+            await _gate.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+            try
+            {
+                if (!Directory.Exists(downloadDir)) return;
+
+                foreach (var entry in Directory.EnumerateFileSystemEntries(downloadDir))
+                {
+                    try
+                    {
+                        if (Directory.Exists(entry)) Directory.Delete(entry, recursive: true);
+                        else File.Delete(entry);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        Trace.TraceInformation($"Mise à jour : {entry} n'a pas pu être supprimé ({ex.Message}).");
+                    }
+                }
+
+                try
+                {
+                    Directory.Delete(downloadDir); // seulement s'il est vide
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Il reste un fichier tenu : le dossier reste aussi.
+                }
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Le service s'arrête.
+        }
     }
 
     /// <summary>Vérifie tout de suite. Attend son tour si une autre opération est en cours.</summary>
@@ -281,6 +335,7 @@ public sealed class UpdateService(
     // Le minuteur : si une autre opération est en cours, elle compte aussi comme une vérification, on passe.
     private async Task CheckScheduledAsync()
     {
+        await _startupCleanup.ConfigureAwait(false);
         if (_lifetime.IsCancellationRequested || !_gate.Wait(0))
         {
             return;
@@ -348,7 +403,10 @@ public sealed class UpdateService(
     private void PublishAvailable(UpdateOffer offer, string? message)
     {
         var version = offer.Release.Version.ToString();
-        Publish(UpdateState.Available, message ?? $"La version {version} est disponible.", version, offer.IsDowngrade);
+        var text = offer.IsDowngrade
+            ? $"La version stable {version} est disponible (retour depuis la bêta)."
+            : $"La version {version} est disponible.";
+        Publish(UpdateState.Available, message ?? text, version, offer.IsDowngrade);
     }
 
     private void PublishDownload(UpdateOffer offer, double fraction)

@@ -205,6 +205,72 @@ public sealed class UpdateDownloaderTests
         Assert.Equal("intact", File.ReadAllText(dir.Combine("voisin.txt")));
     }
 
+    private static readonly TimeSpan ShortIdle = TimeSpan.FromMilliseconds(200);
+
+    [Fact]
+    public async Task Download_BodyStalls_ThrowsInterruptedAndDeletesPartial()
+    {
+        // Le serveur envoie un début puis ne dit plus rien : sans délai d'inactivité, le téléchargement resterait suspendu.
+        using var dir = new TempDir();
+        var handler = new FakeHandler(request => IsChecksum(request)
+            ? FakeHandler.Text(Hex(Setup))
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StallingStream(Setup[..100_000])) });
+        var downloader = new UpdateDownloader(handler.Client(), ShortIdle);
+
+        var ex = await Assert.ThrowsAsync<UpdateException>(() =>
+            downloader.DownloadAsync(Release(), dir.Path, null, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20)));
+
+        Assert.Equal("Le téléchargement s'est interrompu.", ex.Message);
+        Assert.Empty(Directory.GetFileSystemEntries(dir.Path));
+    }
+
+    [Fact]
+    public async Task Download_ChecksumBodyStalls_ThrowsInterrupted()
+    {
+        using var dir = new TempDir();
+        var handler = new FakeHandler(request => IsChecksum(request)
+            ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StallingStream([])) }
+            : FakeHandler.Bytes(Setup));
+        var downloader = new UpdateDownloader(handler.Client(), ShortIdle);
+
+        var ex = await Assert.ThrowsAsync<UpdateException>(() =>
+            downloader.DownloadAsync(Release(), dir.Path, null, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20)));
+
+        Assert.Equal("Le téléchargement s'est interrompu.", ex.Message);
+    }
+
+    [Fact]
+    public async Task Download_SlowButSteady_IsNotInterrupted()
+    {
+        // Le délai se relance à chaque bloc lu : un téléchargement lent mais régulier va au bout, même plus long que le délai.
+        using var dir = new TempDir();
+        var handler = new FakeHandler(request => IsChecksum(request)
+            ? FakeHandler.Text(Hex(Setup))
+            : new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new TricklingStream(Setup, chunk: 50_000, pause: TimeSpan.FromMilliseconds(80))),
+            });
+        var downloader = new UpdateDownloader(handler.Client(), ShortIdle);
+
+        var path = await downloader.DownloadAsync(Release(), dir.Path, null, CancellationToken.None);
+
+        Assert.Equal(Setup, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public async Task Download_CancelledWhileStalled_IsACancellation_NotAnInterruption()
+    {
+        using var dir = new TempDir();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        var handler = new FakeHandler(request => IsChecksum(request)
+            ? FakeHandler.Text(Hex(Setup))
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StallingStream(Setup[..1000])) });
+        var downloader = new UpdateDownloader(handler.Client(), TimeSpan.FromSeconds(30));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            downloader.DownloadAsync(Release(), dir.Path, null, cts.Token).WaitAsync(TimeSpan.FromSeconds(20)));
+    }
+
     [Fact]
     public async Task Download_Cancelled_Throws_AndLeavesNothing()
     {

@@ -51,6 +51,68 @@ internal sealed class BrokenStream(byte[] beforeFailure) : Stream
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
 
+/// <summary>Un flux qui rend ses octets puis ne répond plus, comme un serveur muet : il n'attend que l'annulation de la lecture.</summary>
+internal sealed class StallingStream(byte[] beforeStall) : Stream
+{
+    private int _position;
+
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        if (_position < beforeStall.Length)
+        {
+            var n = Math.Min(buffer.Length, beforeStall.Length - _position);
+            beforeStall.AsMemory(_position, n).CopyTo(buffer);
+            _position += n;
+            return n;
+        }
+
+        await Task.Delay(Timeout.Infinite, cancellationToken);
+        return 0;
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+}
+
+/// <summary>Un flux lent mais régulier : <paramref name="chunk"/> octets, puis une pause de <paramref name="pause"/>, jusqu'à la fin.</summary>
+internal sealed class TricklingStream(byte[] data, int chunk, TimeSpan pause) : Stream
+{
+    private int _position;
+
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        if (_position >= data.Length)
+        {
+            return 0;
+        }
+
+        await Task.Delay(pause, cancellationToken);
+        var n = Math.Min(Math.Min(buffer.Length, chunk), data.Length - _position);
+        data.AsMemory(_position, n).CopyTo(buffer);
+        _position += n;
+        return n;
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+}
+
 /// <summary>Un dossier temporaire, supprimé à la fin du test.</summary>
 internal sealed class TempDir : IDisposable
 {

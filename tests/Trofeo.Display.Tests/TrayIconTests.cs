@@ -46,6 +46,33 @@ public sealed class TrayIconTests
     }
 
     [Fact]
+    public void Tooltip_Downgrade_SaysStableVersion_NotUpdate()
+    {
+        var tooltip = TrayIcon.Tooltip(ScreenState.Ready, null, "1.0.0", isDowngrade: true);
+
+        Assert.StartsWith("Ashboard Vision — écran : prêt", tooltip);
+        Assert.EndsWith("Version stable 1.0.0 disponible", tooltip);
+        Assert.DoesNotContain("Mise à jour", tooltip);
+    }
+
+    [Fact]
+    public void Tooltip_Downgrade_LongReason_KeepsTheTextWithin127Chars()
+    {
+        var tooltip = TrayIcon.Tooltip(ScreenState.Disconnected, new string('x', 500), "1.0.0", isDowngrade: true);
+
+        Assert.Equal(127, tooltip.Length);
+        Assert.EndsWith("Version stable 1.0.0 disponible", tooltip);
+    }
+
+    [Fact]
+    public void Menu_Downgrade_OffersToGoBack_NotToUpdate()
+    {
+        var entries = TrayIcon.MenuEntries("1.0.0", isDowngrade: true);
+
+        Assert.Equal((TrayMenuAction.InstallUpdate, "Revenir à la version 1.0.0"), entries[0]);
+    }
+
+    [Fact]
     public void Menu_UpdateAvailable_ShowsInstallItem()
     {
         var entries = TrayIcon.MenuEntries("1.2.0");

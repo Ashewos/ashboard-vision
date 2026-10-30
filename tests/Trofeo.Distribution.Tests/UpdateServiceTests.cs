@@ -28,6 +28,12 @@ internal sealed class UpdateHarness : IDisposable
     private readonly TempDir _dir = new();
 
     public UpdateHarness(string installed, params (string Tag, bool Prerelease)[] published)
+        : this(null, installed, published)
+    {
+    }
+
+    /// <param name="saved">Les choix déjà enregistrés avant le démarrage du service ; <c>null</c> : aucun fichier de préférences.</param>
+    public UpdateHarness(UpdatePreferences? saved, string installed, params (string Tag, bool Prerelease)[] published)
     {
         Installed = Version(installed);
         Published = published;
@@ -39,6 +45,7 @@ internal sealed class UpdateHarness : IDisposable
 
         Server = new FakeHandler(Respond);
         Store = new UpdatePreferencesStore(Path.Combine(SettingsDir, "mises-a-jour.json"));
+        if (saved is not null) Store.Save(saved);
         Launcher = new FakeLauncher();
         Service = new UpdateService(
             new UpdateChecker(Server.Client()), new UpdateDownloader(Server.Client()), Launcher, Store,
@@ -159,6 +166,48 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task Start_EmptiesTheDownloadFolderLeftBehind_WithoutWaitingForTheTimer()
+    {
+        using var h = new UpdateHarness("1.0.0", Stable100);
+        Directory.CreateDirectory(h.DownloadDir);
+        File.WriteAllBytes(Path.Combine(h.DownloadDir, "Ashboard-Vision-Setup-1.0.0.exe"), new byte[1000]);
+        File.WriteAllBytes(Path.Combine(h.DownloadDir, "Ashboard-Vision-Setup-1.0.0.exe.part"), new byte[10]);
+
+        h.Service.Start();
+
+        await UpdateHarness.Until(() => !Directory.Exists(h.DownloadDir) || Directory.GetFileSystemEntries(h.DownloadDir).Length == 0);
+        Assert.Equal(0, h.FeedRequests); // rien n'a été demandé à GitHub : c'est la première vérification qui attend ses 60 s
+    }
+
+    [Fact]
+    public async Task CleanDownloadDirectory_FolderAbsent_DoesNothing()
+    {
+        using var h = new UpdateHarness("1.0.0", Stable100);
+
+        await h.Service.CleanDownloadDirectoryAsync();
+
+        Assert.False(Directory.Exists(h.DownloadDir));
+    }
+
+    [Fact]
+    public async Task CleanDownloadDirectory_FileStillOpen_DoesNotThrow_AndRemovesTheOthers()
+    {
+        // Un installateur encore en cours d'exécution tient son fichier : le nettoyage ne lève pas et fait le reste.
+        using var h = new UpdateHarness("1.0.0", Stable100);
+        Directory.CreateDirectory(h.DownloadDir);
+        var held = Path.Combine(h.DownloadDir, "tenu.exe");
+        var free = Path.Combine(h.DownloadDir, "libre.part");
+        File.WriteAllBytes(held, new byte[10]);
+        File.WriteAllBytes(free, new byte[10]);
+        using var hold = new FileStream(held, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        await h.Service.CleanDownloadDirectoryAsync();
+
+        Assert.True(File.Exists(held));
+        Assert.False(File.Exists(free));
+    }
+
+    [Fact]
     public async Task Check_NetworkError_StateFailed_ServiceKeepsSchedule()
     {
         using var h = new UpdateHarness("1.0.0", Stable110);
@@ -183,12 +232,49 @@ public sealed class UpdateServiceTests
     [Fact]
     public async Task Check_NoStableYet_StateNoStableYet()
     {
-        using var h = new UpdateHarness("1.0.0-beta.1", ("v1.0.0-beta.2", true));
+        using var h = new UpdateHarness(UpdatePreferences.Default, "1.0.0-beta.1", ("v1.0.0-beta.2", true));
 
         await h.Service.CheckNowAsync(CancellationToken.None);
 
         Assert.Equal(UpdateState.NoStableYet, h.Service.Current.State);
         Assert.Equal("Aucune version stable pour l'instant.", h.Service.Current.Message);
+    }
+
+    [Fact]
+    public async Task Check_Downgrade_MessageSaysItIsAReturnToStable_NotAnUpdate()
+    {
+        using var h = new UpdateHarness(UpdatePreferences.Default, "1.1.0-beta.1", Stable100, Beta110);
+
+        await h.Service.CheckNowAsync(CancellationToken.None);
+
+        Assert.Equal(UpdateState.Available, h.Service.Current.State);
+        Assert.True(h.Service.Current.IsDowngrade);
+        Assert.Equal("La version stable 1.0.0 est disponible (retour depuis la bêta).", h.Service.Current.Message);
+    }
+
+    [Fact]
+    public async Task Check_BetaInstalled_NoSavedChoice_OffersTheNextBeta()
+    {
+        // Sans réglage enregistré, une bêta installée suit le canal bêta : elle reçoit beta.2 au lieu de « Aucune version stable ».
+        using var h = new UpdateHarness("1.0.0-beta.1", ("v1.0.0-beta.2", true));
+
+        await h.Service.CheckNowAsync(CancellationToken.None);
+
+        Assert.Equal(UpdateState.Available, h.Service.Current.State);
+        Assert.Equal("1.0.0-beta.2", h.Service.Current.Version);
+        Assert.False(h.Service.Current.IsDowngrade);
+        Assert.Equal(UpdateChannel.Beta, h.Service.Current.Preferences.Channel);
+    }
+
+    [Fact]
+    public async Task Check_BetaOfTheNextVersionInstalled_NoSavedChoice_IsNotOfferedAnOlderStable()
+    {
+        using var h = new UpdateHarness("1.1.0-beta.1", Stable100);
+
+        await h.Service.CheckNowAsync(CancellationToken.None);
+
+        Assert.NotEqual(UpdateState.Available, h.Service.Current.State);
+        Assert.False(h.Service.Current.IsDowngrade);
     }
 
     [Fact]
@@ -333,7 +419,7 @@ public sealed class UpdateServiceTests
     [Fact]
     public async Task Install_Downgrade_WithoutConfirmation_Refused()
     {
-        using var h = new UpdateHarness("1.1.0-beta.1", Stable100, Beta110);
+        using var h = new UpdateHarness(UpdatePreferences.Default, "1.1.0-beta.1", Stable100, Beta110);
         await h.Service.CheckNowAsync(CancellationToken.None);
         Assert.Equal(UpdateState.Available, h.Service.Current.State);
         Assert.True(h.Service.Current.IsDowngrade);
@@ -351,7 +437,7 @@ public sealed class UpdateServiceTests
     [Fact]
     public async Task Install_Downgrade_BackupCreatedBeforeLaunch()
     {
-        using var h = new UpdateHarness("1.1.0-beta.1", Stable100, Beta110);
+        using var h = new UpdateHarness(UpdatePreferences.Default, "1.1.0-beta.1", Stable100, Beta110);
         h.Time.SetUtcNow(new DateTimeOffset(2026, 10, 29, 14, 5, 9, TimeSpan.Zero));
         string? backupSeenByLauncher = null;
         h.Launcher.OnLaunch = _ =>
@@ -372,7 +458,7 @@ public sealed class UpdateServiceTests
     [Fact]
     public async Task Install_Downgrade_BackupFails_DoesNotLaunch()
     {
-        using var h = new UpdateHarness("1.1.0-beta.1", Stable100, Beta110);
+        using var h = new UpdateHarness(UpdatePreferences.Default, "1.1.0-beta.1", Stable100, Beta110);
         // Un fichier à la place du dossier des copies : la copie ne peut pas se faire.
         File.WriteAllText(h.BackupsRoot, "je suis un fichier");
         await h.Service.CheckNowAsync(CancellationToken.None);
@@ -429,7 +515,7 @@ public sealed class UpdateServiceTests
     [Fact]
     public async Task SetPreferences_WaitForNextStable_SavesAndRechecks()
     {
-        using var h = new UpdateHarness("1.1.0-beta.1", Stable100, Beta110);
+        using var h = new UpdateHarness(UpdatePreferences.Default, "1.1.0-beta.1", Stable100, Beta110);
         await h.Service.CheckNowAsync(CancellationToken.None);
         Assert.Equal(UpdateState.Available, h.Service.Current.State);
         Assert.Equal(1, h.FeedRequests);
@@ -437,7 +523,7 @@ public sealed class UpdateServiceTests
 
         await h.Service.SetPreferencesAsync(wait, CancellationToken.None);
 
-        Assert.Equal(wait, h.Store.Load());
+        Assert.Equal(wait, h.Store.Load(h.Installed));
         Assert.Equal(wait, h.Service.Current.Preferences);
         Assert.Equal(2, h.FeedRequests);
         Assert.Equal(UpdateState.UpToDate, h.Service.Current.State);

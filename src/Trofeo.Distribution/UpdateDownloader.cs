@@ -17,8 +17,17 @@ public sealed record DownloadedSetup(string Path, string Sha256);
 /// Le client HTTP de l'appelant : c'est lui qui suit les redirections (GitHub renvoie vers ses serveurs de fichiers)
 /// et qui décide du délai d'attente.
 /// </param>
-public sealed partial class UpdateDownloader(HttpClient http)
+/// <param name="idleTimeout">
+/// Le silence maximal de la connexion, relancé à chaque bloc reçu (<see cref="DefaultIdleTimeout"/> par défaut) : le délai du client
+/// HTTP ne couvre que l'arrivée des en-têtes, pas la lecture du corps, et un serveur qui se tait ne doit pas figer les mises à jour.
+/// </param>
+public sealed partial class UpdateDownloader(HttpClient http, TimeSpan? idleTimeout = null)
 {
+    /// <summary>Soixante secondes sans un octet : le téléchargement est abandonné.</summary>
+    public static readonly TimeSpan DefaultIdleTimeout = TimeSpan.FromSeconds(60);
+
+    private readonly TimeSpan _idleTimeout = idleTimeout ?? DefaultIdleTimeout;
+
     // Une empreinte SHA-256 en hexadécimal : 64 caractères.
     [GeneratedRegex("^[0-9a-fA-F]{64}$", RegexOptions.CultureInvariant)]
     private static partial Regex ChecksumPattern();
@@ -118,17 +127,28 @@ public sealed partial class UpdateDownloader(HttpClient http)
 
     private async Task<string> FetchChecksumAsync(string url, CancellationToken ct)
     {
-        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        EnsureSuccess(response);
-
-        // « <empreinte>  <nom> » (ou l'empreinte seule) : quelques dizaines d'octets. On n'en lit pas plus.
-        await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        idle.CancelAfter(_idleTimeout);
         var buffer = new byte[ChecksumFileLimit];
         var length = 0;
-        int read;
-        while (length < buffer.Length && (read = await stream.ReadAsync(buffer.AsMemory(length), ct).ConfigureAwait(false)) > 0)
+        try
         {
-            length += read;
+            using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, idle.Token).ConfigureAwait(false);
+            EnsureSuccess(response);
+
+            // « <empreinte>  <nom> » (ou l'empreinte seule) : quelques dizaines d'octets. On n'en lit pas plus.
+            await using var stream = await response.Content.ReadAsStreamAsync(idle.Token).ConfigureAwait(false);
+            int read;
+            while (length < buffer.Length
+                   && (read = await stream.ReadAsync(buffer.AsMemory(length), idle.Token).ConfigureAwait(false)) > 0)
+            {
+                length += read;
+                idle.CancelAfter(_idleTimeout);
+            }
+        }
+        catch (OperationCanceledException) when (idle.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw Interrupted();
         }
 
         var text = Encoding.UTF8.GetString(buffer, 0, length).TrimStart('﻿');
@@ -144,18 +164,23 @@ public sealed partial class UpdateDownloader(HttpClient http)
 
     private async Task<string> DownloadSetupAsync(GitHubRelease release, string partPath, IProgress<double>? progress, CancellationToken ct)
     {
-        using var response = await http.GetAsync(release.SetupUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        EnsureSuccess(response);
-
+        // Le silence est mesuré sur la connexion (en-têtes, puis chaque lecture du corps), pas sur l'écriture du disque ni sur la durée totale.
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        idle.CancelAfter(_idleTimeout);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         long total = 0;
-        await using (var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-        await using (var target = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+        try
         {
+            using var response = await http.GetAsync(release.SetupUrl, HttpCompletionOption.ResponseHeadersRead, idle.Token).ConfigureAwait(false);
+            EnsureSuccess(response);
+
+            await using var source = await response.Content.ReadAsStreamAsync(idle.Token).ConfigureAwait(false);
+            await using var target = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
             var buffer = new byte[81920];
             int read;
-            while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+            while ((read = await source.ReadAsync(buffer, idle.Token).ConfigureAwait(false)) > 0)
             {
+                idle.CancelAfter(_idleTimeout);
                 total += read;
                 if (total > release.SetupSize)
                 {
@@ -167,6 +192,10 @@ public sealed partial class UpdateDownloader(HttpClient http)
                 progress?.Report((double)total / release.SetupSize);
             }
         }
+        catch (OperationCanceledException) when (idle.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw Interrupted();
+        }
 
         if (total != release.SetupSize)
         {
@@ -175,6 +204,8 @@ public sealed partial class UpdateDownloader(HttpClient http)
 
         return Convert.ToHexString(hash.GetHashAndReset());
     }
+
+    private static UpdateException Interrupted() => new("Le téléchargement s'est interrompu.");
 
     private static UpdateException SizeMismatch() =>
         new("L'installateur téléchargé n'a pas la taille annoncée par la version : il n'est pas installé.");

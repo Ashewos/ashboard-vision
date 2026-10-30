@@ -18,4 +18,11 @@ public sealed record UpdatePreferences(UpdateChannel Channel, bool WaitForNextSt
 {
     /// <summary>Le canal stable, sans attendre.</summary>
     public static UpdatePreferences Default { get; } = new(UpdateChannel.Stable, false);
+
+    /// <summary>
+    /// Les choix quand rien n'est enregistré : le canal bêta si la version installée est une préversion (un testeur doit recevoir la
+    /// bêta suivante, et on ne lui propose pas de redescendre en stable), le canal stable sinon.
+    /// </summary>
+    public static UpdatePreferences DefaultFor(AppVersion installed) =>
+        installed.IsPrerelease ? new(UpdateChannel.Beta, false) : Default;
 }
