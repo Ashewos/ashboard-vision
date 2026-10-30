@@ -41,6 +41,7 @@ Ashboard Vision fait du Thermalright Trofeo Vision 9,16" (1920 × 462) un tablea
 - Le logiciel parle directement à l'écran, sans TRCC (le logiciel de Thermalright) et sans pilote à installer.
 - Il reprend tout seul quand tu débranches l'écran, quand le PC se met en veille ou quand un autre programme fige l'écran.
 - Une icône dans la zone de notification donne l'état de l'écran. Un double-clic ouvre les réglages : disposition, thèmes, modules, raccourcis clavier, mises à jour.
+- Des raccourcis clavier globaux changent d'onglet dans les modules Claude Code et Codex : `Ctrl+Alt+←` et `Ctrl+Alt+→`, ou `Ctrl+Alt+Maj+1` à `9` (voir [les raccourcis](docs/utilisation-avancee.md#raccourcis-clavier)).
 - Il reste discret : de l'ordre de 0,3 à 0,4 % du processeur et 40 à 50 Mo de mémoire, sans fond vidéo.
 - Trois thèmes (Classique, Liquid Glass, Pixel), la transparence des modules, la police, et un fond en couleur, en image, en GIF ou en vidéo.
 
@@ -158,11 +159,13 @@ Les relevés de capteurs viennent de [LibreHardwareMonitor](https://github.com/L
 
 La lecture des fonds vidéo passe par [Vortice.MediaFoundation](https://github.com/amerkoleci/Vortice.Windows) (MIT), qui s'appuie sur [SharpGen.Runtime](https://github.com/SharpGenTools/SharpGenTools) (MIT) ; ses autres dépendances, Vortice.DirectX et Vortice.Mathematics, sont aussi sous licence MIT.
 
+La fenêtre de réglage est faite avec [Avalonia](https://github.com/AvaloniaUI/Avalonia) (MIT).
+
 Données météo : [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0).
 
 Mascottes : redessins de fan de Clawd (Anthropic) et du pet Codex (OpenAI).
 
-Polices embarquées, les quatre familles des thèmes (Barlow Semi Condensed, Manrope, Pixelify Sans et VT323), toutes sous licence SIL Open Font License 1.1 (OFL) : le texte de chaque licence est dans [`src/Trofeo.Core/Assets/Fonts/`](src/Trofeo.Core/Assets/Fonts/) et copié à côté du programme :
+Polices embarquées, les quatre familles des thèmes (Barlow Semi Condensed, Manrope, Pixelify Sans et VT323), toutes sous licence SIL Open Font License 1.1 (OFL) : le texte de chaque licence est dans [`src/Trofeo.Core/Assets/Fonts/`](src/Trofeo.Core/Assets/Fonts/) (dossier `Assets/Fonts`) et copié à côté du programme :
 
 - Barlow Semi Condensed : `OFL-BarlowSemiCondensed.txt` ;
 - Manrope : `OFL-Manrope.txt` ;

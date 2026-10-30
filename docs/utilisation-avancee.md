@@ -59,6 +59,15 @@ La fenêtre de réglage fait tout ce qui suit. Cette section sert à ceux qui pr
 - **Freebox** : dans les réglages du module Réseau, `"source":"freebox"`. Au premier lancement, le module demande d'appuyer sur la flèche de la Freebox pour autoriser Ashboard Vision.
 - **UniFi** : `"source":"unifi","unifi":{"host":"192.168.1.1"}`, puis la clé API de la console avec `--set-secret network unifi.apiKey`.
 
+## Raccourcis clavier
+
+Des raccourcis globaux, actifs même quand une autre application a le focus, changent l'onglet affiché dans les modules Claude Code et Codex :
+
+- `Ctrl+Alt+←` et `Ctrl+Alt+→` : l'onglet précédent ou suivant ;
+- `Ctrl+Alt+Maj+1` à `Ctrl+Alt+Maj+9` : aller directement à l'onglet 1 à 9.
+
+Maj est là exprès : sur un clavier AZERTY, `Ctrl+Alt+chiffre` est `AltGr+chiffre` et empêcherait de taper `~`, `#`, `{`, `[`, `|`, `` ` ``, `\` et `^`. Une combinaison déjà prise par une autre application est simplement laissée de côté, et notée dans le journal (`logs\display.log`). Tu peux changer les raccourcis, ou revenir à ceux-ci, dans l'onglet Raccourcis de la fenêtre de réglage.
+
 ## Vérifier l'écran en ligne de commande
 
 L'outil `tools/Trofeo.HardwareCheck` sert à vérifier un écran, à régler l'apparence et à enregistrer des secrets sans la fenêtre. Il se construit avec `dotnet build -c Release` (voir « Compiler et lancer »). Ferme TRCC avant : un seul programme peut parler à l'écran.

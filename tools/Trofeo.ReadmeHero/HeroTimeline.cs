@@ -98,8 +98,9 @@ internal static class HeroTimeline
     /// <summary>L'angle de l'écran autour de l'axe vertical, en degrés : il oscille entre −2,5° et +2,5° sur un cycle.</summary>
     public static double Drift(double seconds) => -2.5 * Math.Cos(2 * Math.PI * Wrap(seconds, CycleSeconds) / CycleSeconds);
 
-    // Le reflet attend à gauche pendant 8 % du cycle (0,96 s), balaie la vitre jusqu'à 30 % (3,6 s) en ralentissant aux
-    // deux bouts, puis attend à droite. Ici le thème dure un tiers du cycle : les instants sont ramenés à 4 s.
+    // Le reflet est calé sur la durée d'un thème (4 s) : il attend à gauche pendant les 8 % du début (jusqu'à 0,32 s),
+    // balaie la vitre jusqu'à 30 % (1,2 s) en ralentissant aux deux bouts, puis attend à droite jusqu'au thème suivant.
+    // La maquette (animation de 4 s) donne les mêmes pourcentages.
     private static double SheenSweep(double inTheme)
     {
         const double start = 0.08 * ThemeSeconds;

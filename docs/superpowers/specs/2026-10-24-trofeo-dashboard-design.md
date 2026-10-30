@@ -281,7 +281,7 @@ Maquette de référence : `editor-grid-v3.html`.
 1. **Détection de l'écran.** Si le logiciel Thermalright tourne, l'assistant explique qu'il faut le fermer.
 2. **Orientation.** L'assistant affiche une image test sur l'écran et demande si elle est à l'endroit. Sinon, l'utilisateur la tourne.
 3. **Choix des modules** à placer : une disposition de départ est proposée.
-4. **Claude Code / Codex** : détection, puis proposition (avec consentement) d'installer la petite commande de barre d'état ou le hook (voir 6.2).
+4. **Claude Code / Codex** : détection, puis proposition (avec consentement) d'installer le mod `ashboard-quotas`, qui remplace la petite commande de barre d'état et le hook (voir 6.2 et `2026-10-29-plan-6-distribution-design.md`).
 5. **Réseau** : choix de la source et lancement de l'autorisation (Freebox) ou saisie de la clé (UniFi).
 6. **Météo** : ville.
 7. **Températures CPU** : case à cocher **« Installer le pilote PawnIO »**. On peut aussi l'installer plus tard depuis Paramètres.
