@@ -1,3 +1,5 @@
+using Trofeo.Modules.Agents;
+
 namespace Trofeo.Distribution.Tests;
 
 public sealed class UserCleanupTests
@@ -53,5 +55,87 @@ public sealed class UserCleanupTests
 
         Assert.Empty(runKey.Values);
         Assert.False(Directory.Exists(settings));
+    }
+
+    private static string Leftover(TempDir dir, string name)
+    {
+        var folder = dir.Combine(name);
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "secrets.dat"), "secret");
+        return folder;
+    }
+
+    [Fact]
+    public async Task Run_DeleteSettings_AlsoRemovesTheLeftoverFolders()
+    {
+        // Les copies d'avant un retour en arrière (avec secrets.dat), l'ancien dossier orphelin et le téléchargement de la mise à jour.
+        using var dir = new TempDir();
+        var backups = Leftover(dir, "ashboard-vision-sauvegardes");
+        var legacy = Leftover(dir, "trofeo-HB-dashboard");
+        var download = Leftover(dir, "ashboard-vision-mise-a-jour");
+        var other = Leftover(dir, "autre-dossier");
+        var settings = Settings(dir);
+
+        await new UserCleanup(new FakeRunKey(), new FakeClaude().Installer(null))
+            .RunAsync(settings, deleteSettings: true, CancellationToken.None, [backups, legacy, download]);
+
+        Assert.False(Directory.Exists(settings));
+        Assert.False(Directory.Exists(backups));
+        Assert.False(Directory.Exists(legacy));
+        Assert.False(Directory.Exists(download));
+        Assert.True(Directory.Exists(other));
+    }
+
+    [Fact]
+    public async Task Run_KeepSettings_KeepsTheLeftoverFolders()
+    {
+        using var dir = new TempDir();
+        var backups = Leftover(dir, "ashboard-vision-sauvegardes");
+        var settings = Settings(dir);
+
+        await new UserCleanup(new FakeRunKey(), new FakeClaude().Installer(null))
+            .RunAsync(settings, deleteSettings: false, CancellationToken.None, [backups]);
+
+        Assert.True(Directory.Exists(backups));
+        Assert.True(File.Exists(Path.Combine(settings, "layout.json")));
+    }
+
+    [Fact]
+    public async Task Run_KeepSettings_StillRemovesInstallationState()
+    {
+        using var dir = new TempDir();
+        var settings = Settings(dir);
+        File.WriteAllText(Path.Combine(settings, "installation.json"), """{"versionPreparee":"1.0.0","modInstalle":true}""");
+
+        await new UserCleanup(new FakeRunKey(), new FakeClaude().Installer(null)).RunAsync(settings, deleteSettings: false, CancellationToken.None);
+
+        Assert.False(File.Exists(Path.Combine(settings, "installation.json")));
+        Assert.True(File.Exists(Path.Combine(settings, "layout.json"))); // les réglages restent
+    }
+
+    [Fact]
+    public async Task Uninstall_ThenReinstall_AppliesTheInstallerChoiceAgain()
+    {
+        using var dir = new TempDir();
+        var settings = Settings(dir);
+        var runKey = new FakeRunKey();
+        var modsDir = dir.Combine("mods");
+        Directory.CreateDirectory(modsDir);
+        var version = new AppVersion(1, 0, 0, null);
+        var serviceExe = @"C:\Program Files\Ashboard Vision\Trofeo.Display.exe";
+        UserSetup NewSetup(FakeClaude claude) =>
+            new(runKey, claude.Installer(modsDir), new StatusLineInstaller(dir.Combine("claude")), settings, modsDir, serviceExe);
+
+        await NewSetup(new FakeClaude()).RunAsync(version, new InstallOptions(StartWithWindows: true), CancellationToken.None);
+        Assert.NotNull(runKey.Read("ashboard-vision"));
+
+        // Désinstallation en gardant les réglages (ou en silence), puis réinstallation de la même version.
+        await new UserCleanup(runKey, new FakeClaude().Installer(modsDir)).RunAsync(settings, deleteSettings: false, CancellationToken.None);
+        Assert.Null(runKey.Read("ashboard-vision"));
+
+        var report = await NewSetup(new FakeClaude()).RunAsync(version, new InstallOptions(StartWithWindows: true), CancellationToken.None);
+
+        Assert.True(report.Ran); // la préparation n'est pas sautée
+        Assert.Equal("\"" + serviceExe + "\"", runKey.Read("ashboard-vision")); // la case de l'installateur est appliquée de nouveau
     }
 }

@@ -19,7 +19,7 @@ public sealed record UserSetupReport(bool Ran, IReadOnlyList<string> Warnings);
 public sealed class UserSetup(
     IRunKey runKey, QuotaModInstaller mods, StatusLineInstaller statusLine, string settingsDir, string modsDir, string serviceExePath)
 {
-    private const string StateFileName = "installation.json";
+    internal const string StateFileName = "installation.json";
 
     /// <summary>L'ancienne valeur <c>Run</c> et la nouvelle (les mêmes noms que <c>RunKeyStartup</c>, dans le logiciel de réglage).</summary>
     private const string LegacyRunValue = "trofeo-HB-dashboard";

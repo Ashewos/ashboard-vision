@@ -96,7 +96,9 @@ static class Program
             if (!silent) ApplicationConfiguration.Initialize();
             var deleteSettings = ShouldDeleteSettings(silent, AskKeepSettings);
             var cleanup = new UserCleanup(new RegistryRunKey(), QuotaModInstaller.CreateProduction(null));
-            Task.Run(() => cleanup.RunAsync(AppPaths.SettingsDir, deleteSettings, CancellationToken.None)).GetAwaiter().GetResult();
+            Task.Run(() => cleanup.RunAsync(
+                AppPaths.SettingsDir, deleteSettings, CancellationToken.None,
+                [AppPaths.SettingsDir + "-sauvegardes", AppPaths.LegacySettingsDir, UpdateDownloadDir])).GetAwaiter().GetResult();
             return 0;
         }
         catch (Exception ex)
@@ -318,7 +320,10 @@ static class Program
         new UpdateChecker(http), new UpdateDownloader(http), new WindowsInstallerLauncher(),
         new UpdatePreferencesStore(Path.Combine(AppPaths.SettingsDir, "mises-a-jour.json")), installed,
         AppPaths.SettingsDir, AppPaths.SettingsDir + "-sauvegardes",
-        Path.Combine(Path.GetTempPath(), ProductIdentity.Id + "-mise-a-jour"), TimeProvider.System);
+        UpdateDownloadDir, TimeProvider.System);
+
+    /// <summary><c>%TEMP%\ashboard-vision-mise-a-jour</c> : l'installateur téléchargé.</summary>
+    private static string UpdateDownloadDir => Path.Combine(Path.GetTempPath(), ProductIdentity.Id + "-mise-a-jour");
 
     /// <summary>
     /// La préparation propre à l'utilisateur (valeur <c>Run</c>, ancienne barre d'état, mod des quotas), faite une fois par version, en
