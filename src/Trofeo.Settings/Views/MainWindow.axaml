@@ -73,6 +73,12 @@
                      IsVisible="{Binding StartFailed}" />
         </StackPanel>
       </Border>
+
+      <!-- Le service tourne mais parle une autre version : pas de bouton, relancer le service n'y changerait rien. -->
+      <Border Classes="panel" IsVisible="{Binding IsVersionMismatch}" Padding="32"
+              HorizontalAlignment="Left" VerticalAlignment="Top" MaxWidth="560">
+        <TextBlock Classes="lead" TextWrapping="Wrap" Text="{x:Static t:Texts.VersionMismatchMessage}" />
+      </Border>
     </Grid>
   </Grid>
 </Window>

@@ -139,14 +139,14 @@ public class ControlChannelTests
     }
 
     [Fact]
-    public async Task Hello_DifferentProtocolVersion_ThrowsControlException()
+    public async Task Hello_DifferentProtocolVersion_ThrowsProtocolMismatchException()
     {
         var name = NewPipeName();
         var handler = new FakeHandler { WelcomeToReturn = SampleWelcome() with { ProtocolVersion = ControlPipe.ProtocolVersion + 1 } };
         using var server = new ControlServer(name, handler);
         server.Start();
 
-        await Assert.ThrowsAsync<ControlException>(() => ConnectAsync(name));
+        await Assert.ThrowsAsync<ProtocolMismatchException>(() => ConnectAsync(name)); // une ControlException, mais reconnaissable
     }
 
     [Fact]

@@ -4,7 +4,17 @@ using Trofeo.ModuleKit;
 namespace Trofeo.Settings.Services;
 
 /// <summary>Où en est la liaison avec le service d'affichage.</summary>
-public enum LinkState { Connecting, Connected, ServiceStopped }
+public enum LinkState
+{
+    Connecting,
+    Connected,
+
+    /// <summary>Aucun service ne répond (trois tentatives de suite).</summary>
+    ServiceStopped,
+
+    /// <summary>Un service répond, mais il parle une autre version du protocole que la fenêtre : relancer le service n'y changerait rien.</summary>
+    VersionMismatch,
+}
 
 /// <summary>
 /// La liaison de la fenêtre avec le service d'affichage : tout ce que les réglages lui demandent passe par là.

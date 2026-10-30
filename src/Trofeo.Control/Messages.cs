@@ -79,7 +79,10 @@ public interface IControlHandler
 }
 
 /// <summary>Erreur renvoyée par le service, ou connexion perdue ; le message est affichable.</summary>
-public sealed class ControlException(string message) : Exception(message);
+public class ControlException(string message) : Exception(message);
+
+/// <summary>Le service parle une autre version du protocole que la fenêtre : les deux ne se comprendront pas avant d'être mis à jour.</summary>
+public sealed class ProtocolMismatchException(string message) : ControlException(message);
 
 /// <summary>Types de requête du protocole.</summary>
 internal static class MessageTypes

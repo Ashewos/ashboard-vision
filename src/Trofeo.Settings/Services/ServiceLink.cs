@@ -183,6 +183,13 @@ public sealed class ServiceLink : IServiceLink
             {
                 break; // La liaison se ferme : une erreur de dernière minute n'intéresse personne.
             }
+            catch (ProtocolMismatchException)
+            {
+                // Le service tourne mais parle une autre version : ce n'est pas un service arrêté. On continue d'essayer (il sera peut-être
+                // mis à jour entre-temps), sans compter ces essais comme des échecs de connexion.
+                Volatile.Write(ref _failures, 0);
+                Update(() => { State = LinkState.VersionMismatch; Welcome = null; Status = null; Updates = null; }, onlyIf: () => State != LinkState.VersionMismatch);
+            }
             catch (Exception)
             {
                 // Pas de service, version de protocole différente, tube qui se ferme, erreur inattendue du système : un échec

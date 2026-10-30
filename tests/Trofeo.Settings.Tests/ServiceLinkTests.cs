@@ -28,7 +28,10 @@ public class ServiceLinkTests
     {
         public readonly ConcurrentQueue<int> Subscriptions = new();
 
-        public Welcome Hello() => new("1.0.0", ControlPipe.ProtocolVersion, []);
+        /// <summary>La version du protocole annoncée à la connexion.</summary>
+        public int Protocol { get; init; } = ControlPipe.ProtocolVersion;
+
+        public Welcome Hello() => new("1.0.0", Protocol, []);
 
         public ServiceStatus GetStatus() => new(
             new ScreenInfo(LinkScreenState.Ready, null), false, [],
@@ -187,6 +190,25 @@ public class ServiceLinkTests
         using var server = new ControlServer(pipe, new Handler());
         server.Start();
         await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion tardive");
+    }
+
+    [Fact]
+    public async Task Link_DifferentProtocol_IsVersionMismatch_NotServiceStopped()
+    {
+        var pipe = NewPipeName();
+        var history = new ConcurrentQueue<LinkState>();
+        using var server = new ControlServer(pipe, new Handler { Protocol = ControlPipe.ProtocolVersion + 1 });
+        server.Start();
+        await using var link = NewLink(pipe);
+        link.Changed += () => history.Enqueue(link.State);
+
+        await WaitUntilAsync(() => link.State == LinkState.VersionMismatch, "versions différentes constatées");
+
+        // Plusieurs tentatives plus tard, on n'a jamais dit « service arrêté » : il tourne, c'est la version qui diffère.
+        await Task.Delay(400, TestContext.Current.CancellationToken);
+        Assert.Equal(LinkState.VersionMismatch, link.State);
+        Assert.DoesNotContain(LinkState.ServiceStopped, history);
+        Assert.Null(link.Welcome);
     }
 
     [Fact]

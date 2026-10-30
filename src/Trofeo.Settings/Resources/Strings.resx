@@ -67,6 +67,21 @@
   <data name="ServiceStoppedMessage" xml:space="preserve">
     <value>Le service d'affichage ne tourne pas. Sans lui, l'écran reste éteint et rien ne peut être réglé.</value>
   </data>
+  <data name="MoveInProgress" xml:space="preserve">
+    <value>Tes réglages sont en train d'être déplacés vers le nouveau dossier d'Ashboard Vision. Relance cette fenêtre dans un instant.</value>
+    <comment>Boîte de message au démarrage : le service n'a pas fini de déménager les réglages.</comment>
+  </data>
+  <data name="MoveServiceMissing" xml:space="preserve">
+    <value>Tes réglages doivent d'abord être déplacés vers le nouveau dossier d'Ashboard Vision, mais le service n'a pas pu démarrer. Lance Ashboard Vision depuis le menu Démarrer, puis rouvre cette fenêtre.</value>
+    <comment>Boîte de message au démarrage : le service n'a pas pu être lancé pour déménager les réglages.</comment>
+  </data>
+  <data name="LinkVersionMismatch" xml:space="preserve">
+    <value>Versions différentes</value>
+    <comment>Pastille quand le service parle une autre version que la fenêtre.</comment>
+  </data>
+  <data name="VersionMismatchMessage" xml:space="preserve">
+    <value>La fenêtre et le service n'ont pas la même version. Ferme Ashboard Vision (clic droit sur son icône, puis Quitter) et relance-le : les deux seront alors à jour ensemble.</value>
+  </data>
   <data name="StartService" xml:space="preserve">
     <value>Démarrer le service</value>
   </data>

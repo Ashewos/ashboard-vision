@@ -49,6 +49,14 @@ public static class Texts
     public static string StripWaiting => Get();
     /// <summary>Le service d'affichage ne tourne pas. Sans lui, l'écran reste éteint et rien ne peut être réglé.</summary>
     public static string ServiceStoppedMessage => Get();
+    /// <summary>Boîte de message au démarrage : le service n'a pas fini de déménager les réglages.</summary>
+    public static string MoveInProgress => Get();
+    /// <summary>Boîte de message au démarrage : le service n'a pas pu être lancé pour déménager les réglages.</summary>
+    public static string MoveServiceMissing => Get();
+    /// <summary>Pastille quand le service parle une autre version que la fenêtre.</summary>
+    public static string LinkVersionMismatch => Get();
+    /// <summary>Panneau quand le service parle une autre version que la fenêtre.</summary>
+    public static string VersionMismatchMessage => Get();
     /// <summary>Démarrer le service</summary>
     public static string StartService => Get();
     /// <summary>Le service d'affichage est introuvable. Lance Trofeo.Display.exe toi-même.</summary>

@@ -75,7 +75,7 @@ public sealed class ControlClient : IAsyncDisposable
                 var response = await client.SendAsync(new Request(client.NextId(), MessageTypes.Hello), timeout, ct).ConfigureAwait(false);
                 var welcome = response.Welcome ?? throw new ControlException("Réponse du service incomplète.");
                 if (welcome.ProtocolVersion != ControlPipe.ProtocolVersion)
-                    throw new ControlException(
+                    throw new ProtocolMismatchException(
                         $"Le service parle la version {welcome.ProtocolVersion} du protocole, cette fenêtre la version {ControlPipe.ProtocolVersion} : mets les deux à jour.");
                 client.Welcome = welcome;
             }

@@ -76,10 +76,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool ShowsTabs => !IsFirstRunVisible;
 
     /// <summary>Le contenu de l'onglet choisi s'affiche : le service tourne et l'assistant est terminé.</summary>
-    public bool ShowsTabContent => ShowsTabs && !IsStopped;
+    public bool ShowsTabContent => ShowsTabs && !HidesContent;
 
     /// <summary>L'assistant s'affiche à la place des onglets : le service tourne et l'assistant n'est pas terminé.</summary>
-    public bool ShowsFirstRun => IsFirstRunVisible && !IsStopped;
+    public bool ShowsFirstRun => IsFirstRunVisible && !HidesContent;
 
     // Le fichier des préférences a changé : l'assistant se rouvre (première étape) ou se ferme.
     private void OnPreferencesChanged()
@@ -139,11 +139,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>Le service ne tourne pas : le panneau « Démarrer le service » remplace les onglets.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsGridVisible), nameof(ShowsTabContent), nameof(ShowsFirstRun))]
+    [NotifyPropertyChangedFor(nameof(IsGridVisible), nameof(ShowsTabContent), nameof(ShowsFirstRun), nameof(HidesContent))]
     private bool _isStopped;
 
+    /// <summary>
+    /// Le service tourne mais parle une autre version que la fenêtre : un panneau le dit, sans bouton (relancer le service n'y changerait
+    /// rien, et son mutex refuserait un second lancement).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGridVisible), nameof(ShowsTabContent), nameof(ShowsFirstRun), nameof(HidesContent))]
+    private bool _isVersionMismatch;
+
+    /// <summary>Un panneau (service arrêté, versions différentes) remplace le contenu des onglets.</summary>
+    public bool HidesContent => IsStopped || IsVersionMismatch;
+
     /// <summary>Le damier se pose sur la bande dans l'onglet Disposition, tant que le service tourne et que l'assistant n'est pas là.</summary>
-    public bool IsGridVisible => SelectedTab is LayoutTabViewModel && !IsStopped && !IsFirstRunVisible;
+    public bool IsGridVisible => SelectedTab is LayoutTabViewModel && !HidesContent && !IsFirstRunVisible;
 
     /// <summary>Le démarrage a échoué : Trofeo.Display.exe est introuvable.</summary>
     [ObservableProperty]
@@ -186,6 +197,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void Refresh()
     {
         IsStopped = _link.State == LinkState.ServiceStopped;
+        IsVersionMismatch = _link.State == LinkState.VersionMismatch;
         if (!IsStopped)
             StartFailed = false;
 

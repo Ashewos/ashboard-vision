@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Avalonia;
+using Trofeo.Core;
 using Trofeo.Settings.Services;
 
 namespace Trofeo.Settings;
@@ -13,6 +14,15 @@ internal static class Program
         using var instance = SingleInstance.Acquire();
         if (!instance.IsFirst)
             return 0;
+
+        // Avant tout accès au dossier des réglages (le journal y crée « logs ») : si le service n'a pas encore déménagé les réglages
+        // d'avant le changement de nom, on le lui demande et on l'attend, au lieu de leur faire concurrence.
+        var moved = LegacyMoveWait.Run(AppPaths.LegacySettingsDir, AppPaths.SettingsDir, ServiceStarter.Default.TryStart, Thread.Sleep);
+        if (LegacyMoveWait.MessageFor(moved) is { } message)
+        {
+            LegacyMoveWait.Show(message);
+            return 0;
+        }
 
         // Le journal et le filet d'abord : un plantage de la fenêtre laisse une trace dans logs\settings.log.
         var log = SettingsLog.TryOpen(SettingsLog.DefaultPath);
