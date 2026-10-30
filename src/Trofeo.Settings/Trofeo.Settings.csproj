@@ -8,6 +8,7 @@
     <RootNamespace>Trofeo.Settings</RootNamespace>
     <!-- Les liaisons de données sont compilées partout (x:DataType) : une faute de nom est une erreur de compilation. -->
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationIcon>..\..\assets\brand\ashboard-vision.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,6 +35,12 @@
     <Content Include="..\Trofeo.Core\Assets\Fonts\OFL-VT323.txt" Link="Assets\Fonts\OFL-VT323.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Trofeo.Core\Assets\Fonts\OFL-Manrope.txt" Link="Assets\Fonts\OFL-Manrope.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Trofeo.Core\Assets\Fonts\OFL-BarlowSemiCondensed.txt" Link="Assets\Fonts\OFL-BarlowSemiCondensed.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- L'icône de la fenêtre et le symbole de l'en-tête : les images de la marque, fabriquées par tools/Trofeo.BrandAssets. -->
+  <ItemGroup>
+    <AvaloniaResource Include="..\..\assets\brand\ashboard-vision.ico" Link="Assets\Brand\ashboard-vision.ico" />
+    <AvaloniaResource Include="..\..\assets\brand\logo-256.png" Link="Assets\Brand\logo-256.png" />
   </ItemGroup>
 
   <!-- Les vignettes des cartes de thème : faites par l'option « thumbnails » de tools/Trofeo.ThemePreview (voir son aide). -->

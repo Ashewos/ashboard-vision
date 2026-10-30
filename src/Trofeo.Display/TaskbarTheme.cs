@@ -5,8 +5,8 @@ namespace Trofeo.Display;
 
 /// <summary>
 /// Le thème de la barre des tâches (<c>HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize</c>, valeur
-/// <c>SystemUsesLightTheme</c>) et l'icône de la zone de notification qui lui va : le symbole sombre sur une barre claire, le symbole
-/// clair sur une barre sombre. Les fichiers <c>tray-clair.ico</c> et <c>tray-sombre.ico</c> sont des ressources incorporées de
+/// <c>SystemUsesLightTheme</c>) et l'icône de la zone de notification qui lui va : l'icône claire sur une barre claire, l'icône
+/// sombre sur une barre sombre (le choix d'Alex). Les fichiers <c>tray-clair.ico</c> et <c>tray-sombre.ico</c> sont des ressources incorporées de
 /// <c>Trofeo.Display</c>, sous ces noms.
 /// </summary>
 internal static class TaskbarTheme

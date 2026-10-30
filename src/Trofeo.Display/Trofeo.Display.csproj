@@ -5,7 +5,15 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>..\..\assets\brand\ashboard-vision.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- Les icônes de la zone de notification, une par thème de la barre des tâches (TaskbarTheme les charge par ce nom exact).
+       Les fichiers sont fabriqués par tools/Trofeo.BrandAssets. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\assets\brand\tray-clair.ico" LogicalName="tray-clair.ico" />
+    <EmbeddedResource Include="..\..\assets\brand\tray-sombre.ico" LogicalName="tray-sombre.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Lecture des fonds vidéo (Media Foundation). MIT ; avec ses dépendances (SharpGen.Runtime, Vortice.DirectX, Vortice.Mathematics), environ 1,2 Mo de DLL dans le dossier de sortie. -->

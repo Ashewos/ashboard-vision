@@ -207,7 +207,7 @@ public sealed class TrayIcon : ApplicationContext
 
     private void ShowBalloon(string text) => _icon.ShowBalloonTip(5000, ProductIdentity.DisplayName, text, ToolTipIcon.Warning);
 
-    // Le symbole sombre sur une barre claire, le clair sur une barre sombre. Sans le fichier incorporé : l'icône de secours.
+    // L'icône claire sur une barre claire, la sombre sur une barre sombre. Sans le fichier incorporé : l'icône de secours.
     private void ApplyIcon(bool lightTaskbar)
     {
         _lightTaskbar = lightTaskbar;

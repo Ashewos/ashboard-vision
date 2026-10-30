@@ -29,4 +29,19 @@ public sealed class TaskbarThemeTests
     {
         Assert.Null(TaskbarTheme.TryLoadIcon("inexistant.ico"));
     }
+
+    // Les deux icônes sont des ressources incorporées de Trofeo.Display (assets/brand) : sans elles, la zone de notification
+    // retomberait en silence sur l'icône générique de Windows.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TryLoadIcon_BrandIcon_IsEmbeddedAndLoads(bool lightTaskbar)
+    {
+        var name = TaskbarTheme.IconResourceFor(lightTaskbar);
+
+        using var icon = TaskbarTheme.TryLoadIcon(name);
+
+        Assert.NotNull(icon);
+        Assert.True(icon.Width > 0 && icon.Height > 0);
+    }
 }
