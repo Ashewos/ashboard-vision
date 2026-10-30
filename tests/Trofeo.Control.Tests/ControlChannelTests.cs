@@ -38,6 +38,10 @@ public class ControlChannelTests
             ])),
     ]);
 
+    private static UpdateInfo SampleUpdate() =>
+        new(LinkUpdateState.Available, "1.2.0", IsDowngrade: true, Percent: null, "La version 1.2.0 est disponible.",
+            LinkUpdateChannel.Beta, WaitForNextStable: true);
+
     private sealed class FakeHandler : IControlHandler
     {
         public Welcome WelcomeToReturn { get; set; } = SampleWelcome();
@@ -45,6 +49,12 @@ public class ControlChannelTests
         public Func<CancellationToken, Task<Reloaded>> OnReload { get; set; } = _ => Task.FromResult(new Reloaded(true, null, []));
         public Func<Guid, CancellationToken, Task<bool>> OnRestart { get; set; } = (_, _) => Task.FromResult(true);
         public Exception? SubscribeError { get; set; }
+
+        public UpdateInfo UpdateToReturn { get; set; } = SampleUpdate();
+        public int Checks;
+        public List<(LinkUpdateChannel Channel, bool Wait)> PreferencesSet { get; } = [];
+        public List<bool> Installs { get; } = [];
+        public ActionResult InstallResult { get; set; } = new(true, "Windows va demander l'autorisation d'installer la mise à jour.");
 
         public readonly TaskCompletionSource<Action<PreviewFrame>> Subscribed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public readonly TaskCompletionSource Unsubscribed = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -61,6 +71,26 @@ public class ControlChannelTests
 
         public Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct) =>
             Task.FromResult(new ActionResult(true, $"{instanceId}:{actionKey}"));
+
+        public UpdateInfo GetUpdate() => UpdateToReturn;
+
+        public Task CheckUpdatesAsync(CancellationToken ct)
+        {
+            Interlocked.Increment(ref Checks);
+            return Task.CompletedTask;
+        }
+
+        public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable, CancellationToken ct)
+        {
+            PreferencesSet.Add((channel, waitForNextStable));
+            return Task.CompletedTask;
+        }
+
+        public Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade, CancellationToken ct)
+        {
+            Installs.Add(confirmDowngrade);
+            return Task.FromResult(InstallResult);
+        }
 
         public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame)
         {
@@ -216,6 +246,64 @@ public class ControlChannelTests
         var action = await client.RunActionAsync(id, "login", CancellationToken.None);
         Assert.True(action.Ok);
         Assert.Equal($"{id}:login", action.Message);
+    }
+
+    [Fact]
+    public async Task Update_GetCheckSetPreferencesAndInstall_RoundTrip()
+    {
+        var name = NewPipeName();
+        var handler = new FakeHandler();
+        using var server = new ControlServer(name, handler);
+        server.Start();
+        await using var client = await ConnectAsync(name);
+
+        Assert.Equal(SampleUpdate(), await client.GetUpdateAsync(CancellationToken.None));
+
+        await client.CheckUpdatesAsync(CancellationToken.None);
+        Assert.Equal(1, handler.Checks);
+
+        await client.SetUpdatePreferencesAsync(LinkUpdateChannel.Stable, waitForNextStable: true, CancellationToken.None);
+        await client.SetUpdatePreferencesAsync(LinkUpdateChannel.Beta, waitForNextStable: false, CancellationToken.None);
+        Assert.Equal([(LinkUpdateChannel.Stable, true), (LinkUpdateChannel.Beta, false)], handler.PreferencesSet);
+
+        var installed = await client.InstallUpdateAsync(confirmDowngrade: true, CancellationToken.None);
+        Assert.True(installed.Ok);
+        Assert.Equal(handler.InstallResult.Message, installed.Message);
+        handler.InstallResult = new ActionResult(false, "Revenir à une version plus ancienne demande ta confirmation.");
+        var refused = await client.InstallUpdateAsync(confirmDowngrade: false, CancellationToken.None);
+        Assert.False(refused.Ok);
+        Assert.Equal([true, false], handler.Installs);
+    }
+
+    [Fact]
+    public async Task Update_NullFieldsAndDownloadProgress_RoundTrip()
+    {
+        var name = NewPipeName();
+        var handler = new FakeHandler
+        {
+            UpdateToReturn = new UpdateInfo(LinkUpdateState.Downloading, "1.0.1", false, 42, null, LinkUpdateChannel.Stable, false),
+        };
+        using var server = new ControlServer(name, handler);
+        server.Start();
+        await using var client = await ConnectAsync(name);
+
+        var update = await client.GetUpdateAsync(CancellationToken.None);
+
+        Assert.Equal(handler.UpdateToReturn, update);
+        Assert.Equal(42, update.Percent);
+        Assert.Null(update.Message);
+    }
+
+    [Fact]
+    public void ProtocolVersion_IsTwo() => Assert.Equal(2, ControlPipe.ProtocolVersion);
+
+    [Fact]
+    public void TimeoutFor_UpdateRequests()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(10), ControlClient.TimeoutFor(MessageTypes.GetUpdate));
+        Assert.Equal(TimeSpan.FromSeconds(45), ControlClient.TimeoutFor(MessageTypes.CheckUpdates));
+        Assert.Equal(TimeSpan.FromSeconds(45), ControlClient.TimeoutFor(MessageTypes.SetUpdatePreferences));
+        Assert.Equal(TimeSpan.FromMinutes(10), ControlClient.TimeoutFor(MessageTypes.InstallUpdate));
     }
 
     [Fact]

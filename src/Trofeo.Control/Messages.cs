@@ -31,6 +31,21 @@ public sealed record Reloaded(bool Applied, string? Error, IReadOnlyList<string>
 /// <summary>Une image de l'écran (JPEG) et la rotation que l'écran lui applique, en degrés.</summary>
 public sealed record PreviewFrame(byte[] Jpeg, int Rotation);
 
+/// <summary>Où en sont les mises à jour, tel que la fenêtre de réglage le connaît (miroir de l'état du service).</summary>
+public enum LinkUpdateState { Unknown, Checking, UpToDate, NoStableYet, Available, Downloading, Installing, Failed }
+
+/// <summary>Les versions suivies : seulement les stables, ou aussi les bêtas d'essai.</summary>
+public enum LinkUpdateChannel { Stable, Beta }
+
+/// <summary>
+/// Les mises à jour vues par la fenêtre. <paramref name="Version"/> est la version proposée, <paramref name="IsDowngrade"/> dit
+/// qu'elle est plus ancienne que l'installée, <paramref name="Percent"/> n'a de sens que pendant le téléchargement et
+/// <paramref name="Message"/> est écrit pour être lu tel quel. <paramref name="Channel"/> et <paramref name="WaitForNextStable"/>
+/// sont les choix en vigueur.
+/// </summary>
+public sealed record UpdateInfo(
+    LinkUpdateState State, string? Version, bool IsDowngrade, int? Percent, string? Message, LinkUpdateChannel Channel, bool WaitForNextStable);
+
 /// <summary>Ce que le service sait faire pour la fenêtre de réglage. Implémenté côté service.</summary>
 public interface IControlHandler
 {
@@ -43,6 +58,18 @@ public interface IControlHandler
 
     Task<IReadOnlyList<LookupResult>> LookupAsync(string typeId, string fieldKey, string query, CancellationToken ct);
     Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct);
+
+    /// <summary>Où en sont les mises à jour (sans rien lancer).</summary>
+    UpdateInfo GetUpdate();
+
+    /// <summary>Vérifie les mises à jour tout de suite ; le résultat se lit ensuite avec <see cref="GetUpdate"/>.</summary>
+    Task CheckUpdatesAsync(CancellationToken ct);
+
+    /// <summary>Enregistre le canal suivi et le choix « attendre la prochaine stable », puis vérifie de nouveau.</summary>
+    Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable, CancellationToken ct);
+
+    /// <summary>Télécharge et lance l'installateur de la version proposée ; un retour en arrière demande <paramref name="confirmDowngrade"/>.</summary>
+    Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade, CancellationToken ct);
 
     /// <summary>
     /// <paramref name="onFrame"/> est appelé depuis le fil d'affichage : il ne doit jamais bloquer.
@@ -64,6 +91,10 @@ internal static class MessageTypes
     public const string Lookup = "lookup";
     public const string Action = "action";
     public const string Preview = "preview";
+    public const string GetUpdate = "getUpdate";
+    public const string CheckUpdates = "checkUpdates";
+    public const string SetUpdatePreferences = "setUpdatePreferences";
+    public const string InstallUpdate = "installUpdate";
     public const string Error = "error";
 }
 
@@ -76,6 +107,9 @@ internal sealed record Request(int Id, string Type)
     public Guid? InstanceId { get; init; }
     public string? ActionKey { get; init; }
     public int? MaxFps { get; init; }
+    public LinkUpdateChannel? Channel { get; init; }
+    public bool? WaitForNextStable { get; init; }
+    public bool? ConfirmDowngrade { get; init; }
 }
 
 /// <summary>Réponse JSON : <see cref="ReplyTo"/> reprend l'identifiant de la requête ; type « error » pour un échec.</summary>
@@ -88,6 +122,7 @@ internal sealed record Response(int ReplyTo, string Type)
     public bool? Restarted { get; init; }
     public IReadOnlyList<LookupResult>? Results { get; init; }
     public ActionResult? Action { get; init; }
+    public UpdateInfo? Update { get; init; }
 }
 
 internal static class ControlJson

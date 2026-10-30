@@ -6,6 +6,7 @@ using Trofeo.Core.Layout;
 using Trofeo.Core.Rendering;
 using Trofeo.Core.Shortcuts;
 using Trofeo.Device;
+using Trofeo.Distribution;
 using Trofeo.Modules.Agents;
 using Trofeo.Modules.Clock;
 using Trofeo.Modules.NowPlaying;
@@ -92,7 +93,7 @@ public sealed class ServiceControlHandlerTests
 
         public Rig(
             DashboardLayout? layout = null, Func<ScreenInfo>? screen = null, Func<SensorInfo>? sensors = null,
-            Func<DashboardLayout, LoopConfig?, LoopConfig>? build = null, LoopConfig? initialConfig = null)
+            Func<DashboardLayout, LoopConfig?, LoopConfig>? build = null, LoopConfig? initialConfig = null, UpdateService? updates = null)
         {
             Directory.CreateDirectory(_dir);
             LayoutPath = Path.Combine(_dir, "layout.json");
@@ -108,7 +109,7 @@ public sealed class ServiceControlHandlerTests
                 sensors ?? (() => new SensorInfo(true, false, false)),
                 new ProcessMeter(() => (TimeSpan.Zero, 1, 2), LoopRig.Time, 4),
                 build ?? ((layout, current) => LoopConfigFactory.Build(layout, new NoSystemFonts(), null, Sink.Warn, current)),
-                Hotkeys, Sink, initialConfig);
+                Hotkeys, Sink, initialConfig, updates);
         }
 
         public string LayoutPath { get; }
@@ -662,5 +663,143 @@ public sealed class ServiceControlHandlerTests
         rig.LoopRig.Loop.Tick();
 
         Assert.NotEmpty(frames);
+    }
+
+    // ---- Mises à jour ----
+
+    /// <summary>Un vrai <see cref="UpdateService"/> sur un faux GitHub : la version 1.0.0 est publiée, et son installateur est introuvable.</summary>
+    private sealed class UpdateRig : HttpMessageHandler
+    {
+        private const string Feed = """
+            [{"tag_name":"v1.0.0","draft":false,"prerelease":false,"published_at":"2026-10-29T10:00:00Z","assets":[
+              {"name":"Ashboard-Vision-Setup-1.0.0.exe","size":5000,"browser_download_url":"https://github.com/Ashewos/ashboard-vision/releases/download/v1.0.0/Ashboard-Vision-Setup-1.0.0.exe"},
+              {"name":"Ashboard-Vision-Setup-1.0.0.exe.sha256","size":80,"browser_download_url":"https://github.com/Ashewos/ashboard-vision/releases/download/v1.0.0/Ashboard-Vision-Setup-1.0.0.exe.sha256"}]}]
+            """;
+
+        private readonly string _dir = Path.Combine(Path.GetTempPath(), "trofeo-maj-" + Guid.NewGuid().ToString("N"));
+
+        public UpdateRig(string installed = "1.1.0-beta.1")
+        {
+            var http = new HttpClient(this);
+            Service = new UpdateService(
+                new UpdateChecker(http), new UpdateDownloader(http), new RefusingLauncher(),
+                new UpdatePreferencesStore(Path.Combine(_dir, "mises-a-jour.json")),
+                AppVersion.TryParse(installed, out var version) ? version : throw new ArgumentException(installed),
+                Path.Combine(_dir, "reglages"), Path.Combine(_dir, "sauvegardes"), Path.Combine(_dir, "telechargement"), TimeProvider.System);
+        }
+
+        public UpdateService Service { get; }
+        public List<string> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var url = request.RequestUri!.AbsoluteUri;
+            lock (Requests) Requests.Add(url);
+            var response = url == ReleaseFeed.Url
+                ? new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(Feed) }
+                : new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+            return Task.FromResult(response);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Service.Dispose();
+                try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
+            }
+
+            base.Dispose(disposing);
+        }
+
+        private sealed class RefusingLauncher : IInstallerLauncher
+        {
+            public InstallerLaunch Launch(string setupPath) => throw new InvalidOperationException("Rien ne doit être lancé.");
+        }
+    }
+
+    [Fact]
+    public void GetUpdate_WithoutUpdateService_ReturnsUnknown()
+    {
+        using var rig = new Rig();
+
+        var update = rig.Handler.GetUpdate();
+
+        Assert.Equal(new UpdateInfo(LinkUpdateState.Unknown, null, false, null, null, LinkUpdateChannel.Stable, false), update);
+    }
+
+    [Fact]
+    public async Task UpdateRequests_WithoutUpdateService_DoNothingAndRefuseToInstall()
+    {
+        using var rig = new Rig();
+
+        await rig.Handler.CheckUpdatesAsync(CancellationToken.None);
+        await rig.Handler.SetUpdatePreferencesAsync(LinkUpdateChannel.Beta, true, CancellationToken.None);
+        var install = await rig.Handler.InstallUpdateAsync(true, CancellationToken.None);
+
+        Assert.False(install.Ok);
+        Assert.Equal("Les mises à jour ne sont pas disponibles pour l'instant.", install.Message);
+    }
+
+    [Fact]
+    public async Task GetUpdate_AfterCheck_MapsStateVersionAndPreferences()
+    {
+        using var updates = new UpdateRig();
+        using var rig = new Rig(updates: updates.Service);
+
+        await rig.Handler.CheckUpdatesAsync(CancellationToken.None);
+        var update = rig.Handler.GetUpdate();
+
+        Assert.Equal(
+            new UpdateInfo(LinkUpdateState.Available, "1.0.0", true, null, "La version 1.0.0 est disponible.", LinkUpdateChannel.Stable, false),
+            update);
+    }
+
+    [Theory]
+    [MemberData(nameof(AllUpdateStates))]
+    public void ToUpdateInfo_EveryStateHasItsCounterpart(UpdateState state)
+    {
+        var info = ServiceControlHandler.ToUpdateInfo(
+            new UpdateStatus(state, "1.0.1", false, 7, "Message", new UpdatePreferences(UpdateChannel.Beta, true)));
+
+        Assert.Equal(state.ToString(), info.State.ToString());
+        Assert.Equal(new UpdateInfo(info.State, "1.0.1", false, 7, "Message", LinkUpdateChannel.Beta, true), info);
+    }
+
+    public static IEnumerable<object[]> AllUpdateStates() => Enum.GetValues<UpdateState>().Select(s => new object[] { s });
+
+    [Fact]
+    public async Task SetUpdatePreferences_SavesTheChoicesAndChecksAgain()
+    {
+        using var updates = new UpdateRig();
+        using var rig = new Rig(updates: updates.Service);
+
+        await rig.Handler.SetUpdatePreferencesAsync(LinkUpdateChannel.Beta, waitForNextStable: true, CancellationToken.None);
+
+        Assert.Equal(new UpdatePreferences(UpdateChannel.Beta, true), updates.Service.Current.Preferences);
+        var info = rig.Handler.GetUpdate();
+        Assert.Equal(LinkUpdateChannel.Beta, info.Channel);
+        Assert.True(info.WaitForNextStable);
+        Assert.Contains(ReleaseFeed.Url, updates.Requests);
+    }
+
+    [Fact]
+    public async Task InstallUpdate_ForwardsConfirmDowngrade()
+    {
+        using var updates = new UpdateRig();
+        using var rig = new Rig(updates: updates.Service);
+        await rig.Handler.CheckUpdatesAsync(CancellationToken.None);
+
+        // Retour en arrière sans confirmation : refusé avant tout téléchargement.
+        var refused = await rig.Handler.InstallUpdateAsync(confirmDowngrade: false, CancellationToken.None);
+        Assert.False(refused.Ok);
+        Assert.Equal("Revenir à une version plus ancienne demande ta confirmation.", refused.Message);
+        Assert.DoesNotContain(updates.Requests, u => u.EndsWith(".sha256", StringComparison.Ordinal));
+
+        // Confirmé : le téléchargement commence (le faux GitHub ne trouve pas l'installateur, et rien n'est lancé).
+        var confirmed = await rig.Handler.InstallUpdateAsync(confirmDowngrade: true, CancellationToken.None);
+        Assert.False(confirmed.Ok);
+        Assert.StartsWith("Le téléchargement a échoué", confirmed.Message);
+        Assert.Contains(updates.Requests, u => u.EndsWith(".sha256", StringComparison.Ordinal));
     }
 }

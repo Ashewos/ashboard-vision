@@ -45,6 +45,12 @@ public class ServiceLinkTests
         public Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct) =>
             Task.FromResult(new ActionResult(true, "ok"));
 
+        public UpdateInfo GetUpdate() => new(LinkUpdateState.Unknown, null, false, null, null, LinkUpdateChannel.Stable, false);
+        public Task CheckUpdatesAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable, CancellationToken ct) => Task.CompletedTask;
+        public Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade, CancellationToken ct) =>
+            Task.FromResult(new ActionResult(false, "Pas de mise à jour."));
+
         public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame)
         {
             Subscriptions.Enqueue(maxFps);

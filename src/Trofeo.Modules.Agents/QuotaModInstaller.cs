@@ -29,6 +29,9 @@ public sealed class QuotaModInstaller(
 
     private const int MaxOutputLength = 300;
 
+    /// <summary>L'installateur réel, qui lance <c>claude</c> ; <paramref name="modsDir"/> n'est utile qu'à l'installation.</summary>
+    public static QuotaModInstaller CreateProduction(string? modsDir) => new(RunProcessAsync, modsDir);
+
     public async Task<ActionResult> InstallAsync(CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(modsDir) || !Directory.Exists(modsDir))
