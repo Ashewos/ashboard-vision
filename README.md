@@ -1,13 +1,6 @@
 <h1 align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/ashboard-vision-horizontal-sombre.svg">
-    <img src="assets/brand/ashboard-vision-horizontal-clair.svg" alt="Ashboard Vision" width="420">
-  </picture>
+  <img src="docs/images/accueil.webp" alt="Ashboard Vision : l'écran Trofeo Vision dans les trois thèmes, Classique, Liquid Glass et Pixel" width="100%">
 </h1>
-
-<p align="center">
-  <img src="docs/images/accueil.webp" alt="L'écran Trofeo Vision avec Ashboard Vision, dans les trois thèmes : Classique, Liquid Glass et Pixel" width="100%">
-</p>
 
 <p align="center">
   <a href="https://github.com/Ashewos/ashboard-vision/releases/latest"><img alt="Version" src="https://img.shields.io/github/v/release/Ashewos/ashboard-vision?label=version&amp;color=2ea043"></a>
