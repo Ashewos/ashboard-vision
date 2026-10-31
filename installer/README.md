@@ -5,8 +5,7 @@ Un assistant Inno Setup 7.1 (64 bits, en administrateur) : `Ashboard-Vision-Setu
 ## Construire
 
 ```powershell
-pwsh installer/build.ps1 -Version 1.0.0-beta.1          # tout embarqué, PawnIO compris
-pwsh installer/build.ps1 -Version 1.0.0-beta.1 -SansPawnIo   # essai local, sans la case du pilote des températures
+pwsh installer/build.ps1 -Version 1.0.0-beta.1
 ```
 
 Le script cherche `ISCC.exe` (paramètre `-Iscc`, sinon `C:\Program Files\Inno Setup 7\ISCC.exe`, sinon le `PATH`) et refuse une version
@@ -16,16 +15,16 @@ Il publie `Trofeo.Display`, `Trofeo.Settings` et `Trofeo.SensorHelper` (Release,
 par `installer/artifacts/` (`--artifacts-path`) : les dossiers `bin` et `obj` des projets ne sont pas touchés, donc le service lancé depuis
 `src/Trofeo.Display/bin/Release` n'est pas dérangé. Il y copie `mods/` (la version du mod ashboard-quotas y prend celle du logiciel : le
 fichier du dépôt ne change pas), `LICENSE`, `LICENCES-TIERCES.txt` et les textes de licence des paquets. `installer/out/`,
-`installer/publish/`, `installer/artifacts/` et `installer/cache/` ne sont pas versionnés.
+`installer/publish/`, `installer/artifacts/` ne sont pas versionnés.
 
 ## Ce que fait l'installateur
 
 - **Pages** : bienvenue, licence GPL-3.0, dossier (`Program Files\Ashboard Vision`), options, installation, fin avec « Lancer Ashboard Vision ».
   Les textes standard viennent de `French.isl`.
-- **Options** : raccourci sur le bureau (décoché), démarrer avec Windows (coché), installer PawnIO (coché).
+- **Options** : raccourci sur le bureau (décoché), démarrer avec Windows (coché), installer PawnIO (coché ; téléchargé pendant l'installation, connexion Internet requise).
 - **Avant la copie** : arrête `Trofeo.Settings.exe` (d'abord : elle sait relancer le service), `Trofeo.Display.exe` et `Trofeo.SensorHelper.exe` (même ceux lancés depuis le dépôt), puis
   écrit `{app}\options-installation.json` (`{ "demarrerAvecWindows": true|false }`), que le service lit à son premier lancement.
-- **Après la copie** (`CurStepChanged`, `ssPostInstall`) : `Trofeo.SensorHelper.exe install [--pawnio <PawnIO_setup.exe>]`, dont le code de sortie est journalisé (un message sobre signale un échec, sauf en mode silencieux ; le code 3 sans la case PawnIO est normal) (copie l'assistant dans
+- **Après la copie** (`CurStepChanged`, `ssPostInstall`) : `Trofeo.SensorHelper.exe install [--pawnio <PawnIO_setup.exe>]`, dont le code de sortie est journalisé (un message sobre signale un échec, sauf en mode silencieux ; le code 3 sans PawnIO est normal) (copie l'assistant dans
   `Program Files\ashboard-vision\sensors`, crée la tâche, retire les anciens emplacements), puis le service est lancé **sans élévation**
   (`runasoriginaluser`). En mode silencieux (mise à jour lancée par le logiciel), les options de la première installation sont gardées et le
   service est relancé sans question.
@@ -36,7 +35,7 @@ fichier du dépôt ne change pas), `LICENSE`, `LICENCES-TIERCES.txt` et les text
 
 ## Points vérifiés avant d'écrire (31/10/2026)
 
-### 1. Licence de PawnIO : redistribution de l'installeur NON confirmée
+### 1. Licence de PawnIO : l'installeur n'est PAS embarqué, il est téléchargé pendant l'installation
 
 Ce que disent les sources officielles :
 
@@ -44,22 +43,31 @@ Ce que disent les sources officielles :
   autorise la combinaison avec des programmes libres et des modules qui ne parlent au pilote que par ses ioctl.
 - [github.com/namazso/PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) : LGPL-2.1.
 - [github.com/namazso/PawnIO.Setup](https://github.com/namazso/PawnIO.Setup), qui héberge `PawnIO_setup.exe` : **aucun fichier de licence**,
-  seulement « This repository hosts PawnIO official releases ». C'est l'installeur signé, celui qu'on embarquerait.
+  seulement « This repository hosts PawnIO official releases ». C'est l'installeur signé.
 - [pawnio.eu](https://pawnio.eu/) : l'édition officielle est « identique à la version open source, mais signée numériquement » ; le pied de
   page dit « © 2025 namazso. All rights reserved » ; rien ne dit si d'autres logiciels peuvent embarquer l'installeur ; une « licence
   commerciale » est proposée sur contact.
 
 Conclusion : le code est libre (GPL-2.0+), mais l'**installeur signé** n'a pas de licence écrite, et le site réserve « tous droits ». La
-redistribution de ce binaire précis est donc **douteuse, pas interdite**. Ce n'est pas à la construction de trancher : **décision d'Alex**.
-Les options : (a) accepter le risque et embarquer, (b) écrire à namazso (admin@namazso.eu, adresse du site) pour obtenir son accord, (c)
-télécharger PawnIO pendant l'installation, depuis l'adresse officielle et avec la même vérification d'empreinte (l'installateur n'est alors
-plus « tout embarqué »). En attendant, `build.ps1` embarque PawnIO comme la conception le prévoit, **avec un avertissement à chaque
-construction**, et rien ne doit être publié avant la décision.
+redistribution de ce binaire précis est donc **douteuse, pas interdite**.
 
-`pawnio.json` donne la version (2.2.0), l'adresse officielle (`PawnIO_setup.exe` de la version 2.2.0 sur PawnIO.Setup), l'empreinte SHA-256
-(`1f519a22…3032`, calculée sur le fichier téléchargé et identique à celle que GitHub affiche) et le signataire (`namazso`).
-`build.ps1` télécharge le fichier dans `installer/cache/`, vérifie l'empreinte **et** la signature Authenticode, puis le passe à l'installateur.
-Pour changer de version : modifier `pawnio.json` (version, adresse, empreinte).
+**Décision d'Alex (31/10/2026) : l'installateur ne l'embarque jamais ; il le télécharge pendant l'installation**, depuis l'adresse
+officielle, et l'assistant dit qu'une connexion Internet est requise (« Installer le pilote des températures (PawnIO), connexion
+Internet requise »). C'est une exception à « tout embarqué ».
+
+Comment ça marche :
+
+- `pawnio.json` donne la version (2.2.0), l'adresse officielle (`PawnIO_setup.exe` de cette version sur PawnIO.Setup) et l'empreinte SHA-256
+  (`1f519a22…3032`, calculée sur le fichier téléchargé et identique à celle que GitHub affiche). `build.ps1` les lit, vérifie leur forme et les
+  passe à ISCC (`/DPawnIoUrl`, `/DPawnIoSha256`). Rien n'est téléchargé à la construction.
+- Si la case est cochée et que PawnIO n'est pas déjà installé (clé `UninstallPawnIO` du registre 64 bits, comme `PawnIoDetector`), Setup le
+  télécharge dans son dossier temporaire avec `CreateDownloadPage` (`DownloadTemporaryFile` en mode silencieux). L'empreinte attendue est
+  passée à l'appel : Inno refuse un fichier différent. Puis `Trofeo.SensorHelper.exe install --pawnio <fichier>`.
+- Une mise à jour silencieuse sur une machine qui a déjà PawnIO ne retélécharge rien.
+- **Échec** du téléchargement (pas d'Internet, empreinte différente) : l'installation continue sans PawnIO. Hors mode silencieux, un message
+  dit de vérifier la connexion et renvoie vers la fenêtre de réglage (Paramètres, Températures du processeur, bouton « Installer le pilote
+  des températures », qui demande l'installeur de PawnIO). En mode silencieux, journal seulement.
+- Pour changer de version : modifier `pawnio.json` (version, adresse, empreinte).
 
 ### 2. Inno Setup suit le thème de Windows
 

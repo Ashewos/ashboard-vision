@@ -1,8 +1,16 @@
 ﻿; Installateur d'Ashboard Vision (Inno Setup 7.1 ou plus). On le construit avec installer/build.ps1, qui passe :
-;   /DAppVersion=<semver>   /DSourceDir=<dossier publié>   /DOutputDir=<dossier de sortie>   [/DPawnIoSetup=<PawnIO_setup.exe>]
+;   /DAppVersion=<semver>   /DSourceDir=<dossier publié>   /DOutputDir=<dossier de sortie>
+;   /DPawnIoUrl=<adresse officielle de PawnIO_setup.exe>   /DPawnIoSha256=<son empreinte SHA-256>   (lues dans pawnio.json)
+; PawnIO n'est jamais embarqué : l'installateur le télécharge pendant l'installation (décision d'Alex, 31/10/2026).
 
 #ifndef AppVersion
   #error Passe la version : /DAppVersion=1.0.0 (installer/build.ps1 le fait).
+#endif
+#ifndef PawnIoUrl
+  #error Passe l'adresse de PawnIO : /DPawnIoUrl=... (installer/build.ps1 la lit dans pawnio.json).
+#endif
+#ifndef PawnIoSha256
+  #error Passe l'empreinte de PawnIO : /DPawnIoSha256=... (installer/build.ps1 la lit dans pawnio.json).
 #endif
 #ifndef SourceDir
   #define SourceDir "publish"
@@ -70,17 +78,11 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 [Tasks]
 Name: "bureau"; Description: "Créer un raccourci sur le bureau"; GroupDescription: "Raccourcis :"; Flags: unchecked
 Name: "demarrage"; Description: "Démarrer {#AppName} avec Windows"; GroupDescription: "Démarrage :"
-#ifdef PawnIoSetup
-Name: "pawnio"; Description: "Installer le pilote des températures (PawnIO)"; GroupDescription: "Températures :"
-#endif
+Name: "pawnio"; Description: "Installer le pilote des températures (PawnIO), connexion Internet requise"; GroupDescription: "Températures :"
 
 [Files]
 ; Les trois programmes, les modules, les polices et leurs licences OFL, le mod des quotas, les licences.
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-#ifdef PawnIoSetup
-; PawnIO passe par le dossier temporaire : l'assistant des capteurs le lance (voir CurStepChanged), puis Setup efface le dossier en sortant.
-Source: "{#PawnIoSetup}"; DestDir: "{tmp}"; DestName: "PawnIO_setup.exe"; Tasks: pawnio
-#endif
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\Trofeo.Settings.exe"
@@ -110,6 +112,10 @@ Type: dirifempty; Name: "{autopf}\ashboard-vision"
 
 [Code]
 const
+  PawnIoUrl = '{#PawnIoUrl}';
+  PawnIoSha256 = '{#PawnIoSha256}';
+  PawnIoFileName = 'PawnIO_setup.exe';
+  PawnIoUninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'; // la même clé que PawnIoDetector (src/Trofeo.Sensors)
   ServiceExe = 'Trofeo.Display.exe';
   SettingsExe = 'Trofeo.Settings.exe';
   HelperExe = 'Trofeo.SensorHelper.exe';
@@ -151,10 +157,66 @@ begin
   Result := FileExists(ExpandConstant('{app}\' + ServiceExe));
 end;
 
+var
+  PawnIoDownloaded: Boolean; // le fichier de PawnIO est dans {tmp}, vérifié par son empreinte
+
+function OnPawnIoProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
+begin
+  Result := True;
+end;
+
+// PawnIO n'est pas embarqué : s'il est demandé et pas déjà installé (une mise à jour silencieuse ne le retélécharge pas), il est
+// téléchargé depuis son adresse officielle avec l'empreinte attendue, qu'Inno vérifie (un fichier différent est refusé).
+// Un échec (pas d'Internet, empreinte différente) n'arrête pas l'installation : elle continue sans PawnIO, et la panne est dite
+// (jamais en mode silencieux : journal seulement).
+procedure DownloadPawnIo;
+var
+  Page: TDownloadWizardPage;
+  Failure: String;
+begin
+  PawnIoDownloaded := False;
+  if not WizardIsTaskSelected('pawnio') then Exit;
+  if RegKeyExists(HKLM64, PawnIoUninstallKey) then
+  begin
+    Log('PawnIO est déjà installé : rien à télécharger.');
+    Exit;
+  end;
+
+  Failure := '';
+  try
+    if WizardSilent() then
+      DownloadTemporaryFile(PawnIoUrl, PawnIoFileName, PawnIoSha256, nil)
+    else
+    begin
+      Page := CreateDownloadPage('Téléchargement du pilote des températures', 'Ashboard Vision télécharge PawnIO depuis son site officiel.', @OnPawnIoProgress);
+      Page.ShowBaseNameInsteadOfUrl := True;
+      Page.Clear;
+      Page.Add(PawnIoUrl, PawnIoFileName, PawnIoSha256);
+      Page.Show;
+      try
+        Page.Download;
+      finally
+        Page.Hide;
+      end;
+    end;
+    PawnIoDownloaded := True;
+    Log('PawnIO téléchargé et vérifié.');
+  except
+    Failure := GetExceptionMessage;
+    Log('PawnIO n''a pas pu être téléchargé : ' + Failure);
+  end;
+
+  if (Failure <> '') and not WizardSilent() then
+    MsgBox('Le pilote des températures (PawnIO) n''a pas pu être téléchargé : vérifie ta connexion à Internet. '
+      + 'L''installation continue sans lui. Tu pourras l''installer plus tard depuis la fenêtre de réglage '
+      + '(Paramètres, Températures du processeur), avec l''installeur de PawnIO pris sur pawnio.eu.', mbInformation, MB_OK);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   StopAllPrograms;
   WriteInstallOptions;
+  DownloadPawnIo;
   Result := '';
 end;
 
@@ -168,10 +230,8 @@ var
   Message: String;
 begin
   Parameters := 'install';
-#ifdef PawnIoSetup
-  if WizardIsTaskSelected('pawnio') then
-    Parameters := Parameters + ' --pawnio "' + ExpandConstant('{tmp}\PawnIO_setup.exe') + '"';
-#endif
+  if PawnIoDownloaded then
+    Parameters := Parameters + ' --pawnio "' + ExpandConstant('{tmp}\' + PawnIoFileName) + '"';
 
   Message := '';
   if not Exec(ExpandConstant('{app}\' + HelperExe), Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then

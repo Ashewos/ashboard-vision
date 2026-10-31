@@ -18,7 +18,7 @@ Le projet change aussi de nom : il devient **Ashboard Vision**, le tableau de bo
 ## 2. Objectifs, non-objectifs, anti-objectifs
 
 **Objectifs**
-- Un installateur Windows classique, en français, qui embarque tout.
+- Un installateur Windows classique, en français, qui embarque tout, sauf le pilote PawnIO, qu'il télécharge pendant l'installation (voir 5.2).
 - Une mise à jour en un clic depuis GitHub, avec deux canaux : Stable et Bêta.
 - Une désinstallation propre, depuis « Applications installées ».
 - Des versions construites et publiées par GitHub, quand Alex le demande.
@@ -75,7 +75,7 @@ Ses pages :
 4. options :
    - raccourci sur le bureau ;
    - démarrer avec Windows ;
-   - installer le pilote des températures (PawnIO), coché par défaut ;
+   - installer le pilote des températures (PawnIO), coché par défaut, avec la mention « connexion Internet requise » ;
 5. installation ;
 6. « Terminer », avec la case « Lancer Ashboard Vision ».
 
@@ -166,7 +166,7 @@ Alex l'a validé le 29/10/2026. Il a été fait avec la méthode du skill [logo-
 
   `AppLocator` les trouve déjà dans le dossier de l'application.
 - **.NET embarqué** : publication autonome `win-x64`. Le constructeur choisit entre plusieurs dossiers et un dossier commun, à condition que le service reste sobre en mémoire.
-- **PawnIO embarqué.** Son installeur est inclus et lancé par `Trofeo.SensorHelper.exe install --pawnio <setup>` quand la case est cochée. **À vérifier par le constructeur** : la licence de PawnIO permet-elle de redistribuer son installeur ? Si non, l'installateur le télécharge depuis le site officiel pendant l'installation, et on prévient Alex, puisque ce n'est plus « tout embarqué ».
+- **PawnIO téléchargé pendant l'installation** **(décision d'Alex, 31/10/2026 ; exception à « tout embarqué »)**. La licence de l'installeur signé de PawnIO ne dit rien de sa redistribution (code du pilote en GPL-2.0 ou ultérieure, mais le dépôt qui héberge l'installeur n'a pas de licence et le site réserve « tous droits » : voir `installer/README.md`). L'installateur ne l'embarque donc pas : si la case est cochée et que PawnIO n'est pas déjà installé, il le télécharge depuis l'adresse officielle (`installer/pawnio.json` : version, adresse, SHA-256), en vérifiant l'empreinte, puis lance `Trofeo.SensorHelper.exe install --pawnio <fichier>`. L'assistant dit qu'une connexion Internet est requise. Si le téléchargement échoue, l'installation continue sans PawnIO et dit comment l'installer plus tard depuis la fenêtre de réglage.
 - **L'assistant des capteurs** est installé et sa tâche planifiée créée, ou réinstallés à chaque mise à jour. Ce point vient du bilan du plan 5 : un ancien assistant n'envoie qu'une carte graphique.
 - **Partage du travail entre l'installateur et le logiciel** **(choix de Claude)**.
   - **L'installateur, en administrateur, fait tout ce qui concerne la machine :**

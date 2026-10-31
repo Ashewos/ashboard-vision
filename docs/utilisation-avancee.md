@@ -161,7 +161,7 @@ L'ancienne barre d'état `Trofeo.StatusLine.exe` n'existe plus. Si tu l'avais br
 
 Sans pilote, le module Monitoring affiche la ligne « Temp. CPU : installe le pilote ». Windows ne laisse lire ces températures qu'à un programme élevé, grâce à un pilote.
 
-- **Avec l'installateur**, l'option « installer le pilote des températures (PawnIO) » installe PawnIO et l'assistant des capteurs. L'installateur les réinstalle à chaque mise à jour.
+- **Avec l'installateur**, l'option « installer le pilote des températures (PawnIO) » installe PawnIO (téléchargé depuis le site officiel pendant l'installation, connexion Internet requise) et l'assistant des capteurs. L'installateur réinstalle l'assistant à chaque mise à jour, et ne retélécharge PawnIO que s'il manque.
 - **À la main** :
   1. installer PawnIO : `winget install --id namazso.PawnIO` ;
   2. ouvrir un terminal en administrateur et lancer `Trofeo.SensorHelper.exe install`. Après `dotnet build -c Release`, l'exécutable se trouve dans `src/Trofeo.SensorHelper/bin/Release/`, sous le dossier de la version de Windows ciblée ; l'option `--pawnio <installateur>` installe PawnIO au passage. Cela crée la tâche planifiée `\Ashboard Vision\Capteurs`, qui relève les capteurs à chaque ouverture de session et les transmet au service. Le service lui-même reste sans droits d'administrateur.

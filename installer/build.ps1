@@ -6,7 +6,8 @@
 .DESCRIPTION
     1. publie Trofeo.Display, Trofeo.Settings et Trofeo.SensorHelper (Release, win-x64, autonome) dans installer/publish/ ;
     2. y ajoute les mods, les licences et le fichier LICENSE ;
-    3. télécharge et vérifie PawnIO (pawnio.json), sauf avec -SansPawnIo ;
+    3. lit l'adresse officielle, la version et l'empreinte de PawnIO (pawnio.json) pour les donner à l'installateur, qui le télécharge
+       pendant l'installation (PawnIO n'est jamais embarqué) ;
     4. compile installer/ashboard-vision.iss avec Inno Setup 7.1 ou plus ;
     5. écrit le .sha256 au format « <empreinte>  <nom du fichier> ».
 
@@ -15,9 +16,6 @@
 
 .PARAMETER Version
     Numéro SemVer de la version (1.0.0-beta.1, 1.0.0...).
-
-.PARAMETER SansPawnIo
-    N'embarque pas PawnIO : l'installateur n'a alors pas la case du pilote des températures. Pour un essai local seulement.
 
 .PARAMETER Iscc
     Chemin d'ISCC.exe. Par défaut : C:\Program Files\Inno Setup 7\ISCC.exe, sinon celui du PATH.
@@ -31,8 +29,6 @@ param(
     [ValidatePattern('^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$')]
     [string] $Version,
 
-    [switch] $SansPawnIo,
-
     [string] $Iscc
 )
 
@@ -45,7 +41,6 @@ $repo = Split-Path $installerDir -Parent
 $publishDir = Join-Path $installerDir 'publish'
 $artifactsDir = Join-Path $installerDir 'artifacts'
 $outDir = Join-Path $installerDir 'out'
-$cacheDir = Join-Path $installerDir 'cache'
 $setupName = "Ashboard-Vision-Setup-$Version.exe"
 
 function Step([string] $message) { Write-Host "==> $message" -ForegroundColor Cyan }
@@ -136,34 +131,12 @@ function Copy-Licences {
     if ($ofl.Count -lt 4) { throw "Les licences OFL des polices manquent dans la publication ($($ofl.Count) trouvée(s) sur 4)." }
 }
 
-function Get-PawnIo {
+function Read-PawnIo {
     $config = Get-Content -LiteralPath (Join-Path $installerDir 'pawnio.json') -Raw -Encoding utf8 | ConvertFrom-Json
-    New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
-    $file = Join-Path $cacheDir "PawnIO_setup-$($config.version).exe"
-
-    function Test-Hash {
-        (Test-Path -LiteralPath $file) -and ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ieq $config.sha256)
-    }
-
-    if (-not (Test-Hash)) {
-        Step "Téléchargement de PawnIO $($config.version)"
-        Invoke-WebRequest -Uri $config.url -OutFile $file -UseBasicParsing
-        if (-not (Test-Hash)) {
-            $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
-            Remove-Item -LiteralPath $file -Force
-            throw "L'empreinte de PawnIO ne correspond pas (attendue $($config.sha256), reçue $actual) : fichier supprimé, rien n'est embarqué."
-        }
-    }
-
-    # En plus de l'empreinte : l'installeur officiel est signé par son auteur.
-    $signature = Get-AuthenticodeSignature -LiteralPath $file
-    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch [regex]::Escape("CN=$($config.signataire)")) {
-        throw "La signature de PawnIO n'est pas celle attendue ($($signature.Status), $($signature.SignerCertificate.Subject))."
-    }
-
-    Write-Host "    PawnIO $($config.version) vérifié (SHA-256 et signature de $($config.signataire))."
-    Write-Warning "PawnIO est embarqué dans cet installateur. Sa licence de redistribution n'est pas confirmée (voir installer/README.md) : ne le publie pas avant la décision d'Alex."
-    return $file
+    if ($config.url -notmatch '^https://github[.]com/namazso/PawnIO[.]Setup/releases/download/') { throw "pawnio.json : l'adresse de PawnIO n'est pas celle du dépôt officiel namazso/PawnIO.Setup ($($config.url))." }
+    if ($config.sha256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'pawnio.json : l''empreinte SHA-256 de PawnIO est mal formée.' }
+    Write-Host "    PawnIO $($config.version) : téléchargé par l'installateur depuis $($config.url) (SHA-256 vérifié par Inno Setup)."
+    return $config
 }
 
 # --- Début -------------------------------------------------------------------------------------------------------------------
@@ -187,12 +160,11 @@ Get-ChildItem -LiteralPath $publishDir -Recurse -File -Filter '*.pdb' | Remove-I
 Copy-Mods
 Copy-Licences
 
-$pawnIoSetup = $null
-if (-not $SansPawnIo) { $pawnIoSetup = Get-PawnIo }
+Step 'PawnIO'
+$pawnIo = Read-PawnIo
 
 Step 'Compilation de l''installateur'
-$isccArgs = @("/DAppVersion=$Version", "/DSourceDir=$publishDir", "/DOutputDir=$outDir")
-if ($pawnIoSetup) { $isccArgs += "/DPawnIoSetup=$pawnIoSetup" }
+$isccArgs = @("/DAppVersion=$Version", "/DSourceDir=$publishDir", "/DOutputDir=$outDir", "/DPawnIoUrl=$($pawnIo.url)", "/DPawnIoSha256=$($pawnIo.sha256.ToLowerInvariant())")
 $logPath = Join-Path $outDir 'iscc.log'
 & $isccPath @isccArgs (Join-Path $installerDir 'ashboard-vision.iss') 2>&1 | Tee-Object -FilePath $logPath
 if ($LASTEXITCODE -ne 0) { throw "ISCC a échoué (code $LASTEXITCODE). Journal : $logPath" }

@@ -74,7 +74,7 @@ Les captures sont en thème Classique : chaque module prend les couleurs du thè
 4. **Suis les pages** : bienvenue, licence, dossier d'installation, puis les options :
    - un raccourci sur le bureau ;
    - démarrer avec Windows ;
-   - installer le pilote des températures du processeur (PawnIO), coché par défaut.
+   - installer le pilote des températures du processeur (PawnIO), coché par défaut. L'installateur le télécharge pendant l'installation : une connexion Internet est requise pour cette option. Sans connexion, l'installation se fait quand même, sans le pilote.
 5. **Termine** en laissant cochée la case « Lancer Ashboard Vision ». Au premier lancement, un assistant te guide : écran, orientation, modules, Claude Code, réseau, météo, capteurs, démarrage.
 
 **Ferme TRCC** avant de brancher l'écran : un seul programme à la fois peut parler à l'écran.
@@ -124,7 +124,7 @@ Ferme TRCC, puis regarde l'icône dans la zone de notification : elle indique si
 C'est l'écran SmartScreen, qui s'affiche pour tout fichier non signé. Ce projet n'a pas de signature de code : un certificat est payant, et la signature par une fondation ferait apparaître quelqu'un d'autre que l'auteur comme éditeur. Les étapes pour continuer sont dans [Installation](#installation).
 
 **Le module Monitoring affiche « Temp. CPU : installe le pilote ».**
-Windows ne laisse lire les températures du processeur qu'à un programme élevé, avec un pilote. Relance l'installateur et coche l'option du pilote des températures (PawnIO) : il installe aussi l'assistant des capteurs. La ligne disparaît dès que la température arrive.
+Windows ne laisse lire les températures du processeur qu'à un programme élevé, avec un pilote. Relance l'installateur (avec une connexion Internet, car il télécharge le pilote) et coche l'option du pilote des températures (PawnIO) : il installe aussi l'assistant des capteurs. Tu peux aussi le faire depuis la fenêtre de réglage (Paramètres, Températures du processeur). La ligne disparaît dès que la température arrive.
 
 **Le module Claude Code affiche « Quotas indisponibles ».**
 Les quotas viennent d'un petit mod de Claude Code, `ashboard-quotas`, que tu installes depuis les réglages du module (ou l'assistant du premier lancement). Il faut que la commande `claude` soit accessible depuis ton compte. Le mod ne voit que les réponses reçues sur ce PC : ce que tu consommes ailleurs (le chat sur le web, par exemple) n'apparaît qu'à la prochaine réponse locale.
