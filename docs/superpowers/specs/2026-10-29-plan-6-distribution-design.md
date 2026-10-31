@@ -11,7 +11,7 @@ Le tableau de bord marche sur le PC d'Alex, mais seulement depuis le dépôt : i
 - il le met à jour en un clic ;
 - il le désinstalle proprement.
 
-On ne connaît pas encore cet ami. Il a peut-être déjà l'écran, peut-être un autre modèle, et le logiciel de Thermalright tourne peut-être chez lui. L'installation doit être **clé en main** : rien à télécharger ni à régler à la main avant que l'écran s'allume.
+On ne connaît pas encore cet ami. Il a peut-être déjà l'écran, peut-être un autre modèle, et le logiciel de Thermalright tourne peut-être chez lui. L'installation doit être **clé en main** : rien à télécharger ni à régler à la main avant que l'écran s'allume (seul PawnIO, le pilote des températures, est téléchargé par l'installateur lui-même, voir plus bas).
 
 Le projet change aussi de nom : il devient **Ashboard Vision**, le tableau de bord signé du pseudo d'Alex (Ashewos), pour la gamme d'écrans Vision de Thermalright.
 

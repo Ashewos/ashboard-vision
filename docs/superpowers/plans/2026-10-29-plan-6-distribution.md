@@ -472,7 +472,7 @@ L'état est relu au même rythme que l'état du service.
   - `Trofeo.Display.exe --desinstaller-utilisateur [--silencieux]` (Task 6) ;
   - `options-installation.json` (Task 4) ;
   - `assets/brand/` (Task 8).
-- Produces : `pwsh installer/build.ps1 -Version <semver> [-SansPawnIo]`, qui écrit `installer/out/Ashboard-Vision-Setup-<v>.exe` et son `.sha256`.
+- Produces : `pwsh installer/build.ps1 -Version <semver>`, qui écrit `installer/out/Ashboard-Vision-Setup-<v>.exe` et son `.sha256`.
 
 - [ ] **Step 1 : Vérifier deux points avant d'écrire, et les noter dans `installer/README.md` avec leurs sources.**
   1. **La licence de PawnIO permet-elle de redistribuer son installeur ?**

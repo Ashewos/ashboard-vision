@@ -173,8 +173,10 @@ procedure DownloadPawnIo;
 var
   Page: TDownloadWizardPage;
   Failure: String;
+  Aborted: Boolean;
 begin
   PawnIoDownloaded := False;
+  Aborted := False;
   if not WizardIsTaskSelected('pawnio') then Exit;
   if RegKeyExists(HKLM64, PawnIoUninstallKey) then
   begin
@@ -194,7 +196,13 @@ begin
       Page.Add(PawnIoUrl, PawnIoFileName, PawnIoSha256);
       Page.Show;
       try
-        Page.Download;
+        try
+          Page.Download;
+        except
+          // Le bouton Annuler de la page lève aussi une exception : ce n'est pas une panne de réseau.
+          Aborted := Page.AbortedByUser;
+          RaiseException(GetExceptionMessage);
+        end;
       finally
         Page.Hide;
       end;
@@ -206,7 +214,10 @@ begin
     Log('PawnIO n''a pas pu être téléchargé : ' + Failure);
   end;
 
-  if (Failure <> '') and not WizardSilent() then
+  if (Failure <> '') and Aborted then
+    MsgBox('Téléchargement de PawnIO annulé : l''installation continue sans le pilote des températures. '
+      + 'Tu pourras l''installer plus tard depuis la fenêtre de réglage (Paramètres, Températures du processeur).', mbInformation, MB_OK)
+  else if (Failure <> '') and not WizardSilent() then
     MsgBox('Le pilote des températures (PawnIO) n''a pas pu être téléchargé : vérifie ta connexion à Internet. '
       + 'L''installation continue sans lui. Tu pourras l''installer plus tard depuis la fenêtre de réglage '
       + '(Paramètres, Températures du processeur), avec l''installeur de PawnIO pris sur pawnio.eu.', mbInformation, MB_OK);
