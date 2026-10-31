@@ -1,3 +1,4 @@
+#Requires -Version 7
 <#
 .SYNOPSIS
     Fabrique l'installateur d'Ashboard Vision : installer/out/Ashboard-Vision-Setup-<version>.exe et son empreinte .sha256.

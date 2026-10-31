@@ -78,8 +78,8 @@ Name: "pawnio"; Description: "Installer le pilote des températures (PawnIO)"; G
 ; Les trois programmes, les modules, les polices et leurs licences OFL, le mod des quotas, les licences.
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 #ifdef PawnIoSetup
-; PawnIO passe par le dossier temporaire : l'assistant des capteurs le lance, puis Windows efface le dossier.
-Source: "{#PawnIoSetup}"; DestDir: "{tmp}"; DestName: "PawnIO_setup.exe"; Tasks: pawnio; Flags: deleteafterinstall
+; PawnIO passe par le dossier temporaire : l'assistant des capteurs le lance (voir CurStepChanged), puis Setup efface le dossier en sortant.
+Source: "{#PawnIoSetup}"; DestDir: "{tmp}"; DestName: "PawnIO_setup.exe"; Tasks: pawnio
 #endif
 
 [Icons]
@@ -88,26 +88,23 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Trofeo.Settings.exe"; Tasks: 
 
 [InstallDelete]
 ; Une mise à jour retire d'abord les bibliothèques d'avant, avant de copier les nouvelles : celles qui n'existent plus ne restent pas.
-Type: files; Name: "{app}\*.dll"
-Type: files; Name: "{app}\*.deps.json"
-Type: files; Name: "{app}\*.runtimeconfig.json"
+; Seulement quand une installation d'Ashboard Vision est déjà là (un dossier choisi à la main, avec d'autres programmes, n'est pas vidé).
+Type: files; Name: "{app}\*.dll"; Check: PreviousInstallExists
+Type: files; Name: "{app}\*.deps.json"; Check: PreviousInstallExists
+Type: files; Name: "{app}\*.runtimeconfig.json"; Check: PreviousInstallExists
 
 [Run]
-; 1. L'assistant des capteurs : copie dans Program Files\ashboard-vision\sensors, tâche planifiée, retrait des anciens emplacements.
-;    Avec PawnIO s'il est coché ; sans lui, l'assistant ne s'installe que si PawnIO est déjà là (sinon la commande ne change rien).
-#ifdef PawnIoSetup
-Filename: "{app}\Trofeo.SensorHelper.exe"; Parameters: "install --pawnio ""{tmp}\PawnIO_setup.exe"""; StatusMsg: "Installation de l'assistant des capteurs..."; Flags: runhidden waituntilterminated; Tasks: pawnio
-Filename: "{app}\Trofeo.SensorHelper.exe"; Parameters: "install"; StatusMsg: "Installation de l'assistant des capteurs..."; Flags: runhidden waituntilterminated; Tasks: not pawnio
-#else
-Filename: "{app}\Trofeo.SensorHelper.exe"; Parameters: "install"; StatusMsg: "Installation de l'assistant des capteurs..."; Flags: runhidden waituntilterminated
-#endif
-; 2. Le service, sans élévation (le tuyau de contrôle n'accepte que l'utilisateur courant). Une seule entrée : la case « Lancer »
-;    de la dernière page, et, en mode silencieux (mise à jour lancée par le logiciel), un lancement sans question.
+; L'assistant des capteurs s'installe dans CurStepChanged (ssPostInstall) : le code de sortie est journalisé et, sauf en mode
+; silencieux, une panne est signalée. Le service, lui, est lancé sans élévation (le tuyau de contrôle n'accepte que l'utilisateur
+; courant). Une seule entrée : la case « Lancer » de la dernière page, et, en mode silencieux (mise à jour lancée par le logiciel),
+; un lancement sans question.
 Filename: "{app}\Trofeo.Display.exe"; Description: "Lancer {#AppName}"; Flags: nowait postinstall runasoriginaluser
 
 [UninstallDelete]
-; Ce que le programme a pu écrire à côté de lui (l'installateur y met options-installation.json), puis le dossier lui-même.
-Type: filesandordirs; Name: "{app}"
+; Le seul fichier écrit à côté des programmes sans que Setup le suive : le choix de l'installateur (le service, lui, écrit dans
+; %AppData%\ashboard-vision et dans le dossier temporaire). Puis le dossier lui-même, seulement s'il est vide : un dossier partagé reste.
+Type: files; Name: "{app}\options-installation.json"
+Type: dirifempty; Name: "{app}"
 ; Le dossier parent de l'assistant des capteurs, s'il ne reste plus rien dedans (ses fichiers sont retirés par « uninstall »).
 Type: dirifempty; Name: "{autopf}\ashboard-vision"
 
@@ -128,8 +125,8 @@ end;
 // Le service et la fenêtre verrouillent leurs fichiers ; l'assistant des capteurs (tâche SYSTEM) aussi.
 procedure StopAllPrograms;
 begin
+  StopProcess(SettingsExe); // d'abord : la fenêtre sait relancer le service
   StopProcess(ServiceExe);
-  StopProcess(SettingsExe);
   StopProcess(HelperExe);
   Sleep(500); // le temps que Windows relâche les fichiers
 end;
@@ -148,11 +145,56 @@ begin
     Log('options-installation.json n''a pas pu être écrit.');
 end;
 
+// Vrai quand une installation d'Ashboard Vision est déjà dans le dossier choisi.
+function PreviousInstallExists: Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\' + ServiceExe));
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   StopAllPrograms;
   WriteInstallOptions;
   Result := '';
+end;
+
+// L'assistant des capteurs : copie dans Program Files\ashboard-vision\sensors, tâche planifiée, retrait des anciens emplacements, et
+// PawnIO si la case est cochée. Codes de sortie (src/Trofeo.SensorHelper/Program.cs) : 0 réussi, 3 PawnIO absent et pas d'installeur
+// donné (normal quand la case est décochée), 4 échec de PawnIO, 5 erreur d'entrée-sortie, 1 et 2 usage ou droits.
+procedure InstallSensorHelper;
+var
+  ResultCode: Integer;
+  Parameters: String;
+  Message: String;
+begin
+  Parameters := 'install';
+#ifdef PawnIoSetup
+  if WizardIsTaskSelected('pawnio') then
+    Parameters := Parameters + ' --pawnio "' + ExpandConstant('{tmp}\PawnIO_setup.exe') + '"';
+#endif
+
+  Message := '';
+  if not Exec(ExpandConstant('{app}\' + HelperExe), Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    Log('L''assistant des capteurs n''a pas pu être lancé : ' + SysErrorMessage(ResultCode));
+    Message := 'L''assistant des capteurs n''a pas pu être lancé. Ashboard Vision marche, mais sans les températures du processeur.';
+  end
+  else
+  begin
+    Log('Assistant des capteurs (' + Parameters + ') : code de sortie ' + IntToStr(ResultCode));
+    if ResultCode = 4 then
+      Message := 'Le pilote des températures (PawnIO) n''a pas pu s''installer, donc l''assistant des capteurs non plus. Ashboard Vision marche, mais sans les températures du processeur. Tu peux relancer l''installateur pour réessayer.'
+    else if (ResultCode <> 0) and (ResultCode <> 3) then
+      Message := 'L''assistant des capteurs n''a pas pu s''installer (code ' + IntToStr(ResultCode) + '). Ashboard Vision marche, mais sans les températures du processeur. Tu peux relancer l''installateur pour réessayer.';
+  end;
+
+  if (Message <> '') and not WizardSilent() then
+    MsgBox(Message, mbError, MB_OK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then InstallSensorHelper;
 end;
 
 // Désinstallation : on arrête d'abord tout (le nettoyage de l'utilisateur ne fait rien si le service tient son mutex), puis le

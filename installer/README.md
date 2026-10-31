@@ -23,15 +23,15 @@ fichier du dépôt ne change pas), `LICENSE`, `LICENCES-TIERCES.txt` et les text
 - **Pages** : bienvenue, licence GPL-3.0, dossier (`Program Files\Ashboard Vision`), options, installation, fin avec « Lancer Ashboard Vision ».
   Les textes standard viennent de `French.isl`.
 - **Options** : raccourci sur le bureau (décoché), démarrer avec Windows (coché), installer PawnIO (coché).
-- **Avant la copie** : arrête `Trofeo.Display.exe`, `Trofeo.Settings.exe` et `Trofeo.SensorHelper.exe` (même ceux lancés depuis le dépôt), puis
+- **Avant la copie** : arrête `Trofeo.Settings.exe` (d'abord : elle sait relancer le service), `Trofeo.Display.exe` et `Trofeo.SensorHelper.exe` (même ceux lancés depuis le dépôt), puis
   écrit `{app}\options-installation.json` (`{ "demarrerAvecWindows": true|false }`), que le service lit à son premier lancement.
-- **Après la copie** : `Trofeo.SensorHelper.exe install [--pawnio <PawnIO_setup.exe>]` (copie l'assistant dans
+- **Après la copie** (`CurStepChanged`, `ssPostInstall`) : `Trofeo.SensorHelper.exe install [--pawnio <PawnIO_setup.exe>]`, dont le code de sortie est journalisé (un message sobre signale un échec, sauf en mode silencieux ; le code 3 sans la case PawnIO est normal) (copie l'assistant dans
   `Program Files\ashboard-vision\sensors`, crée la tâche, retire les anciens emplacements), puis le service est lancé **sans élévation**
   (`runasoriginaluser`). En mode silencieux (mise à jour lancée par le logiciel), les options de la première installation sont gardées et le
   service est relancé sans question.
 - **Désinstallation** : arrête les trois programmes, lance `Trofeo.Display.exe --desinstaller-utilisateur` (avec `--silencieux` si la
   désinstallation l'est : valeur `Run`, mod des quotas, question sur les réglages), puis `Trofeo.SensorHelper.exe uninstall` (tâche et
-  dossier de l'assistant), puis supprime le dossier d'installation. PawnIO reste installé. Ces étapes sont dans le code de l'installateur
+  dossier de l'assistant), puis supprime `options-installation.json` (le seul fichier que Setup ne suit pas) et le dossier d'installation s'il est vide (un dossier partagé n'est jamais effacé en bloc). PawnIO reste installé. Ces étapes sont dans le code de l'installateur
   (`CurUninstallStepChanged`), pour garantir l'ordre : arrêter d'abord, car le nettoyage ne fait rien si le service tient son mutex.
 
 ## Points vérifiés avant d'écrire (31/10/2026)
