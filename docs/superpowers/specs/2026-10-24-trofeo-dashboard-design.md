@@ -272,7 +272,7 @@ Maquette de référence : `editor-grid-v3.html`.
 
 ### 9.1 Installateur
 *Remplace le Setup.exe de Velopack prévu au départ ; voir `2026-10-29-plan-6-distribution-design.md`, section 4.2 et 5.1.*
-- Un assistant d'installation classique, à pages, fabriqué avec **Inno Setup 6** : `Ashboard-Vision-Setup-<version>.exe`. Il tourne **en administrateur** et installe dans `Program Files\Ashboard Vision`.
+- Un assistant d'installation classique, à pages, fabriqué avec **Inno Setup 7** : `Ashboard-Vision-Setup-<version>.exe`. Il tourne **en administrateur** et installe dans `Program Files\Ashboard Vision`.
 - Il **embarque tout** : runtime .NET (publication autonome), polices, pilote PawnIO. Il installe PawnIO et l'assistant des capteurs pendant l'installation, si la case est cochée.
 - Rien à télécharger ni à installer à la main.
 - **Aucune signature numérique** : l'avertissement SmartScreen est accepté, et le README explique comment le passer.

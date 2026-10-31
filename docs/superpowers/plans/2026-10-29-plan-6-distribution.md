@@ -27,7 +27,7 @@
 - .NET 10, C#, SkiaSharp 3.119.4, Avalonia 12.1.4 ;
 - xUnit 2, et xUnit v3 pour `Trofeo.Settings.Tests` ;
 - FakeTimeProvider ;
-- Inno Setup 6, version 6.6 ou plus pour le thème dynamique (à vérifier, Task 9) ;
+- Inno Setup 7 (7.1.1, choix d'Alex le 31/10/2026), installateur 64 bits (`SetupArchitecture=x64`) ; le thème dynamique (`WizardStyle` dynamique, images pour le mode sombre) existe depuis la 6.6 et reste dans la 7 ;
 - GitHub Actions (`windows-latest`) ;
 - Svg.Skia, seulement dans l'outil des images ;
 - ffmpeg, pour l'image animée, hors du logiciel.

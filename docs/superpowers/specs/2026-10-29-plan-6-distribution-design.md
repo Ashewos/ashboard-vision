@@ -118,7 +118,7 @@ Alex l'a validé le 29/10/2026. Il a été fait avec la méthode du skill [logo-
 - **Le logo suit le thème de Windows** (demande d'Alex). En thème sombre, le bloc est sombre : charbon éclairé, liseré discret. En thème clair, il est clair : cendre légèrement ombrée, liseré gris. Seule la braise ressort.
   - **Zone de notification** : `ashboard-symbole-petit-sombre.svg` ou `ashboard-symbole-petit-clair.svg`, choisi selon le thème de la barre des tâches. Le logiciel change d'icône quand le thème change.
   - **Grande icône et logo avec le nom** : `ashboard-symbole-icone.svg` sur fond sombre, `ashboard-symbole-icone-clair.svg` sur fond clair. Sur fond clair, Alex préfère l'icône claire au charbon.
-  - **L'installateur suit aussi le thème de Windows** (demande d'Alex) : pages claires ou sombres, avec l'image d'assistant et le petit logo assortis. Inno Setup sait le faire depuis la version 6.6, d'après ce dont Claude se souvient : réglage `WizardStyle` « dynamique » et images pour le mode sombre. **Le constructeur le vérifie.** Si ce n'est pas possible, il le dit à Alex avant de choisir un autre outil.
+  - **L'installateur suit aussi le thème de Windows** (demande d'Alex) : pages claires ou sombres, avec l'image d'assistant et le petit logo assortis. Inno Setup sait le faire depuis la version 6.6 (vérifié dans sa documentation le 31/10/2026) : réglage `WizardStyle` « dynamique » et réglages `…DynamicDark` pour les images du mode sombre.
   - **L'icône du fichier** (`.exe`, raccourcis, liste des applications) ne peut pas changer avec le thème. Elle utilise `ashboard-symbole-icone.svg`, lisible sur les deux fonds grâce à son liseré.
 - **Autres fichiers :**
   - `ashboard-symbole-couleur.svg` (référence à plat) ;
@@ -152,7 +152,7 @@ Alex l'a validé le 29/10/2026. Il a été fait avec la méthode du skill [logo-
 ## 5. Choix de Claude et précisions pour le constructeur
 
 ### 5.1 Outil d'installation
-**Inno Setup 6** **(choix de Claude)**. Il propose un assistant classique et une traduction française, il sait se piloter en mode silencieux pour les mises à jour, et il est présent sur les machines Windows de GitHub. Velopack est abandonné.
+**Inno Setup 7** **(choix de Claude ; version 7.1.1 choisie par Alex le 31/10/2026 plutôt que la 6)**. Il garde la compatibilité avec les scripts de la 6 et sait fabriquer un installateur 64 bits. Il propose un assistant classique et une traduction française, il sait se piloter en mode silencieux pour les mises à jour, et la recette GitHub l'installe dans cette version précise, sans compter sur celle déjà présente sur les machines Windows de GitHub. Velopack est abandonné.
 
 ### 5.2 Contenu installé
 - Tout va **dans un seul dossier** (`Program Files\Ashboard Vision`) :
