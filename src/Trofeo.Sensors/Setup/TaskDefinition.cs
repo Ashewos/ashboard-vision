@@ -6,7 +6,10 @@ namespace Trofeo.Sensors;
 public static class TaskDefinition
 {
     /// <summary>Nom complet de la tâche, dossier compris.</summary>
-    public const string TaskName = @"\trofeo-HB-dashboard\Capteurs";
+    public const string TaskName = @"\Ashboard Vision\Capteurs";
+
+    /// <summary>Nom de la tâche d'avant le changement de nom : l'installation l'arrête et la supprime.</summary>
+    public const string LegacyTaskName = @"\trofeo-HB-dashboard\Capteurs";
 
     private static readonly XNamespace Ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
 
@@ -18,7 +21,7 @@ public static class TaskDefinition
     {
         var task = new XElement(Ns + "Task", new XAttribute("version", "1.2"),
             new XElement(Ns + "RegistrationInfo",
-                new XElement(Ns + "Description", "Assistant de capteurs de trofeo-HB-dashboard (lecture élevée des capteurs matériels).")),
+                new XElement(Ns + "Description", "Assistant de capteurs d'Ashboard Vision (lecture élevée des capteurs matériels).")),
             new XElement(Ns + "Triggers",
                 new XElement(Ns + "LogonTrigger", new XElement(Ns + "Enabled", "true"))),
             new XElement(Ns + "Principals",

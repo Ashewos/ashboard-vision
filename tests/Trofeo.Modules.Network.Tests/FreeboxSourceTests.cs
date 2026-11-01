@@ -22,6 +22,13 @@ public class FreeboxSourceTests
     private const string OpenSession = "POST /api/v8/login/session/";
     private const string Connection = "GET /api/v8/connection/";
 
+    [Fact]
+    public void AppId_KeepsLegacyId()
+    {
+        // La Freebox reconnaît l'application par cet identifiant : le changer redemanderait l'autorisation sur la façade.
+        Assert.Equal("trofeo-HB-dashboard", FreeboxSource.AppId);
+    }
+
     private sealed record Call(string Route, string Host, string Body, string? SessionHeader);
 
     /// <summary>Un « bruit » de transport : la requête ne rend jamais la main avant l'annulation de son jeton.</summary>
@@ -147,7 +154,7 @@ public class FreeboxSourceTests
         Assert.Equal(new ModuleStatus(ModuleHealth.NotConfigured, ButtonMessage), reading.Status);
         Assert.Equal([Discovery, Authorize], rig.Handler.Calls.Select(c => c.Route));
         Assert.All(rig.Handler.Calls, c => Assert.Equal("mafreebox.freebox.fr", c.Host));
-        var expected = "{\"app_id\":\"trofeo-HB-dashboard\",\"app_name\":\"Trofeo HB Dashboard\","
+        var expected = "{\"app_id\":\"trofeo-HB-dashboard\",\"app_name\":\"Ashboard Vision\","
             + $"\"app_version\":\"{FreeboxSource.AppVersion}\",\"device_name\":\"{Environment.MachineName}\"}}";
         Assert.Equal(expected, rig.Handler.Calls[1].Body);
         Assert.False(string.IsNullOrWhiteSpace(FreeboxSource.AppVersion));

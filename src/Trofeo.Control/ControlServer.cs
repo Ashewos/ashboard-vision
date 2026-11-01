@@ -194,6 +194,20 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
                         Action = await _handler.RunActionAsync(Required(request.InstanceId, "instanceId"), Required(request.ActionKey, "actionKey"), ct)
                             .ConfigureAwait(false),
                     };
+                case MessageTypes.GetUpdate:
+                    return new Response(request.Id, request.Type) { Update = _handler.GetUpdate() };
+                case MessageTypes.CheckUpdates:
+                    await _handler.CheckUpdatesAsync(ct).ConfigureAwait(false);
+                    return new Response(request.Id, request.Type);
+                case MessageTypes.SetUpdatePreferences:
+                    await _handler.SetUpdatePreferencesAsync(
+                        Required(request.Channel, "channel"), Required(request.WaitForNextStable, "waitForNextStable"), ct).ConfigureAwait(false);
+                    return new Response(request.Id, request.Type);
+                case MessageTypes.InstallUpdate:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Action = await _handler.InstallUpdateAsync(Required(request.ConfirmDowngrade, "confirmDowngrade"), ct).ConfigureAwait(false),
+                    };
                 default:
                     throw new InvalidOperationException($"Requête inconnue : « {request.Type} ».");
             }

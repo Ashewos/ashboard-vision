@@ -24,6 +24,10 @@ internal static class Program
           --thumbnails <dossier> [--width n]
                                       une vignette par thème (<thème>.png, 480 px de large par défaut) : celles de
                                       src/Trofeo.Settings/Assets/Themes, pour les cartes de l'onglet Personnalisation
+          --modules <dossier> [--theme <id>]
+                                      une capture par module, découpée dans l'écran complet (Classique par défaut) :
+                                      claude-code.png, codex.png, monitoring.png, en-ecoute.png, heure-meteo.png, reseau.png
+                                      (celles du README, dans docs/images/modules)
           --check                     rend chaque thème à chaque taille de texte avec des textes longs et vérifie que rien
                                       n'est peint hors des panneaux ; affiche OK, ou une ligne par faute (code de sortie 1)
         """;
@@ -50,6 +54,11 @@ internal static class Program
             if (args.Length is 2 or 4 && args[0] == "--thumbnails")
             {
                 return await WriteThumbnailsAsync(args).ConfigureAwait(false);
+            }
+
+            if (args.Length is 2 or 4 && args[0] == "--modules")
+            {
+                return await WriteModuleShotsAsync(args).ConfigureAwait(false);
             }
 
             if (args[0] == "--theme")
@@ -164,6 +173,79 @@ internal static class Program
         return 0;
     }
 
+    // --- Une capture par module ---
+
+    // Le nom de fichier de chaque module, dans l'ordre où le README les présente.
+    private static readonly (string TypeId, string File)[] ModuleFiles =
+    [
+        ("claudecode", "claude-code.png"),
+        ("codex", "codex.png"),
+        ("monitoring", "monitoring.png"),
+        ("nowplaying", "en-ecoute.png"),
+        ("clock", "heure-meteo.png"),
+        ("network", "reseau.png"),
+    ];
+
+    /// <summary>
+    /// Une capture par module : l'écran complet est rendu comme le service le fait, puis on découpe le rectangle du
+    /// module. Codex, qui n'est pas dans la disposition par défaut, est rendu à la place de Claude Code.
+    /// </summary>
+    private static async Task<int> WriteModuleShotsAsync(string[] args)
+    {
+        var themeId = "classique";
+        if (args.Length == 4)
+        {
+            if (args[2] != "--theme")
+            {
+                Console.Error.WriteLine(Usage);
+                return 2;
+            }
+
+            themeId = args[3];
+        }
+
+        var folder = args[1];
+        Directory.CreateDirectory(folder);
+        using var scene = await PreviewScene.CreateAsync(longTexts: false).ConfigureAwait(false);
+        using var composer = new FrameComposer();
+        var theme = Resolve(new AppearanceSettings(themeId));
+        using var background = BackgroundFactory.Create(null, theme, null, Warn);
+
+        var standard = PreviewScene.Layout(TextSize.Normal);
+        var withCodex = standard with
+        {
+            Placements = standard.Placements.Select(p => p.TypeId == "claudecode" ? PreviewScene.CodexPlacement : p).ToList(),
+        };
+        foreach (var layout in new[] { standard, withCodex })
+        {
+            using var frame = composer.Compose(layout, scene.ByPlacement, theme, background, PreviewScene.Now);
+            foreach (var placement in layout.Placements)
+            {
+                // La disposition avec Codex ne sert qu'à Codex : les autres modules y sont identiques.
+                if ((placement.TypeId == "codex") != ReferenceEquals(layout, withCodex))
+                {
+                    continue;
+                }
+
+                var entry = ModuleFiles.First(m => m.TypeId == placement.TypeId);
+
+                var rect = GridGeometry.ModuleRect(placement.Column, placement.Row, placement.Columns, placement.Rows, theme.Grid);
+                var file = Path.Combine(folder, entry.File);
+                using var crop = new SKBitmap(rect.Width, rect.Height, frame.ColorType, frame.AlphaType);
+                if (!frame.ExtractSubset(crop, rect))
+                {
+                    Console.Error.WriteLine("Découpe impossible : " + entry.File);
+                    return 1;
+                }
+
+                SavePng(crop, file);
+                Console.WriteLine("Capture écrite : " + file);
+            }
+        }
+
+        return 0;
+    }
+
     // --- Une image à la demande ---
 
     private static async Task<int> OneImageAsync(string[] args)
@@ -249,9 +331,9 @@ internal static class Program
 
     // --- Rendu ---
 
-    private static void Warn(string message) => Console.Error.WriteLine("Avertissement : " + message);
+    internal static void Warn(string message) => Console.Error.WriteLine("Avertissement : " + message);
 
-    private static ThemeDefinition Resolve(AppearanceSettings settings) =>
+    internal static ThemeDefinition Resolve(AppearanceSettings settings) =>
         AppearanceResolver.Resolve(settings, new SkiaSystemFonts(), Warn);
 
     /// <summary>Compose comme le service : réglages résolus, fond du thème ou choisi, puis <see cref="FrameComposer"/>.</summary>
@@ -263,7 +345,7 @@ internal static class Program
         SavePng(frame, file);
     }
 
-    private static void SavePng(SKBitmap bitmap, string file)
+    internal static void SavePng(SKBitmap bitmap, string file)
     {
         if (Path.GetDirectoryName(Path.GetFullPath(file)) is { Length: > 0 } directory)
         {

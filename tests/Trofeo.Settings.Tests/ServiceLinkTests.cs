@@ -28,7 +28,10 @@ public class ServiceLinkTests
     {
         public readonly ConcurrentQueue<int> Subscriptions = new();
 
-        public Welcome Hello() => new("1.0.0", ControlPipe.ProtocolVersion, []);
+        /// <summary>La version du protocole annoncée à la connexion.</summary>
+        public int Protocol { get; init; } = ControlPipe.ProtocolVersion;
+
+        public Welcome Hello() => new("1.0.0", Protocol, []);
 
         public ServiceStatus GetStatus() => new(
             new ScreenInfo(LinkScreenState.Ready, null), false, [],
@@ -44,6 +47,46 @@ public class ServiceLinkTests
 
         public Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct) =>
             Task.FromResult(new ActionResult(true, "ok"));
+
+        /// <summary>Si posé, la prochaine lecture des mises à jour rend l'état d'avant puis attend <see cref="ReleaseStale"/> : une lecture périmée.</summary>
+        public volatile bool StallNextRead;
+        public readonly ManualResetEventSlim Stalled = new(false);
+        public readonly ManualResetEventSlim ReleaseStale = new(false);
+        public volatile UpdateInfo Update = new(LinkUpdateState.Unknown, null, false, null, null, LinkUpdateChannel.Stable, false);
+        public readonly ConcurrentQueue<string> UpdateCalls = new();
+
+        public UpdateInfo GetUpdate()
+        {
+            var current = Update;
+            if (StallNextRead)
+            {
+                StallNextRead = false;
+                Stalled.Set();
+                ReleaseStale.Wait(TimeSpan.FromSeconds(15));
+            }
+
+            return current;
+        }
+
+        public Task CheckUpdatesAsync(CancellationToken ct)
+        {
+            UpdateCalls.Enqueue("check");
+            Update = new UpdateInfo(LinkUpdateState.Available, "0.9.0", false, null, "La version 0.9.0 est disponible.", Update.Channel, Update.WaitForNextStable);
+            return Task.CompletedTask;
+        }
+
+        public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable, CancellationToken ct)
+        {
+            UpdateCalls.Enqueue($"prefs {channel} {waitForNextStable}");
+            Update = Update with { Channel = channel, WaitForNextStable = waitForNextStable };
+            return Task.CompletedTask;
+        }
+
+        public Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade, CancellationToken ct)
+        {
+            UpdateCalls.Enqueue($"install {confirmDowngrade}");
+            return Task.FromResult(new ActionResult(false, "Mise à jour annulée : l'autorisation n'a pas été donnée."));
+        }
 
         public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame)
         {
@@ -85,6 +128,56 @@ public class ServiceLinkTests
     }
 
     [Fact]
+    public async Task Link_ReadsTheUpdates_AndSendsTheRequests()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler();
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+
+        await WaitUntilAsync(() => link.Updates is not null, "premier état des mises à jour");
+        Assert.Equal(LinkUpdateState.Unknown, link.Updates!.State);
+
+        // La recherche et le choix du canal rendent la main avec l'état déjà à jour (sans attendre la relecture suivante).
+        await link.CheckUpdatesAsync();
+        Assert.Equal(LinkUpdateState.Available, link.Updates!.State);
+        await link.SetUpdatePreferencesAsync(LinkUpdateChannel.Beta, waitForNextStable: false);
+        Assert.Equal(LinkUpdateChannel.Beta, link.Updates!.Channel);
+
+        var result = await link.InstallUpdateAsync(confirmDowngrade: true);
+        Assert.False(result.Ok);
+        Assert.Equal("Mise à jour annulée : l'autorisation n'a pas été donnée.", result.Message);
+        Assert.Equal(["check", "prefs Beta False", "install True"], handler.UpdateCalls.ToArray());
+
+        // L'état change côté service : la relecture de chaque seconde le rapporte.
+        handler.Update = handler.Update with { State = LinkUpdateState.UpToDate };
+        await WaitUntilAsync(() => link.Updates!.State == LinkUpdateState.UpToDate, "relecture des mises à jour");
+    }
+
+    [Fact]
+    public async Task Link_StaleUpdateRead_DoesNotOverwriteANewerOne()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler { StallNextRead = true };
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        // Relecture de la boucle toutes les 30 s : la lecture périmée est la seule qui puisse écraser.
+        await using var link = new ServiceLink(
+            pipe, retryDelay: TimeSpan.FromMilliseconds(60), connectTimeout: TimeSpan.FromMilliseconds(150), statusInterval: TimeSpan.FromSeconds(30));
+
+        // La première lecture (Stable) est partie, mais n'est pas encore arrivée.
+        Assert.True(handler.Stalled.Wait(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken));
+        await link.SetUpdatePreferencesAsync(LinkUpdateChannel.Beta, waitForNextStable: false);
+        Assert.Equal(LinkUpdateChannel.Beta, link.Updates!.Channel);
+
+        handler.ReleaseStale.Set();
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+
+        Assert.Equal(LinkUpdateChannel.Beta, link.Updates!.Channel); // la lecture périmée (Stable) est écartée
+    }
+
+    [Fact]
     public async Task Link_ThreeFailures_IsServiceStopped()
     {
         var pipe = NewPipeName();
@@ -97,6 +190,25 @@ public class ServiceLinkTests
         using var server = new ControlServer(pipe, new Handler());
         server.Start();
         await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion tardive");
+    }
+
+    [Fact]
+    public async Task Link_DifferentProtocol_IsVersionMismatch_NotServiceStopped()
+    {
+        var pipe = NewPipeName();
+        var history = new ConcurrentQueue<LinkState>();
+        using var server = new ControlServer(pipe, new Handler { Protocol = ControlPipe.ProtocolVersion + 1 });
+        server.Start();
+        await using var link = NewLink(pipe);
+        link.Changed += () => history.Enqueue(link.State);
+
+        await WaitUntilAsync(() => link.State == LinkState.VersionMismatch, "versions différentes constatées");
+
+        // Plusieurs tentatives plus tard, on n'a jamais dit « service arrêté » : il tourne, c'est la version qui diffère.
+        await Task.Delay(400, TestContext.Current.CancellationToken);
+        Assert.Equal(LinkState.VersionMismatch, link.State);
+        Assert.DoesNotContain(LinkState.ServiceStopped, history);
+        Assert.Null(link.Welcome);
     }
 
     [Fact]

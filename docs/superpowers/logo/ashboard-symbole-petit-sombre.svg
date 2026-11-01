@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title">
+  <title id="title">Ashboard Vision (petites tailles, thème sombre)</title>
+  <!-- Coupe pour 16 à 24 px sur fond sombre : charbon éclairé et liseré, dans le ton de la barre des tâches ; seule la fente ressort. -->
+  <defs>
+    <linearGradient id="liseré" gradientUnits="userSpaceOnUse" x1="128" y1="16" x2="128" y2="240">
+      <stop offset="0" stop-color="#6A6D76"/>
+      <stop offset="1" stop-color="#34363D"/>
+    </linearGradient>
+    <linearGradient id="charbon" gradientUnits="userSpaceOnUse" x1="128" y1="16" x2="128" y2="240">
+      <stop offset="0" stop-color="#3E4048"/>
+      <stop offset="1" stop-color="#1D1E23"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#liseré)" d="M88 16 H168 C221 16 240 35 240 88 V168 C240 221 221 240 168 240 H88 C35 240 16 221 16 168 V88 C16 35 35 16 88 16 Z"/>
+  <path fill="url(#charbon)" d="M88 26 H168 C214 26 230 42 230 88 V168 C230 214 214 230 168 230 H88 C42 230 26 214 26 168 V88 C26 42 42 26 88 26 Z"/>
+  <path fill="#FF5B1F" d="M40 124 C86 88 170 88 216 124 C170 160 86 160 40 124 Z"/>
+</svg>

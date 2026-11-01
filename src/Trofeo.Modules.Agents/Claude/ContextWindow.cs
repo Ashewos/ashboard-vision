@@ -1,5 +1,3 @@
-using Trofeo.StatusLine;
-
 namespace Trofeo.Modules.Agents;
 
 /// <summary>Part de la fenêtre de contexte d'une session qui est remplie.</summary>
@@ -10,7 +8,7 @@ public static class ContextWindow
     private static readonly TimeSpan FreshCapture = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// Le pourcentage rempli, borné à [0, 100], ou <c>null</c> si on ne peut pas le savoir. Une capture de la barre d'état
+    /// Le pourcentage rempli, borné à [0, 100], ou <c>null</c> si on ne peut pas le savoir. Une capture du mod des quotas
     /// de moins de 60 s qui donne ce pourcentage fait foi ; sinon on divise <paramref name="tokens"/> par la fenêtre :
     /// celle de la capture si elle la donne, sinon <paramref name="knownWindowForModel"/> (la fenêtre relevée par la capture
     /// la plus récente, de n'importe quelle session, pour le même modèle), sinon 1 000 000 (modèle en <c>[1m]</c>, ou plus

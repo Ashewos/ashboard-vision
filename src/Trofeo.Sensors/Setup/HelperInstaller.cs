@@ -26,13 +26,19 @@ public enum InstallResult
 /// <param name="sourceDir">Dossier d'où copier l'assistant (celui de l'exécutable en cours).</param>
 /// <param name="installDir">Dossier d'installation (voir <see cref="HelperIdentity.InstallDir"/>).</param>
 /// <param name="sleep">Attente entre deux essais quand un fichier est encore tenu par l'ancien assistant ; sert aux tests à ne pas dormir.</param>
+/// <param name="legacyInstallDirs">
+/// Dossiers d'installation d'avant (voir <see cref="HelperIdentity.LegacyInstallDirs"/>), supprimés à l'installation.
+/// <c>null</c> : aucun dossier à supprimer (l'ancienne tâche, elle, est toujours retirée).
+/// </param>
 public sealed class HelperInstaller(
-    ICommandRunner runner, IPawnIoDetector pawnIo, string sourceDir, string installDir, Action<TimeSpan>? sleep = null)
+    ICommandRunner runner, IPawnIoDetector pawnIo, string sourceDir, string installDir, Action<TimeSpan>? sleep = null,
+    IReadOnlyList<string>? legacyInstallDirs = null)
 {
     private const string ExeName = "Trofeo.SensorHelper.exe";
     private const string StagedXmlName = "task.xml";
     private const int PawnIoRebootRequired = 3010;
     private static readonly string QuotedTask = "\"" + TaskDefinition.TaskName + "\"";
+    private static readonly string QuotedLegacyTask = "\"" + TaskDefinition.LegacyTaskName + "\"";
 
     // Attentes successives (environ 10 s au total) pour laisser l'ancien assistant, arrêté par « schtasks /End », relâcher ses fichiers.
     private static readonly TimeSpan[] RetryDelays =
@@ -55,14 +61,62 @@ public sealed class HelperInstaller(
             }
         }
 
+        RemoveLegacy();
+
         runner.Run("schtasks", $"/End /TN {QuotedTask}"); // ancienne version éventuelle ; absente ou arrêtée : sans importance
 
-        if (!SameDirectory(sourceDir, installDir)) CopyDirectory(sourceDir, installDir);
+        if (!SameDirectory(sourceDir, installDir)) CopyDirectory(sourceDir, installDir, installDir);
 
         CreateTask();
 
         Check(runner.Run("schtasks", $"/Run /TN {QuotedTask}"), "démarrage de la tâche planifiée");
         return rebootRequired ? InstallResult.InstalledRebootRequired : InstallResult.Installed;
+    }
+
+    /// <summary>
+    /// Retire l'installation d'avant : la tâche (arrêtée d'abord, pour que l'ancien assistant relâche ses fichiers), puis les
+    /// anciens dossiers, et leur dossier parent s'il ne contient plus rien (<c>%ProgramFiles%\trofeo-HB-dashboard</c>), même quand
+    /// une installation précédente avait déjà retiré le sous-dossier. Une tâche absente n'est pas une erreur : les codes de sortie
+    /// sont ignorés, rien n'est signalé. Un dossier n'est pas supprimé si c'est celui d'où l'on s'exécute ou celui où l'on installe.
+    /// S'il reste tenu après les attentes, il est laissé en place avec un avertissement dans la trace : la nouvelle installation
+    /// n'en dépend pas.
+    /// </summary>
+    private void RemoveLegacy()
+    {
+        runner.Run("schtasks", $"/End /TN {QuotedLegacyTask}");
+        runner.Run("schtasks", $"/Delete /TN {QuotedLegacyTask} /F");
+        foreach (var legacyInstallDir in legacyInstallDirs ?? [])
+        {
+            if (SameDirectory(sourceDir, legacyInstallDir) || SameDirectory(installDir, legacyInstallDir)) continue;
+            if (Directory.Exists(legacyInstallDir))
+            {
+                try
+                {
+                    Retry(() => Directory.Delete(legacyInstallDir, recursive: true));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Trace.TraceWarning($"Ancien dossier de l'assistant de capteurs non supprimé ({legacyInstallDir}) : {ex.Message}");
+                    continue;
+                }
+            }
+
+            DeleteIfEmpty(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(legacyInstallDir)));
+        }
+    }
+
+    // Jamais récursif : un dossier qui contient quoi que ce soit (le dossier de l'application, par exemple) reste en place.
+    private static void DeleteIfEmpty(string? directory)
+    {
+        if (directory is null || !Directory.Exists(directory) || Directory.EnumerateFileSystemEntries(directory).Any()) return;
+        try
+        {
+            Directory.Delete(directory, recursive: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning($"Ancien dossier vide non supprimé ({directory}) : {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -136,13 +190,15 @@ public sealed class HelperInstaller(
     /// <summary>
     /// Copie récursive qui écrase les fichiers existants et ne supprime rien. Les fichiers créés héritent des droits du dossier
     /// de destination. Les jonctions et liens symboliques sont ignorés : la copie est élevée et ne doit pas suivre un lien vers
-    /// un autre dossier (ni tourner en boucle sur un lien vers un parent).
+    /// un autre dossier (ni tourner en boucle sur un lien vers un parent). Une destination placée dans la source est ignorée
+    /// elle aussi : sinon la copie y descendrait sans fin.
     /// </summary>
-    private void CopyDirectory(string source, string destination)
+    private void CopyDirectory(string source, string destination, string excluded)
     {
         Directory.CreateDirectory(destination);
         foreach (var entry in new DirectoryInfo(source).EnumerateFileSystemInfos())
         {
+            if (entry is DirectoryInfo && SameDirectory(entry.FullName, excluded)) continue; // la destination de toute la copie, quand elle est dans la source
             if (IsReparsePoint(entry))
             {
                 Trace.TraceWarning($"Lien ignoré lors de la copie : {entry.FullName}");
@@ -150,7 +206,7 @@ public sealed class HelperInstaller(
             }
 
             var target = Path.Combine(destination, entry.Name);
-            if (entry is DirectoryInfo) CopyDirectory(entry.FullName, target);
+            if (entry is DirectoryInfo) CopyDirectory(entry.FullName, target, excluded);
             else Retry(() => File.Copy(entry.FullName, target, overwrite: true));
         }
     }

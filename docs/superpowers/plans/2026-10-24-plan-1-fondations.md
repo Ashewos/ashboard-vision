@@ -28,7 +28,7 @@ Le document de conception couvre plusieurs sous-systèmes indépendants. Ils son
 | 3. Claude Code & Codex | Lecture des sessions, flux, barre du bas, quotas via la barre d'état, moteur d'animation, mascottes Claude et Codex | 1 |
 | 4. Apparence | Thèmes Classique / Liquid Glass / Pixel, transparence, polices, taille du texte, fonds image/GIF/vidéo | 1 |
 | 5. Logiciel de réglage | Fenêtre Avalonia : damier éditable, mode émulé, modules, raccourcis, paramètres, assistant de première ouverture | 1–4 |
-| 6. Distribution | Installateur Velopack, tâche planifiée, mises à jour GitHub en un clic, README soigné, releases | 1–5 |
+| 6. Distribution | Installateur Inno Setup (Ashboard Vision), mises à jour GitHub en un clic avec Stable et Bêta, README soigné, releases construites par GitHub | 1–5 |
 
 ## Global Constraints
 

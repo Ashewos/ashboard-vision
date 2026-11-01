@@ -17,9 +17,20 @@ public sealed class ControlClient : IAsyncDisposable
     // Une action peut lancer deux commandes de 60 s (installation du mod des quotas) : son délai passe au-dessus.
     private static readonly TimeSpan ActionTimeout = TimeSpan.FromSeconds(150);
 
-    /// <summary>Le délai d'une requête selon son type : 150 s pour une action, 20 s pour un rechargement ou un redémarrage, 10 s sinon.</summary>
+    // Une vérification interroge GitHub (30 s de délai côté service) et peut attendre une opération en cours.
+    private static readonly TimeSpan UpdateCheckTimeout = TimeSpan.FromSeconds(45);
+
+    // Le téléchargement de l'installateur, puis la réponse de l'utilisateur à la demande d'autorisation de Windows.
+    private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Le délai d'une requête selon son type : 10 minutes pour installer une mise à jour, 150 s pour une action, 45 s pour vérifier les
+    /// mises à jour ou régler leur canal, 20 s pour un rechargement ou un redémarrage, 10 s sinon.
+    /// </summary>
     internal static TimeSpan TimeoutFor(string requestType) => requestType switch
     {
+        MessageTypes.InstallUpdate => InstallTimeout,
+        MessageTypes.CheckUpdates or MessageTypes.SetUpdatePreferences => UpdateCheckTimeout,
         MessageTypes.Action => ActionTimeout,
         MessageTypes.Reload or MessageTypes.Restart => LongTimeout,
         _ => DefaultTimeout,
@@ -64,7 +75,7 @@ public sealed class ControlClient : IAsyncDisposable
                 var response = await client.SendAsync(new Request(client.NextId(), MessageTypes.Hello), timeout, ct).ConfigureAwait(false);
                 var welcome = response.Welcome ?? throw new ControlException("Réponse du service incomplète.");
                 if (welcome.ProtocolVersion != ControlPipe.ProtocolVersion)
-                    throw new ControlException(
+                    throw new ProtocolMismatchException(
                         $"Le service parle la version {welcome.ProtocolVersion} du protocole, cette fenêtre la version {ControlPipe.ProtocolVersion} : mets les deux à jour.");
                 client.Welcome = welcome;
             }
@@ -102,6 +113,26 @@ public sealed class ControlClient : IAsyncDisposable
     public async Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct) =>
         (await SendAsync(new Request(NextId(), MessageTypes.Action) { InstanceId = instanceId, ActionKey = actionKey }, TimeoutFor(MessageTypes.Action), ct)
             .ConfigureAwait(false)).Action
+        ?? throw Incomplete();
+
+    public async Task<UpdateInfo> GetUpdateAsync(CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.GetUpdate), TimeoutFor(MessageTypes.GetUpdate), ct).ConfigureAwait(false)).Update
+        ?? throw Incomplete();
+
+    /// <summary>Demande une vérification tout de suite ; le résultat se lit avec <see cref="GetUpdateAsync"/>.</summary>
+    public async Task CheckUpdatesAsync(CancellationToken ct) =>
+        await SendAsync(new Request(NextId(), MessageTypes.CheckUpdates), TimeoutFor(MessageTypes.CheckUpdates), ct).ConfigureAwait(false);
+
+    public async Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable, CancellationToken ct) =>
+        await SendAsync(
+            new Request(NextId(), MessageTypes.SetUpdatePreferences) { Channel = channel, WaitForNextStable = waitForNextStable },
+            TimeoutFor(MessageTypes.SetUpdatePreferences), ct).ConfigureAwait(false);
+
+    /// <summary>Rend <c>Ok</c> vrai quand l'installateur est lancé (il arrête ensuite le service) ; sinon le message dit pourquoi.</summary>
+    public async Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade, CancellationToken ct) =>
+        (await SendAsync(
+            new Request(NextId(), MessageTypes.InstallUpdate) { ConfirmDowngrade = confirmDowngrade },
+            TimeoutFor(MessageTypes.InstallUpdate), ct).ConfigureAwait(false)).Action
         ?? throw Incomplete();
 
     /// <summary>S'abonne aux images de l'écran (<see cref="FrameReceived"/>), au plus <paramref name="maxFps"/> par seconde ; 0 : arrêt.</summary>

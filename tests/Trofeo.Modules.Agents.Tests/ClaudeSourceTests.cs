@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Trofeo.StatusLine;
 
 namespace Trofeo.Modules.Agents.Tests;
 
@@ -57,11 +56,11 @@ public sealed partial class ClaudeSourceTests : IDisposable
     private static string ReadCall(string toolId, string file) =>
         $$$"""{"isSidechain":false,"type":"assistant","message":{"model":"claude-opus-5-5","role":"assistant","content":[{"type":"tool_use","id":"{{{toolId}}}","name":"Read","input":{"file_path":{{{JsonSerializer.Serialize(file)}}}}}],"usage":{"input_tokens":2,"cache_creation_input_tokens":782,"cache_read_input_tokens":169665,"output_tokens":353}},"timestamp":"2026-10-25T10:30:05Z"}""";
 
-    private void WriteQuotaCapture(string sessionId, DateTimeOffset at, double fiveHour, double sevenDay)
+    private void WriteQuotaCapture(string sessionId, DateTimeOffset at, double fiveHour, double sevenDay, string? dir = null)
     {
         var record = new StatusLineRecord(at, sessionId, "claude-opus-5-5", null, null,
             new CapturedQuota(fiveHour, at.AddHours(3)), new CapturedQuota(sevenDay, at.AddDays(4)));
-        StatusLineFile.Write(ClaudeHome.StatusLineDir(_home), record);
+        CaptureFiles.Write(dir ?? ClaudeHome.StatusLineDir(_home), record);
     }
 
     [Fact]
@@ -122,7 +121,7 @@ public sealed partial class ClaudeSourceTests : IDisposable
     {
         var cwd = AddSession(10, "sess-a", "projet-a", "busy", StartMs);
         File.WriteAllLines(TranscriptPath(cwd, "sess-a"), [Prompt("Salut")]);
-        StatusLineFile.Write(ClaudeHome.StatusLineDir(_home),
+        CaptureFiles.Write(ClaudeHome.StatusLineDir(_home),
             new StatusLineRecord(Now.AddSeconds(-5), "sess-a", "claude-sonnet-5-5", 1_000_000, 42.5, null, null));
         using var source = NewSource();
 
@@ -237,7 +236,7 @@ public sealed partial class ClaudeSourceTests : IDisposable
         File.WriteAllLines(TranscriptPath(cwdB, "sess-b"), [Prompt("Demande B")]);
         Directory.CreateDirectory(Path.Combine(_home, "tasks", "sess-a"));
         Directory.CreateDirectory(Path.Combine(_home, "tasks", "sess-b"));
-        StatusLineFile.Write(ClaudeHome.StatusLineDir(_home),
+        CaptureFiles.Write(ClaudeHome.StatusLineDir(_home),
             new StatusLineRecord(Now.AddMinutes(-5), "sess-a", "claude-sonnet-5-5", null, null, null, null));
         using var source = new ClaudeSource(_home, _alive.Contains)
         {
@@ -363,9 +362,9 @@ public sealed partial class ClaudeSourceTests : IDisposable
     public void Source_Quotas_AreMergedWindowByWindow()
     {
         var dir = ClaudeHome.StatusLineDir(_home);
-        StatusLineFile.Write(dir, new StatusLineRecord(Now.AddMinutes(-1), "sess-recente", "m", null, null,
+        CaptureFiles.Write(dir, new StatusLineRecord(Now.AddMinutes(-1), "sess-recente", "m", null, null,
             new CapturedQuota(40, Now.AddHours(2)), null));
-        StatusLineFile.Write(dir, new StatusLineRecord(Now.AddMinutes(-10), "sess-ancienne", "m", null, null,
+        CaptureFiles.Write(dir, new StatusLineRecord(Now.AddMinutes(-10), "sess-ancienne", "m", null, null,
             new CapturedQuota(10, Now.AddHours(1)), new CapturedQuota(60, Now.AddDays(3))));
         using var source = NewSource();
 
@@ -382,7 +381,7 @@ public sealed partial class ClaudeSourceTests : IDisposable
     {
         var cwd = AddSession(10, "sess-a", "projet-a", "busy", StartMs);
         File.WriteAllLines(TranscriptPath(cwd, "sess-a"), [Prompt("Salut"), ReadCall("t1", "/src/Foo.cs")]);
-        StatusLineFile.Write(ClaudeHome.StatusLineDir(_home),
+        CaptureFiles.Write(ClaudeHome.StatusLineDir(_home),
             new StatusLineRecord(Now.AddMinutes(-20), "sess-autre", "claude-opus-5-5", 1_000_000, 3, null, null));
         using var source = NewSource();
 
@@ -397,7 +396,7 @@ public sealed partial class ClaudeSourceTests : IDisposable
         var cwd = AddSession(10, "sess-a", "projet-a", "busy", StartMs);
         File.WriteAllLines(TranscriptPath(cwd, "sess-a"), [Prompt("Salut"), ReadCall("t1", "/src/Foo.cs")]);
         // La barre d'état rapporte l'identifiant avec son suffixe, la transcription sans.
-        StatusLineFile.Write(ClaudeHome.StatusLineDir(_home),
+        CaptureFiles.Write(ClaudeHome.StatusLineDir(_home),
             new StatusLineRecord(Now.AddMinutes(-20), "sess-autre", "claude-opus-5-5[1m]", 1_000_000, 3, null, null));
         using var source = NewSource();
 
@@ -411,7 +410,7 @@ public sealed partial class ClaudeSourceTests : IDisposable
     {
         var cwd = AddSession(10, "sess-a", "projet-a", "busy", StartMs);
         File.WriteAllLines(TranscriptPath(cwd, "sess-a"), [Prompt("Salut"), ReadCall("t1", "/src/Foo.cs")]);
-        StatusLineFile.Write(ClaudeHome.StatusLineDir(_home),
+        CaptureFiles.Write(ClaudeHome.StatusLineDir(_home),
             new StatusLineRecord(Now.AddMinutes(-20), "sess-autre", "claude-sonnet-5-5", 1_000_000, 3, null, null));
         using var source = NewSource();
 
@@ -423,7 +422,7 @@ public sealed partial class ClaudeSourceTests : IDisposable
     [Fact]
     public void Source_Quotas_SkipsNewerCaptureWithoutQuota_AndTooOldOnes()
     {
-        StatusLineFile.Write(ClaudeHome.StatusLineDir(_home),
+        CaptureFiles.Write(ClaudeHome.StatusLineDir(_home),
             new StatusLineRecord(Now.AddSeconds(-1), "sess-sans-quota", "m", null, 10, null, null));
         WriteQuotaCapture("sess-vieille", Now.AddDays(-9), 99, 99);
         using var source = NewSource();
@@ -450,6 +449,60 @@ public sealed partial class ClaudeSourceTests : IDisposable
         Assert.True(File.Exists(oldFile));
 
         source.Poll(null, Now.AddMinutes(61));
+        Assert.False(File.Exists(oldFile));
+    }
+
+    [Fact]
+    public void Captures_ReadFromNewThenLegacyFolder()
+    {
+        var legacy = ClaudeHome.LegacyStatusLineDir(_home);
+        WriteQuotaCapture("sess-ancienne", Now.AddDays(-2), 10, 20, legacy); // posée par l'ancienne barre d'état
+        using var source = NewSource();
+
+        // Seul l'ancien dossier existe : ses captures de moins de 8 jours comptent encore.
+        var quotas = source.Poll(null, Now).Quotas!;
+        Assert.Equal(10, quotas.FiveHour!.UsedPercent);
+        Assert.Equal(20, quotas.Weekly!.UsedPercent);
+
+        // Le mod écrit dans le nouveau dossier : sa capture, plus récente, passe devant.
+        WriteQuotaCapture("sess-nouvelle", Now.AddMinutes(-1), 30, 40);
+        quotas = source.Poll(null, Now).Quotas!;
+        Assert.Equal(30, quotas.FiveHour!.UsedPercent);
+        Assert.Equal(40, quotas.Weekly!.UsedPercent);
+        Assert.Equal(Now.AddMinutes(-1), quotas.CapturedAt);
+    }
+
+    [Fact]
+    public void Captures_LegacyFolder_IgnoresCapturesOfEightDaysOrMore()
+    {
+        WriteQuotaCapture("sess-trop-vieille", Now.AddDays(-9), 99, 99, ClaudeHome.LegacyStatusLineDir(_home));
+        using var source = NewSource();
+
+        Assert.Null(source.Poll(null, Now).Quotas);
+    }
+
+    [Fact]
+    public void Captures_SameSessionInBothFolders_TheNewFolderWins()
+    {
+        WriteQuotaCapture("sess-a", Now.AddMinutes(-30), 11, 12, ClaudeHome.LegacyStatusLineDir(_home));
+        WriteQuotaCapture("sess-a", Now.AddMinutes(-5), 55, 56);
+        using var source = NewSource();
+
+        var quotas = source.Poll(null, Now).Quotas!;
+
+        Assert.Equal(55, quotas.FiveHour!.UsedPercent);
+        Assert.Equal(56, quotas.Weekly!.UsedPercent);
+    }
+
+    [Fact]
+    public void Source_Housekeeping_AlsoCleansTheLegacyFolder()
+    {
+        WriteQuotaCapture("sess-vieille", Now.AddDays(-9), 1, 1, ClaudeHome.LegacyStatusLineDir(_home));
+        var oldFile = Path.Combine(ClaudeHome.LegacyStatusLineDir(_home), "sess-vieille.json");
+        using var source = NewSource();
+
+        source.Poll(null, Now);
+
         Assert.False(File.Exists(oldFile));
     }
 

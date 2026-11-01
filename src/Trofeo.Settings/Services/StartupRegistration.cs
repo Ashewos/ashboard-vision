@@ -26,13 +26,16 @@ public sealed class NoStartupRegistration : IStartupRegistration
 }
 
 /// <summary>
-/// La clé <c>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</c>, valeur <c>trofeo-HB-dashboard</c> : le chemin du service
+/// La clé <c>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</c>, valeur <c>ashboard-vision</c> : le chemin du service
 /// entre guillemets. Pas besoin d'être administrateur.
 /// </summary>
 public sealed class RunKeyStartup : IStartupRegistration
 {
     public const string KeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    public const string ValueName = "trofeo-HB-dashboard";
+    public const string ValueName = "ashboard-vision";
+
+    /// <summary>La valeur d'avant le changement de nom : la préparation propre à l'utilisateur, à l'installation, la retire.</summary>
+    public const string LegacyValueName = "trofeo-HB-dashboard";
 
     /// <summary>La valeur écrite : le chemin entre guillemets, pour qu'un dossier avec des espaces ne soit pas coupé.</summary>
     public static string Command(string exePath) => "\"" + exePath + "\"";

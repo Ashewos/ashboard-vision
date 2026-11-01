@@ -5,7 +5,18 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Le nom que voient le Gestionnaire des tâches et « Applications de démarrage » (le fichier garde son nom). -->
+    <AssemblyTitle>Ashboard Vision</AssemblyTitle>
+    <Description>Ashboard Vision : le tableau de bord de l'écran Thermalright Trofeo Vision.</Description>
+    <ApplicationIcon>..\..\assets\brand\ashboard-vision.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- Les icônes de la zone de notification, une par thème de la barre des tâches (TaskbarTheme les charge par ce nom exact).
+       Les fichiers sont fabriqués par tools/Trofeo.BrandAssets. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\assets\brand\tray-clair.ico" LogicalName="tray-clair.ico" />
+    <EmbeddedResource Include="..\..\assets\brand\tray-sombre.ico" LogicalName="tray-sombre.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Lecture des fonds vidéo (Media Foundation). MIT ; avec ses dépendances (SharpGen.Runtime, Vortice.DirectX, Vortice.Mathematics), environ 1,2 Mo de DLL dans le dossier de sortie. -->
@@ -21,6 +32,7 @@
     <ProjectReference Include="..\Trofeo.Control\Trofeo.Control.csproj" />
     <ProjectReference Include="..\Trofeo.Core\Trofeo.Core.csproj" />
     <ProjectReference Include="..\Trofeo.Device\Trofeo.Device.csproj" />
+    <ProjectReference Include="..\Trofeo.Distribution\Trofeo.Distribution.csproj" />
     <ProjectReference Include="..\Trofeo.Modules.Agents\Trofeo.Modules.Agents.csproj" />
     <ProjectReference Include="..\Trofeo.Modules.Clock\Trofeo.Modules.Clock.csproj" />
     <ProjectReference Include="..\Trofeo.Modules.Monitoring\Trofeo.Modules.Monitoring.csproj" />

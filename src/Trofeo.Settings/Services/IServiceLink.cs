@@ -4,7 +4,17 @@ using Trofeo.ModuleKit;
 namespace Trofeo.Settings.Services;
 
 /// <summary>Où en est la liaison avec le service d'affichage.</summary>
-public enum LinkState { Connecting, Connected, ServiceStopped }
+public enum LinkState
+{
+    Connecting,
+    Connected,
+
+    /// <summary>Aucun service ne répond (trois tentatives de suite).</summary>
+    ServiceStopped,
+
+    /// <summary>Un service répond, mais il parle une autre version du protocole que la fenêtre : relancer le service n'y changerait rien.</summary>
+    VersionMismatch,
+}
 
 /// <summary>
 /// La liaison de la fenêtre avec le service d'affichage : tout ce que les réglages lui demandent passe par là.
@@ -20,7 +30,10 @@ public interface IServiceLink : IAsyncDisposable
     /// <summary>L'état du service, relu chaque seconde quand on est connecté.</summary>
     ServiceStatus? Status { get; }
 
-    /// <summary><see cref="State"/>, <see cref="Welcome"/> ou <see cref="Status"/> a changé. Sur le fil de l'interface.</summary>
+    /// <summary>Où en sont les mises à jour, relu avec l'état du service ; <c>null</c> tant qu'on n'est pas connecté.</summary>
+    UpdateInfo? Updates { get; }
+
+    /// <summary><see cref="State"/>, <see cref="Welcome"/>, <see cref="Status"/> ou <see cref="Updates"/> a changé. Sur le fil de l'interface.</summary>
     event Action? Changed;
 
     /// <summary>Une image de l'écran est arrivée. Sur le fil de l'interface.</summary>
@@ -45,6 +58,18 @@ public interface IServiceLink : IAsyncDisposable
 
     /// <summary>Vrai si l'instance existait et a été recréée (à appeler après un changement de secret).</summary>
     Task<bool> RestartModuleAsync(Guid instanceId);
+
+    /// <summary>Cherche une mise à jour tout de suite ; au retour, <see cref="Updates"/> dit ce qui a été trouvé.</summary>
+    Task CheckUpdatesAsync();
+
+    /// <summary>Enregistre le canal suivi et « attendre la prochaine version stable », puis cherche de nouveau (au retour, <see cref="Updates"/> est à jour).</summary>
+    Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable);
+
+    /// <summary>
+    /// Télécharge et lance l'installateur de la version proposée. Un résultat non Ok dit pourquoi (autorisation de Windows
+    /// refusée, installation déjà lancée…) ; un retour en arrière demande <paramref name="confirmDowngrade"/>.
+    /// </summary>
+    Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade);
 
     /// <summary>Lance Trofeo.Display.exe ; faux s'il est introuvable ou ne démarre pas.</summary>
     Task<bool> StartServiceAsync();

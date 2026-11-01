@@ -12,6 +12,7 @@ internal static partial class WinUsbNative
     public const int ErrorInsufficientBuffer = 122;
 
     public const uint DigcfPresent = 0x02;
+    public const uint DigcfAllClasses = 0x04;
     public const uint DigcfDeviceInterface = 0x10;
 
     public const uint GenericRead = 0x80000000;
@@ -23,6 +24,8 @@ internal static partial class WinUsbNative
 
     public const uint PipeTransferTimeout = 0x03;
 
+    public const uint SpdrpHardwareId = 0x01;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct SpDeviceInterfaceData
     {
@@ -32,8 +35,30 @@ internal static partial class WinUsbNative
         public nuint Reserved;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SpDevinfoData
+    {
+        public uint CbSize;
+        public Guid ClassGuid;
+        public uint DevInst;
+        public nuint Reserved;
+    }
+
     [LibraryImport("setupapi.dll", EntryPoint = "SetupDiGetClassDevsW", SetLastError = true)]
     public static partial SafeDeviceInfoSetHandle SetupDiGetClassDevs(ref Guid classGuid, nint enumerator, nint hwndParent, uint flags);
+
+    /// <summary>Variante sans classe (<c>DIGCF_ALLCLASSES</c>) qui limite la liste à un énumérateur, par exemple « USB ».</summary>
+    [LibraryImport("setupapi.dll", EntryPoint = "SetupDiGetClassDevsW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    public static partial SafeDeviceInfoSetHandle SetupDiGetClassDevs(nint classGuid, string enumerator, nint hwndParent, uint flags);
+
+    [LibraryImport("setupapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetupDiEnumDeviceInfo(SafeDeviceInfoSetHandle deviceInfoSet, uint memberIndex, ref SpDevinfoData deviceInfoData);
+
+    [LibraryImport("setupapi.dll", EntryPoint = "SetupDiGetDeviceRegistryPropertyW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetupDiGetDeviceRegistryProperty(
+        SafeDeviceInfoSetHandle deviceInfoSet, ref SpDevinfoData deviceInfoData, uint property, out uint propertyRegDataType, ref byte propertyBuffer, uint propertyBufferSize, out uint requiredSize);
 
     [LibraryImport("setupapi.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

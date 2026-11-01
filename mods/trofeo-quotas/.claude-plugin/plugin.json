@@ -1,9 +1,0 @@
-{
-  "name": "trofeo-quotas",
-  "version": "0.1.0",
-  "description": "Écrit les quotas 5 h / hebdo et le contexte de chaque session dans ~/.claude/trofeo-HB-dashboard/statusline, pour l'écran Trofeo (aussi dans l'appli desktop).",
-  "license": "GPL-3.0-only",
-  "author": {
-    "name": "Ashewos"
-  }
-}

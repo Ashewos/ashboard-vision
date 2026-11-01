@@ -509,6 +509,51 @@ internal static class Program
         Render(folder, scratch, "parametres-service-introuvable.png", 1440, 900, jpeg, link => Link(link, notInstalled),
             (_, model) => Open(model), system: System(displayFound: false));
 
+        // Mises à jour : une bêta est proposée ; l'autorisation de Windows refusée ; aucune stable ; le retour de la bêta à la stable et sa boîte.
+        UpdateInfo Update(LinkUpdateState state, string? version, string? message, LinkUpdateChannel channel = LinkUpdateChannel.Stable, bool downgrade = false) =>
+            new(state, version, downgrade, null, message, channel, false);
+        void Updates(FakeServiceLink link, UpdateInfo info)
+        {
+            Link(link, new SensorInfo(true, true, true));
+            link.Updates = info;
+        }
+
+        Render(folder, scratch, "parametres-mise-a-jour.png", 1440, 1520, jpeg,
+            link => Updates(link, Update(LinkUpdateState.Available, "1.0.0-beta.3", "La version 1.0.0-beta.3 est disponible.", LinkUpdateChannel.Beta)),
+            (_, model) => Open(model), system: System());
+
+        Render(folder, scratch, "parametres-mise-a-jour-annulee.png", 1440, 1520, jpeg,
+            link =>
+            {
+                Updates(link, Update(LinkUpdateState.Available, "1.0.0-beta.3", "La version 1.0.0-beta.3 est disponible.", LinkUpdateChannel.Beta));
+                link.OnInstallUpdate = _ => Task.FromResult(new Trofeo.ModuleKit.ActionResult(false, "Mise à jour annulée : l'autorisation n'a pas été donnée."));
+            },
+            (_, model) =>
+            {
+                Open(model);
+                Run(model.SettingsTab.InstallUpdateAsync());
+            }, system: System());
+
+        Render(folder, scratch, "parametres-aucune-stable.png", 1440, 1520, jpeg,
+            link => Updates(link, Update(LinkUpdateState.NoStableYet, null, "Aucune version stable pour l'instant.")),
+            (_, model) => Open(model), system: System());
+
+        Render(folder, scratch, "parametres-retour-stable.png", 1440, 1520, jpeg,
+            link =>
+            {
+                Updates(link, Update(LinkUpdateState.UpToDate, null, "Tu as la dernière version.", LinkUpdateChannel.Beta));
+                link.OnSetUpdatePreferences = (channel, wait) =>
+                {
+                    link.SetUpdates(Update(LinkUpdateState.Available, "1.0.0", "La version 1.0.0 est disponible.", channel, downgrade: true));
+                    return Task.CompletedTask;
+                };
+            },
+            (_, model) =>
+            {
+                Open(model);
+                Run(model.SettingsTab.SetChannelAsync(LinkUpdateChannel.Stable));
+            }, system: System());
+
         // Un fichier qui n'est pas une disposition : son motif, sous les boutons.
         var invalid = Path.Combine(scratch, "pas-une-disposition.json");
         Render(folder, scratch, "parametres-import-refuse.png", 1440, 900, jpeg, link => Link(link, new SensorInfo(true, true, true)),

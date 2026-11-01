@@ -13,6 +13,9 @@ public sealed class ScreenDevice : IDisposable
     public const string BusyReason = "Écran utilisé par un autre programme (ferme TRCC)";
     public const string NotRespondingReason = "Écran ne répond plus";
 
+    /// <summary>Intervalle minimal entre deux scans USB (écran Thermalright non pris en charge) et entre deux essais d'un écran au modèle non pris en charge.</summary>
+    private static readonly TimeSpan SlowRetryInterval = TimeSpan.FromSeconds(30);
+
     private const int WriteBlockSize = 4096;
     private const int WriteTimeoutMs = 5000;
     private const int AckSize = 512;
@@ -23,14 +26,27 @@ public sealed class ScreenDevice : IDisposable
 
     private readonly IUsbTransportFactory _factory;
     private readonly TimeProvider _time;
+    private readonly Func<IReadOnlyList<(ushort Vid, ushort Pid)>> _scanPresentUsb;
     private IUsbTransport? _transport;
     private ScreenStatus _status = new(ScreenState.Disconnected, AbsentReason);
+    private long? _unsupportedAt; // début de la dernière tentative qui a trouvé un modèle non pris en charge
+    private long? _lastScanAt;
+    private string _absentReason = AbsentReason; // motif du dernier scan, gardé entre deux scans
 
-    public ScreenDevice(IUsbTransportFactory factory, TimeProvider time)
+    /// <param name="scanPresentUsb">
+    /// Liste les VID:PID des périphériques USB présents, pour nommer un écran Thermalright non pris en charge quand
+    /// aucun écran ne s'ouvre. Par défaut <see cref="UsbPresenceScanner.Scan"/> sous Windows, une liste vide ailleurs.
+    /// </param>
+    public ScreenDevice(IUsbTransportFactory factory, TimeProvider time, Func<IReadOnlyList<(ushort Vid, ushort Pid)>>? scanPresentUsb = null)
     {
         _factory = factory;
         _time = time;
+        _scanPresentUsb = scanPresentUsb ?? (OperatingSystem.IsWindows() ? UsbPresenceScanner.Scan : static () => []);
     }
+
+    /// <summary>Motif d'un écran dont le modèle (<c>64 + octet 20</c> de la poignée de main) n'est pas pris en charge.</summary>
+    public static string UnsupportedModelReason(int model) =>
+        $"Ce modèle d'écran Thermalright (code {model}) n'est pas encore pris en charge : seul le Trofeo Vision 9,16 pouces (1920 × 462) l'est pour l'instant.";
 
     /// <summary>État et motif, remplacés d'un bloc : sûr à lire depuis n'importe quel thread (icône de la zone de notification).</summary>
     public ScreenStatus Status => Volatile.Read(ref _status);
@@ -52,6 +68,11 @@ public sealed class ScreenDevice : IDisposable
         if (State == ScreenState.Ready)
             return true;
 
+        // Modèle non pris en charge : on ne rouvre pas l'écran à chaque essai, le motif reste affiché.
+        if (_unsupportedAt is { } unsupportedAt && _time.GetElapsedTime(unsupportedAt) < SlowRetryInterval)
+            return false;
+
+        _unsupportedAt = null;
         DropTransport();
         IUsbTransport? transport;
         try
@@ -66,15 +87,15 @@ public sealed class ScreenDevice : IDisposable
 
         if (transport is null)
         {
-            SetState(ScreenState.Disconnected, AbsentReason);
+            SetState(ScreenState.Disconnected, ReasonWhenNoScreenOpens());
             return false;
         }
 
         _transport = transport;
-        bool handshakeOk;
+        int? model;
         try
         {
-            handshakeOk = TryResetAndHandshake(transport);
+            model = TryResetAndHandshake(transport);
         }
         catch (IOException)
         {
@@ -82,9 +103,16 @@ public sealed class ScreenDevice : IDisposable
             return false;
         }
 
-        if (!handshakeOk)
+        if (model is null)
         {
             Disconnect(NotRespondingReason);
+            return false;
+        }
+
+        if (model != LyProtocol.SupportedModel)
+        {
+            _unsupportedAt = _time.GetTimestamp();
+            Disconnect(UnsupportedModelReason(model.Value));
             return false;
         }
 
@@ -146,7 +174,7 @@ public sealed class ScreenDevice : IDisposable
             catch (UsbTimeoutException)
             {
                 SetState(ScreenState.Recovering, null);
-                if (!TryResetAndHandshake(transport))
+                if (TryResetAndHandshake(transport) is null)
                 {
                     Disconnect(NotRespondingReason);
                     return false;
@@ -183,8 +211,9 @@ public sealed class ScreenDevice : IDisposable
     /// <summary>
     /// Reset des pipes, vidage des réponses en attente, poignée de main. Sert à la reprise et à chaque
     /// connexion : un processus précédent a pu figer l'écran en laissant une validation en file.
+    /// Renvoie le code du modèle, ou <c>null</c> si l'écran ne répond pas comme il faut.
     /// </summary>
-    private static bool TryResetAndHandshake(IUsbTransport transport)
+    private static int? TryResetAndHandshake(IUsbTransport transport)
     {
         transport.ResetPipes();
         var drain = new byte[AckSize];
@@ -201,19 +230,45 @@ public sealed class ScreenDevice : IDisposable
         return TryHandshake(transport);
     }
 
-    private static bool TryHandshake(IUsbTransport transport)
+    private static int? TryHandshake(IUsbTransport transport)
     {
         try
         {
             transport.Write(LyProtocol.BuildHandshake(), HandshakeTimeoutMs);
             var reply = new byte[AckSize];
             var read = transport.Read(reply, HandshakeTimeoutMs);
-            return LyProtocol.IsValidHandshakeReply(reply.AsSpan(0, read));
+            var received = reply.AsSpan(0, read);
+            return LyProtocol.IsValidHandshakeReply(received) ? LyProtocol.ReadModel(received) : null;
         }
         catch (UsbTimeoutException)
         {
-            return false;
+            return null;
         }
+    }
+
+    /// <summary>
+    /// Aucun écran pris en charge ne s'ouvre : cherche, au plus toutes les 30 s, un écran Thermalright connu
+    /// mais non pris en charge. Entre deux scans, le motif du dernier reste affiché.
+    /// </summary>
+    private string ReasonWhenNoScreenOpens()
+    {
+        if (_lastScanAt is { } lastScanAt && _time.GetElapsedTime(lastScanAt) < SlowRetryInterval)
+            return _absentReason;
+
+        _lastScanAt = _time.GetTimestamp();
+        _absentReason = AbsentReason;
+        foreach (var (vid, pid) in _scanPresentUsb())
+        {
+            if (KnownThermalrightDevices.Describe(vid, pid) is not { } family)
+                continue;
+
+            _absentReason =
+                $"Écran Thermalright détecté ({family}) : il n'est pas encore pris en charge (par exemple {KnownThermalrightDevices.Examples(vid, pid)}). "
+                + "Seul le Trofeo Vision 9,16 pouces (1920 × 462) l'est pour l'instant.";
+            break;
+        }
+
+        return _absentReason;
     }
 
     private void Disconnect(string reason)

@@ -148,6 +148,6 @@ public sealed class CrashGuardTests : IDisposable
     [Fact]
     public void SettingsLog_DefaultPath_IsLogsSettingsLogUnderTheSettingsDirectory()
     {
-        Assert.EndsWith(Path.Combine("trofeo-HB-dashboard", "logs", "settings.log"), SettingsLog.DefaultPath);
+        Assert.EndsWith(Path.Combine("ashboard-vision", "logs", "settings.log"), SettingsLog.DefaultPath);
     }
 }

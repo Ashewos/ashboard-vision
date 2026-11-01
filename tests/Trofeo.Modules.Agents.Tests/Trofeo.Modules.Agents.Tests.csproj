@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Trofeo.Modules.Agents\Trofeo.Modules.Agents.csproj" />
-    <ProjectReference Include="..\..\src\Trofeo.StatusLine\Trofeo.StatusLine.csproj" />
     <ProjectReference Include="..\..\src\Trofeo.Core\Trofeo.Core.csproj" />
   </ItemGroup>
 

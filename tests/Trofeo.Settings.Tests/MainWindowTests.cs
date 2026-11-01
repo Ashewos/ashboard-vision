@@ -53,6 +53,20 @@ public sealed class MainWindowTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void MainWindow_VersionMismatch_ShowsItsOwnMessage_WithoutTheUselessStartButton()
+    {
+        _link.Set(LinkState.VersionMismatch);
+        var (window, _) = Open();
+
+        var texts = VisibleTexts(window).ToList();
+        Assert.Contains(Texts.VersionMismatchMessage, texts);
+        Assert.DoesNotContain(Texts.ServiceStoppedMessage, texts);
+        Assert.DoesNotContain(window.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && Equals(b.Content, Texts.StartService));
+        Assert.Contains(Texts.LinkVersionMismatch, texts); // la pastille aussi le dit
+        Assert.DoesNotContain(window.GetVisualDescendants().OfType<ContentControl>(), c => c.Name == "TabContent" && c.IsEffectivelyVisible);
+    }
+
+    [AvaloniaFact]
     public async Task MainWindow_StartFails_ShowsNotFoundMessage()
     {
         _link.StartResult = false;
@@ -127,7 +141,7 @@ public sealed class MainWindowTests : IDisposable
         _link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());
         var (window, _) = Open();
 
-        Assert.Equal("Réglages du Trofeo", window.Title);
+        Assert.Equal("Réglages d'Ashboard Vision", window.Title);
         Assert.Equal(1440, window.Width);
         Assert.Equal(900, window.Height);
         Assert.Equal(1200, window.MinWidth);

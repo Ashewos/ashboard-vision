@@ -6,11 +6,11 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <data name="WindowTitle" xml:space="preserve">
-    <value>Réglages du Trofeo</value>
+    <value>Réglages d'Ashboard Vision</value>
     <comment>Titre de la fenêtre.</comment>
   </data>
   <data name="AppName" xml:space="preserve">
-    <value>Trofeo</value>
+    <value>Ashboard Vision</value>
     <comment>Nom du produit, à gauche de l'en-tête.</comment>
   </data>
   <data name="TabsName" xml:space="preserve">
@@ -66,6 +66,21 @@
   </data>
   <data name="ServiceStoppedMessage" xml:space="preserve">
     <value>Le service d'affichage ne tourne pas. Sans lui, l'écran reste éteint et rien ne peut être réglé.</value>
+  </data>
+  <data name="MoveInProgress" xml:space="preserve">
+    <value>Tes réglages sont en train d'être déplacés vers le nouveau dossier d'Ashboard Vision. Relance cette fenêtre dans un instant.</value>
+    <comment>Boîte de message au démarrage : le service n'a pas fini de déménager les réglages.</comment>
+  </data>
+  <data name="MoveServiceMissing" xml:space="preserve">
+    <value>Tes réglages doivent d'abord être déplacés vers le nouveau dossier d'Ashboard Vision, mais le service n'a pas pu démarrer. Lance Ashboard Vision depuis le menu Démarrer, puis rouvre cette fenêtre.</value>
+    <comment>Boîte de message au démarrage : le service n'a pas pu être lancé pour déménager les réglages.</comment>
+  </data>
+  <data name="LinkVersionMismatch" xml:space="preserve">
+    <value>Versions différentes</value>
+    <comment>Pastille quand le service parle une autre version que la fenêtre.</comment>
+  </data>
+  <data name="VersionMismatchMessage" xml:space="preserve">
+    <value>La fenêtre et le service n'ont pas la même version. Ferme Ashboard Vision (clic droit sur son icône, puis Quitter) et relance-le : les deux seront alors à jour ensemble.</value>
   </data>
   <data name="StartService" xml:space="preserve">
     <value>Démarrer le service</value>
@@ -647,7 +662,7 @@
     <comment>Titre du sélecteur de fichier.</comment>
   </data>
   <data name="ShareFileType" xml:space="preserve">
-    <value>Disposition Trofeo</value>
+    <value>Disposition Ashboard Vision</value>
     <comment>Type de fichier des boîtes d'export et d'import.</comment>
   </data>
   <data name="ShareExported" xml:space="preserve">
@@ -801,5 +816,41 @@
   <data name="SettingsFirstRunRestart" xml:space="preserve">
     <value>Relancer l'assistant</value>
     <comment>Bouton.</comment>
+  </data>
+  <data name="SettingsUpdates" xml:space="preserve">
+    <value>Mises à jour</value>
+    <comment>Titre de section, dans Paramètres.</comment>
+  </data>
+  <data name="UpdatesChannel" xml:space="preserve">
+    <value>Version</value>
+    <comment>Nom du choix entre Stable et Bêta (et nom accessible de ses deux boutons).</comment>
+  </data>
+  <data name="UpdatesStable" xml:space="preserve">
+    <value>Stable</value>
+    <comment>Bouton du choix de version : seulement les versions stables.</comment>
+  </data>
+  <data name="UpdatesBeta" xml:space="preserve">
+    <value>Bêta</value>
+    <comment>Bouton du choix de version : aussi les bêtas d'essai.</comment>
+  </data>
+  <data name="UpdatesCheck" xml:space="preserve">
+    <value>Rechercher maintenant</value>
+    <comment>Bouton : cherche une mise à jour tout de suite.</comment>
+  </data>
+  <data name="UpdatesInstall" xml:space="preserve">
+    <value>Installer la version {0}</value>
+    <comment>Bouton. {0} : la version proposée.</comment>
+  </data>
+  <data name="UpdatesDowngrade" xml:space="preserve">
+    <value>Tu repasses à la version stable {0}, plus ancienne que ta bêta. Les réglages enregistrés par la bêta pourraient mal se relire : une copie en est faite avant.</value>
+    <comment>Boîte du retour de la bêta à la stable. {0} : la version stable proposée.</comment>
+  </data>
+  <data name="UpdatesWaitForStable" xml:space="preserve">
+    <value>Attendre la prochaine version stable</value>
+    <comment>Case de la boîte du retour en arrière : garde la bêta jusqu'à une stable plus récente.</comment>
+  </data>
+  <data name="UpdatesKeepBeta" xml:space="preserve">
+    <value>Garder ma bêta</value>
+    <comment>Bouton de la boîte du retour en arrière quand la case « attendre » est cochée : rien n'est installé.</comment>
   </data>
 </root>

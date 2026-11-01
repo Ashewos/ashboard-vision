@@ -9,6 +9,7 @@ using Trofeo.Core.Secrets;
 using Trofeo.Core.Shortcuts;
 using Trofeo.Device;
 using Trofeo.Display.Video;
+using Trofeo.Distribution;
 using Trofeo.Modules.Agents;
 using Trofeo.Modules.Clock;
 using Trofeo.Modules.Monitoring;
@@ -21,18 +22,37 @@ namespace Trofeo.Display;
 static class Program
 {
     private const string HelperExeName = "Trofeo.SensorHelper.exe";
-    private const string MutexName = @"Local\trofeo-HB-dashboard.display";
+    private const string UninstallUserFlag = "--desinstaller-utilisateur";
+    private const string SilentFlag = "--silencieux";
+    private const string KeepSettingsQuestion = "Garder tes réglages (disposition, connexions) ?";
     private static readonly TimeSpan ErrorRetryDelay = TimeSpan.FromMilliseconds(100);
 
+    // Les mises à jour interrogent GitHub : 30 s pour répondre, et pas plus (le téléchargement lit son flux après les en-têtes).
+    private static readonly TimeSpan UpdateHttpTimeout = TimeSpan.FromSeconds(30);
+
     [STAThread]
-    static int Main()
+    static int Main(string[] args)
     {
-        using var mutex = new Mutex(true, MutexName, out var createdNew);
+        using var mutex = new Mutex(true, ProductIdentity.ServiceMutexName, out var createdNew);
         if (!createdNew) return 0; // une seule instance
 
         try
         {
+            // Le nettoyage de la désinstallation (appelé par l'installateur) : ni déménagement, ni journal, ni écran.
+            if (HasFlag(args, UninstallUserFlag)) return CleanUpUser(silent: HasFlag(args, SilentFlag));
+
+            // Avant d'ouvrir le journal, qui vit dans le nouveau dossier ; le résultat se journalise juste après.
+            var move = LegacySettingsMove.Run(AppPaths.LegacySettingsDir, AppPaths.SettingsDir);
+            if (StopMessage(move, AppPaths.LegacySettingsDir, AppPaths.SettingsDir) is { } stop)
+            {
+                // Rien n'est créé dans le nouveau dossier (ni journal ni disposition par défaut) : le démarrage suivant réessaie.
+                ApplicationConfiguration.Initialize();
+                MessageBox.Show(stop, ProductIdentity.DisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return 1;
+            }
+
             InitializeLog();
+            LogSettingsMove(move);
             Trace.TraceInformation("Démarrage du service d'affichage.");
             return Run();
         }
@@ -49,6 +69,60 @@ static class Program
         }
     }
 
+    internal static bool HasFlag(string[] args, string flag) => args.Contains(flag, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// <c>null</c> : le démarrage continue. Sinon le message à montrer avant de s'arrêter : un déménagement raté ne perd rien (l'ancien
+    /// dossier reste en place), mais démarrer créerait le nouveau dossier et les anciens réglages ne seraient plus jamais déplacés.
+    /// </summary>
+    internal static string? StopMessage(LegacySettingsMove.MoveResult move, string legacyDir, string newDir) =>
+        move == LegacySettingsMove.MoveResult.Failed
+            ? $"Tes réglages d'avant le changement de nom n'ont pas pu être déplacés vers {newDir}. Ils sont intacts dans {legacyDir}. "
+              + "Ferme ce qui les utilise (l'ancien tableau de bord, sa fenêtre de réglage), puis relance Ashboard Vision."
+            : null;
+
+    /// <summary>Une désinstallation silencieuse (sans fenêtre) garde les réglages ; sinon, la réponse à la question décide.</summary>
+    internal static bool ShouldDeleteSettings(bool silent, Func<bool> askKeep) => !silent && !askKeep();
+
+    /// <summary>
+    /// Ce qui est propre à l'utilisateur à la désinstallation : la valeur <c>Run</c>, le mod des quotas et, si tu le demandes, les réglages.
+    /// Rend le code de sortie du programme.
+    /// </summary>
+    private static int CleanUpUser(bool silent)
+    {
+        try
+        {
+            if (!silent) ApplicationConfiguration.Initialize();
+            var deleteSettings = ShouldDeleteSettings(silent, AskKeepSettings);
+            var cleanup = new UserCleanup(new RegistryRunKey(), QuotaModInstaller.CreateProduction(null));
+            Task.Run(() => cleanup.RunAsync(
+                AppPaths.SettingsDir, deleteSettings, CancellationToken.None,
+                [AppPaths.SettingsDir + "-sauvegardes", AppPaths.LegacySettingsDir, UpdateDownloadDir])).GetAwaiter().GetResult();
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceError($"Nettoyage de la désinstallation : {ex}");
+            return 1;
+        }
+    }
+
+    private static bool AskKeepSettings() =>
+        MessageBox.Show(KeepSettingsQuestion, ProductIdentity.DisplayName, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+
+    private static void LogSettingsMove(LegacySettingsMove.MoveResult move)
+    {
+        switch (move)
+        {
+            case LegacySettingsMove.MoveResult.Moved:
+                Trace.TraceInformation($"Réglages déménagés de {AppPaths.LegacySettingsDir} vers {AppPaths.SettingsDir}.");
+                break;
+            case LegacySettingsMove.MoveResult.AlreadyMoved:
+                Trace.TraceInformation($"Les anciens réglages ({AppPaths.LegacySettingsDir}) sont gardés tels quels : {AppPaths.SettingsDir} existe déjà.");
+                break;
+        }
+    }
+
     private static int Run()
     {
         ApplicationConfiguration.Initialize();
@@ -61,7 +135,7 @@ static class Program
         // Tout ce qui suit est déclaré avant la boucle : libéré après elle, dans l'ordre inverse de la création.
         // Pas de redirection suivie : la session Freebox ne doit jamais partir vers un autre hôte.
         using var http = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(15) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd($"trofeo-HB-dashboard/{typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0"}");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"{ProductIdentity.Id}/{typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0"}");
 
         // Capteurs : l'assistant élevé s'il tourne, sinon une lecture locale. Aucune panne ici n'arrête le service.
         using var sensorPipe = new SensorPipeClient(SensorPipe.Name, HelperIdentity.IsTrusted, TimeProvider.System);
@@ -108,6 +182,16 @@ static class Program
         using var cts = new CancellationTokenSource();
         loop.Start(cts.Token);
 
+        // Les mises à jour ont leur propre client : elles suivent les redirections (GitHub envoie les fichiers vers d'autres hôtes),
+        // ce que celui de la Freebox ne doit jamais faire. L'API de GitHub exige un User-Agent. Déclarés avant le service des mises à jour :
+        // libérés après lui.
+        using var updateHttp = new HttpClient(new SocketsHttpHandler()) { Timeout = UpdateHttpTimeout };
+        updateHttp.DefaultRequestHeaders.UserAgent.TryParseAdd($"{ProductIdentity.Id}/{ServiceControlHandler.InstalledVersion}");
+        AppVersion? installed = AppVersion.TryParse(ServiceControlHandler.InstalledVersion, out var parsed) ? parsed : null;
+        if (installed is null)
+            Trace.TraceWarning($"Version « {ServiceControlHandler.InstalledVersion} » illisible : ni mises à jour ni préparation de l'utilisateur.");
+        using var updates = installed is { } version ? CreateUpdateService(version, updateHttp) : null;
+
         // Après une veille, l'écran a pu être réinitialisé sans que le lien le dise : on repart d'une connexion neuve.
         PowerModeChangedEventHandler onPowerChanged = (_, e) =>
         {
@@ -125,14 +209,20 @@ static class Program
             // Sur le thread de l'interface, avant la pompe de messages. Déclarés après la boucle et dans ce bloc :
             // le serveur de contrôle, le routeur (qui retire les raccourcis) puis la fenêtre sont libérés avant elle,
             // plus rien ne peut atteindre une boucle libérée.
-            using var tray = new TrayIcon(screen); // d'abord : installe le contexte de synchronisation de l'interface
+            using var tray = new TrayIcon(screen, updates); // d'abord : installe le contexte de synchronisation de l'interface
             using var hotkeys = StartHotkeys(layout, loop, SynchronizationContext.Current);
 
             var meter = new ProcessMeter(SampleProcess, TimeProvider.System, Environment.ProcessorCount);
-            var handler = new ServiceControlHandler(
+            using var handler = new ServiceControlHandler(
                 store, loop, registry, () => ServiceControlHandler.ToScreenInfo(screen.Status), () => ReadSensors(sensorPipe),
-                meter, BuildConfig, hotkeys?.Host, buildWarnings, config);
+                meter, BuildConfig, hotkeys?.Host, buildWarnings, config, updates);
             using var control = StartControl(handler);
+
+            if (installed is { } current) StartUserSetup(current, cts.Token);
+            updates?.Start();
+
+            // Une mise à jour lancée depuis la fenêtre de réglage la rouvre au démarrage qui suit.
+            if (ReopenSettingsMarker.Consume(AppPaths.SettingsDir)) tray.ShowSettings();
 
             Application.Run(tray);
         }
@@ -219,6 +309,51 @@ static class Program
             return null;
         }
     }
+
+    /// <summary>
+    /// Les mises à jour : GitHub pour les versions, <c>%AppData%\ashboard-vision</c> pour les choix et la réouverture de la fenêtre,
+    /// <c>%AppData%\ashboard-vision-sauvegardes</c> pour la copie des réglages avant un retour en arrière, et
+    /// <c>%TEMP%\ashboard-vision-mise-a-jour</c> pour l'installateur téléchargé.
+    /// </summary>
+    private static UpdateService CreateUpdateService(AppVersion installed, HttpClient http) => new(
+        new UpdateChecker(http), new UpdateDownloader(http), new WindowsInstallerLauncher(),
+        new UpdatePreferencesStore(Path.Combine(AppPaths.SettingsDir, "mises-a-jour.json")), installed,
+        AppPaths.SettingsDir, AppPaths.SettingsDir + "-sauvegardes",
+        UpdateDownloadDir, TimeProvider.System);
+
+    /// <summary><c>%TEMP%\ashboard-vision-mise-a-jour</c> : l'installateur téléchargé.</summary>
+    private static string UpdateDownloadDir => Path.Combine(Path.GetTempPath(), ProductIdentity.Id + "-mise-a-jour");
+
+    /// <summary>
+    /// La préparation propre à l'utilisateur (valeur <c>Run</c>, ancienne barre d'état, mod des quotas), faite une fois par version, en
+    /// tâche de fond : elle n'ajoute rien au démarrage de l'écran. Les avertissements vont au journal.
+    /// </summary>
+    private static void StartUserSetup(AppVersion installed, CancellationToken ct) =>
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var modsDir = AppLocator.FindDirectory("mods");
+                var setup = new UserSetup(
+                    new RegistryRunKey(), QuotaModInstaller.CreateProduction(modsDir), new StatusLineInstaller(ClaudeHome.Resolve()),
+                    AppPaths.SettingsDir, modsDir ?? "", Environment.ProcessPath ?? "");
+                var options = InstallOptions.TryRead(Path.Combine(AppContext.BaseDirectory, "options-installation.json"));
+                var report = await setup.RunAsync(installed, options, ct);
+                if (!report.Ran) return;
+
+                Trace.TraceInformation($"Préparation de la version {installed} faite ({report.Warnings.Count} avertissement(s)).");
+                foreach (var warning in report.Warnings)
+                    Trace.TraceWarning($"Préparation : {warning}");
+            }
+            catch (OperationCanceledException)
+            {
+                // Le service s'arrête.
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Préparation propre à l'utilisateur interrompue : {ex}");
+            }
+        });
 
     /// <summary>Temps CPU, mémoire privée et mémoire de travail du processus.</summary>
     private static (TimeSpan Cpu, long PrivateBytes, long WorkingSet) SampleProcess()

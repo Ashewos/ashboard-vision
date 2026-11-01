@@ -8,9 +8,29 @@ public class HelperIdentityTests
     [Fact]
     public void InstallDir_IsProgramFilesSensorsFolder_WithTrailingSeparator()
     {
-        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "trofeo-HB-dashboard", "sensors")
+        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ashboard-vision", "sensors")
             + Path.DirectorySeparatorChar;
         Assert.Equal(expected, HelperIdentity.InstallDir);
+    }
+
+    [Fact]
+    public void InstallDir_IsNotInsideTheApplicationFolder()
+    {
+        // L'installateur met l'application dans « Program Files\Ashboard Vision » : l'assistant ne doit pas s'y installer,
+        // sinon la copie de l'application y descendrait sans fin.
+        var appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Ashboard Vision") + Path.DirectorySeparatorChar;
+        Assert.False(HelperIdentity.InstallDir.StartsWith(appFolder, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void LegacyInstallDirs_AreTheFoldersOfTheOldNameAndOfTheApplicationSubfolder_WithTrailingSeparator()
+    {
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        Assert.Equal(
+        [
+            Path.Combine(programFiles, "trofeo-HB-dashboard", "sensors") + Path.DirectorySeparatorChar,
+            Path.Combine(programFiles, "Ashboard Vision", "sensors") + Path.DirectorySeparatorChar,
+        ], HelperIdentity.LegacyInstallDirs);
     }
 
     [Theory]
@@ -30,9 +50,13 @@ public class HelperIdentityTests
     }
 
     [Fact]
-    public async Task IsTrusted_PipeCreatedByCurrentUser_IsFalse()
+    public async Task IsTrusted_PipeCreatedByThisProcess_FollowsElevation()
     {
-        // Les tests ne sont pas lancés élevés : le propriétaire par défaut du tube est l'utilisateur courant.
+        // Sans élévation (le PC d'Alex), le propriétaire par défaut du tube est l'utilisateur courant : pas digne de confiance.
+        // Élevé (les machines de GitHub Actions), Windows le donne au groupe Administrateurs, que la règle accepte comme pour
+        // l'assistant des capteurs.
+        var current = WindowsIdentity.GetCurrent();
+        var elevated = new WindowsPrincipal(current).IsInRole(WindowsBuiltInRole.Administrator);
         var name = "trofeo-test-" + Guid.NewGuid().ToString("N");
         using var cts = new CancellationTokenSource();
         await using var server = new NamedPipeServerStream(name, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
@@ -41,8 +65,17 @@ public class HelperIdentityTests
         await client.ConnectAsync(2000, cts.Token);
         await connecting;
 
-        Assert.Equal(WindowsIdentity.GetCurrent().User, HelperIdentity.ReadOwner(client)); // la lecture du propriétaire fonctionne vraiment
-        Assert.False(HelperIdentity.IsTrusted(client));
+        var owner = HelperIdentity.ReadOwner(client); // la lecture du propriétaire fonctionne vraiment
+        if (elevated)
+        {
+            Assert.True(owner?.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid));
+            Assert.True(HelperIdentity.IsTrusted(client));
+        }
+        else
+        {
+            Assert.Equal(current.User, owner);
+            Assert.False(HelperIdentity.IsTrusted(client));
+        }
     }
 
     [Fact]

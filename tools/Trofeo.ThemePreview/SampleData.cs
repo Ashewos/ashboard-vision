@@ -30,7 +30,15 @@ internal sealed class PreviewScene : IDisposable
     private readonly ScriptedThroughput _network;
     private readonly List<IModule> _modules = [];
 
-    /// <summary>Les modules par identifiant d'emplacement de <see cref="DashboardLayout.Default"/>.</summary>
+    /// <summary>
+    /// Emplacement de Codex, qui n'est pas dans la disposition par défaut : sert aux captures des modules (<c>--modules</c>)
+    /// et au README. Il occupe la place de Claude Code (colonnes 0 à 7).
+    /// </summary>
+    public static readonly ModulePlacement CodexPlacement = new(
+        new Guid("7e0b1c52-3d4a-4f6e-8a19-5c2d9b3e6f40"),
+        "codex", 0, 0, 8, 4, TextSize.Normal, JsonDocument.Parse("""{"view":"feed","autoFollow":true}""").RootElement.Clone());
+
+    /// <summary>Les modules par identifiant d'emplacement de <see cref="DashboardLayout.Default"/> (et de <see cref="CodexPlacement"/>).</summary>
     public Dictionary<Guid, IModule> ByPlacement { get; } = [];
 
     /// <summary>Le nom de chaque module par identifiant d'emplacement (pour les messages).</summary>
@@ -70,6 +78,7 @@ internal sealed class PreviewScene : IDisposable
         var factories = new Dictionary<string, (IModuleFactory Factory, string Settings)>
         {
             ["claudecode"] = (new ClaudeCodeFactory(_ => new SampleAgentSource(LongTexts)), """{"view":"feed","autoFollow":true}"""),
+            ["codex"] = (new CodexFactory(_ => new SampleAgentSource(LongTexts)), """{"view":"feed","autoFollow":true}"""),
             ["monitoring"] = (new MonitoringFactory(_feed), LongTexts
                 ? """{"title":"Station de travail du bureau, Core Ultra 7 265K, RTX 5070 et 32 Go"}"""
                 : "{}"),
@@ -79,7 +88,7 @@ internal sealed class PreviewScene : IDisposable
             ["network"] = (new NetworkFactory((_, _) => _network), "{}"),
         };
 
-        foreach (var placement in DashboardLayout.Default.Placements)
+        foreach (var placement in DashboardLayout.Default.Placements.Append(CodexPlacement))
         {
             var (factory, settings) = factories[placement.TypeId];
             using var json = JsonDocument.Parse(settings);

@@ -3,8 +3,12 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!-- Le nom que voit le Gestionnaire des tâches (le fichier garde son nom). -->
+    <AssemblyTitle>Ashboard Vision - Assistant de capteurs</AssemblyTitle>
+    <Description>L'assistant d'Ashboard Vision : lit les capteurs matériels avec des droits élevés.</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>..\..\assets\brand\ashboard-vision.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

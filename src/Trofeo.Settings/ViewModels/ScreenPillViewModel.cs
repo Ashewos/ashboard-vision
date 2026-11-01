@@ -36,6 +36,8 @@ public sealed partial class ScreenPillViewModel(IServiceLink link) : ObservableO
     {
         if (link.State == LinkState.ServiceStopped)
             return (Texts.LinkStopped, Dot.Refuse);
+        if (link.State == LinkState.VersionMismatch)
+            return (Texts.LinkVersionMismatch, Dot.Refuse);
         if (link.State != LinkState.Connected || link.Status is not { } status)
             return (Texts.LinkConnecting, Dot.Idle);
         if (status.Emulated)

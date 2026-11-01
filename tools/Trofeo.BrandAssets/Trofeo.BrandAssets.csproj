@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Fabrique les images de la marque (icônes, images de l'installateur, nom en tracés) à partir des SVG de docs/superpowers/logo.
+       Ligne de commande : voir Program.cs. Rien d'ici ne part dans le logiciel : seuls les fichiers de assets/brand y sont incorporés. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <!-- 5.1.1 : la dernière version qui reste sur SkiaSharp 3.119 (la 5.2 passe à SkiaSharp 4). MIT. -->
+    <PackageReference Include="Svg.Skia" Version="5.1.1" />
+  </ItemGroup>
+
+  <!-- Sous Linux, SkiaSharp a besoin de sa bibliothèque native (sous Windows, elle vient avec le paquet de base). -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Trofeo.BrandAssets.Tests" />
+    <!-- L'outil de l'image d'accueil lit le logo avec le même SvgRaster. -->
+    <InternalsVisibleTo Include="Trofeo.ReadmeHero" />
+  </ItemGroup>
+
+</Project>

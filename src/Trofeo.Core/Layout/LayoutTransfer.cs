@@ -9,7 +9,7 @@ public static class LayoutTransfer
     /// <summary>Marque du fichier partagé ; la fin donne la version du format.</summary>
     public const string Format = "trofeo-HB-dashboard/disposition/1";
 
-    private const string NotALayout = "Ce fichier n'est pas une disposition Trofeo.";
+    private const string NotALayout = "Ce fichier n'est pas une disposition " + ProductIdentity.DisplayName + ".";
 
     /// <summary>
     /// <c>{"Format": Format, "Layout": {...}}</c>. La disposition ne contient que des réglages : les secrets (clés,

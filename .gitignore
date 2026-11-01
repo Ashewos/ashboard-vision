@@ -6,3 +6,9 @@ obj/
 publish/
 apercus/
 apercus-reglages/
+apercus-accueil/
+
+installer/out/
+installer/publish/
+installer/artifacts/
+installer/bac-a-sable/

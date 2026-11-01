@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accueil du README</title>
+<!--
+  Maquette retenue par Alex le 29/10/2026 pour l'image d'accueil animée du README (plan 6) :
+  style « produit premium », écran incliné à 10°, lueur Ambilight moyenne (copie floue et saturée de l'image),
+  les trois thèmes en motion design (4 s chacun, glissement, reflet sur la vitre, nom du thème, barre de progression),
+  légère oscillation de l'écran.
+  Le nom du projet (h1) et la phrase d'accroche (p) sont à changer ici si le projet change de nom ou reçoit un logo.
+  Les images viennent des aperçus : dotnet run --project tools/Trofeo.ThemePreview -- --out apercus
+-->
+<style>
+  body { background:#0b0d12; color:#e6edf3; font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; max-width:1000px; margin:40px auto; padding:0 16px; }
+  .subtitle { color:#8b949e; }
+</style>
+</head>
+<body>
+<style>
+  .gh { background:#0d1117; border:1px solid #30363d; border-radius:10px; padding:28px 28px 32px; color:#e6edf3;
+        font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; margin:14px 0 6px; }
+  .gh .file { font-size:13px; color:#8b949e; border-bottom:1px solid #30363d; padding-bottom:10px; margin:-8px 0 22px; }
+  .center { text-align:center; }
+  .badges { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin:14px 0 10px; }
+  .badge { display:inline-flex; font:11px Verdana,sans-serif; border-radius:3px; overflow:hidden; }
+  .badge b { background:#555; color:#fff; padding:3px 6px; font-weight:normal; }
+  .badge i { color:#fff; padding:3px 6px; font-style:normal; }
+  .nav { color:#4493f8; font-size:15px; margin-top:6px; }
+  .nav span { color:#8b949e; margin:0 8px; }
+  .dl { display:inline-block; background:#238636; color:#fff; font-weight:600; padding:9px 18px; border-radius:6px; font-size:15px; margin-top:16px; }
+  .note { font-size:13px; color:#8b949e; margin-top:6px; }
+
+  .hero { position:relative; overflow:hidden; border-radius:12px; background:#05060a; padding:46px 0 36px; text-align:center; isolation:isolate; }
+  .hero h1 { position:relative; z-index:3; font-size:40px; letter-spacing:-1px; margin:0; font-weight:700;
+             background:linear-gradient(90deg,#fff,#aab8c6); -webkit-background-clip:text; color:transparent; }
+  .hero p { position:relative; z-index:3; color:#9aa7b4; font-size:17px; margin:8px 0 34px; }
+  .scene { perspective:1400px; }
+  .stage { position:relative; width:84%; margin:0 auto; transform:rotateX(10deg); transform-origin:50% 100%;
+           animation:drift 12s ease-in-out infinite; }
+  @keyframes drift { 0%,100% { transform:rotateX(10deg) rotateY(-2.5deg); } 50% { transform:rotateX(10deg) rotateY(2.5deg); } }
+
+  /* Chaque thème : lueur + écran, qui entrent et sortent tour à tour (cycle de 12 s, 4 s par thème). */
+  .layer { position:absolute; inset:0; opacity:0; animation:show 12s infinite; }
+  .layer:first-child { position:relative; }
+  .l2 { animation-delay:4s; } .l3 { animation-delay:8s; }
+  @keyframes show {
+    0%   { opacity:0; transform:translateX(6%) scale(.97); filter:blur(6px); }
+    6%   { opacity:1; transform:none; filter:none; }
+    30%  { opacity:1; transform:none; filter:none; }
+    36%  { opacity:0; transform:translateX(-6%) scale(.97); filter:blur(6px); }
+    100% { opacity:0; }
+  }
+  .glow { position:absolute; inset:0; z-index:0; }
+  .glow img { width:100%; height:100%; object-fit:fill; display:block; transform:scale(1.18,1.9); filter:blur(38px) saturate(1.9) brightness(1.15); opacity:.85; }
+  .device { position:relative; z-index:2; background:#0b0b0d; border-radius:10px; padding:8px; box-shadow:0 0 0 1px #2a2f36, 0 20px 50px #000c; overflow:hidden; }
+  .device img { width:100%; display:block; border-radius:3px; }
+  /* Reflet de lumière qui balaie la vitre de l'écran à chaque changement de thème. */
+  .device::after { content:""; position:absolute; top:0; bottom:0; width:30%; left:-40%;
+                   background:linear-gradient(100deg,transparent,#ffffff22,transparent); animation:sheen 4s ease-in-out infinite; }
+  @keyframes sheen { 0%,8% { left:-40%; } 30%,100% { left:120%; } }
+
+  .label { position:relative; z-index:3; height:24px; margin-top:22px; }
+  .label span { position:absolute; left:0; right:0; color:#d6dde4; font-size:14px; letter-spacing:5px; text-transform:uppercase; opacity:0; animation:lab 12s infinite; }
+  .label .t2 { animation-delay:4s; } .label .t3 { animation-delay:8s; }
+  @keyframes lab { 0% { opacity:0; transform:translateY(8px); } 8%,28% { opacity:1; transform:none; } 34%,100% { opacity:0; transform:translateY(-8px); } }
+  .dots { position:relative; z-index:3; display:flex; gap:8px; justify-content:center; margin-top:10px; }
+  .dots i { width:22px; height:3px; border-radius:2px; background:#ffffff26; position:relative; overflow:hidden; }
+  .dots i::after { content:""; position:absolute; inset:0; background:#fff; transform:scaleX(0); transform-origin:left; animation:bar 12s linear infinite; }
+  .dots i:nth-child(2)::after { animation-delay:4s; } .dots i:nth-child(3)::after { animation-delay:8s; }
+  @keyframes bar { 0% { transform:scaleX(0); opacity:1; } 33.3% { transform:scaleX(1); opacity:1; } 33.4%,100% { transform:scaleX(0); opacity:0; } }
+</style>
+
+<h2>L'image d'accueil animée : les trois thèmes en motion design</h2>
+<p class="subtitle">Écran incliné à 10°, lueur Ambilight moyenne. Toutes les 4 secondes, le thème change en glissant, la lueur prend ses couleurs, un reflet balaie la vitre et le nom du thème s'affiche. L'écran oscille très légèrement de gauche à droite. Ici c'est une animation du navigateur ; sur GitHub, ce sera un fichier animé fabriqué par le projet à partir de vraies images de l'écran.</p>
+
+<div class="gh">
+  <div class="file">README.md</div>
+  <div class="hero">
+    <h1>trofeo-HB-dashboard</h1>
+    <p>Ton écran Thermalright Trofeo Vision devient un vrai tableau de bord.</p>
+    <div class="scene"><div class="stage">
+      <div class="layer l1">
+        <div class="glow"><img src="../../../apercus/classique.png"></div>
+        <div class="device"><img src="../../../apercus/classique.png"></div>
+      </div>
+      <div class="layer l2">
+        <div class="glow"><img src="../../../apercus/liquid-glass.png"></div>
+        <div class="device"><img src="../../../apercus/liquid-glass.png"></div>
+      </div>
+      <div class="layer l3">
+        <div class="glow"><img src="../../../apercus/pixel.png"></div>
+        <div class="device"><img src="../../../apercus/pixel.png"></div>
+      </div>
+    </div></div>
+    <div class="label"><span class="t1">Classique</span><span class="t2">Liquid Glass</span><span class="t3">Pixel</span></div>
+    <div class="dots"><i></i><i></i><i></i></div>
+  </div>
+  <div class="center">
+    <div class="badges">
+      <span class="badge"><b>version</b><i style="background:#2ea043">1.0.0</i></span>
+      <span class="badge"><b>bêta</b><i style="background:#d29922">1.1.0-beta.2</i></span>
+      <span class="badge"><b>Windows</b><i style="background:#0078d4">10 | 11</i></span>
+      <span class="badge"><b>licence</b><i style="background:#3b7dd8">GPL-3.0</i></span>
+      <span class="badge"><b>téléchargements</b><i style="background:#8957e5">1,2 k</i></span>
+    </div>
+    <div class="nav">Télécharger<span>•</span>Modules<span>•</span>Installation<span>•</span>Captures<span>•</span>Crédits</div>
+    <div class="dl">⬇ Télécharger pour Windows</div>
+  </div>
+</div>
+<p class="note">Les numéros de version et le compteur de téléchargements sont des exemples.</p>
+</body>
+</html>

@@ -1,0 +1,80 @@
+Ashboard Vision - licences des composants tiers
+================================================
+
+Ashboard Vision est un logiciel libre sous licence GPL-3.0 (fichier LICENSE, à côté de ce fichier). Il embarque les composants
+ci-dessous, chacun sous sa propre licence. Les textes de licence que les paquets fournissent eux-mêmes sont copiés dans le
+dossier « licences », à côté de ce fichier ; les licences des polices (OFL) sont dans le dossier « Assets\Fonts ».
+
+
+1. Licence MIT
+--------------
+
+Composants sous licence MIT, avec leur mention de droits d'auteur :
+
+  - Avalonia et ses paquets (Avalonia.Desktop, .Skia, .Win32, .Native, .HarfBuzz, .Themes.Fluent, .Remote.Protocol, .FreeDesktop,
+    .X11)                                                Copyright 2013-2026 The AvaloniaUI Project
+  - MicroCom.Runtime                                     Copyright 2021 Nikita Tsukanov
+  - CommunityToolkit.Mvvm                                Copyright (c) .NET Foundation and Contributors
+  - SkiaSharp, HarfBuzzSharp et leurs bibliothèques natives
+                                                         Copyright (c) 2015-2016 Xamarin, Inc. ; (c) 2017-2018 Microsoft Corporation
+  - Vortice.DirectX, Vortice.MediaFoundation, Vortice.Mathematics
+                                                         Copyright (c) Amer Koleci and Contributors
+  - SharpGen.Runtime, SharpGen.Runtime.COM               Copyright (c) 2010-2017 Alexandre Mutel, 2017-2023 Jeremy Koritzinsky,
+                                                         2023-2024 Amer Koleci
+  - Mono.Posix.NETStandard et libMonoPosixHelper (venus avec LibreHardwareMonitorLib, pour son code Linux)
+                                                         Copyright (c) Microsoft Corporation et les contributeurs du projet Mono
+  - Tmds.DBus.Protocol                                   Copyright (c) Tom Deseyn
+  - .NET (runtime, WinForms) et ses bibliothèques System.*   Copyright (c) Microsoft Corporation et .NET Foundation
+
+Texte de la licence MIT :
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
+  files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,
+  modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+  Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+  WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Les notices de .NET (THIRD-PARTY-NOTICES) et de la bibliothèque ANGLE (Google, licence BSD à trois clauses) sont dans le dossier
+« licences ».
+
+
+2. Licence Mozilla Public License 2.0 (MPL-2.0)
+-----------------------------------------------
+
+Les relevés de capteurs viennent de ces bibliothèques, utilisées telles quelles (sans modification de leur code) :
+
+  - LibreHardwareMonitorLib 0.9.6    https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+  - DiskInfoToolkit 1.1.2            https://github.com/Blacktempel/DiskInfoToolkit
+  - RAMSPDToolkit-NDD 1.4.2          https://github.com/Blacktempel/RAMSPDToolkit
+  - BlackSharp.Core 1.0.7            https://github.com/Blacktempel/BlackSharp
+
+Leur code source est disponible à l'adresse indiquée pour chacune. Le texte de la licence : https://www.mozilla.org/MPL/2.0/
+
+
+3. Licence Apache 2.0
+---------------------
+
+  - HidSharp 2.6.4    Copyright 2010-2025 James F. Bellinger    http://software.seekye.com/hidsharp
+    Licence : http://www.apache.org/licenses/LICENSE-2.0 (le texte est dans « licences »).
+
+
+4. Polices
+----------
+
+Barlow Semi Condensed, Manrope, Pixelify Sans et VT323 : SIL Open Font License 1.1. Le texte de chaque licence est dans le dossier
+« Assets\Fonts » (fichiers OFL-*.txt).
+
+
+5. PawnIO (pilote des températures)
+-----------------------------------
+
+Le pilote PawnIO (https://pawnio.eu/, code source : https://github.com/namazso/PawnIO, licence GPL-2.0 ou ultérieure, avec
+l'exception décrite dans son dépôt) s'installe par son propre installeur, qui est proposé pendant l'installation. Il reste installé
+quand tu désinstalles Ashboard Vision, car d'autres logiciels peuvent s'en servir.

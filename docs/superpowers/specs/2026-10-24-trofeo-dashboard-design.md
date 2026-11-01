@@ -75,7 +75,7 @@ Pour l'utilisateur, il n'y a qu'un logiciel. En interne, il tourne en **trois pr
 - **L'assistant capteurs** (uniquement si PawnIO est installé) :
   - un tout petit processus **avec droits administrateur**, qui ne fait que lire les capteurs et les transmettre au service d'affichage ;
   - il est **installé dans un dossier protégé** (Program Files), et c'est lui seul que lance la tâche planifiée élevée ;
-  - **Raison :** l'appli principale s'installe dans un dossier de l'utilisateur (Velopack). Lancer avec droits élevés un `.exe` modifiable par l'utilisateur serait une faille.
+  - **Raison :** lancer avec droits élevés un `.exe` que l'utilisateur peut modifier serait une faille. L'installateur (en administrateur, voir 9.1) le place dans `Program Files`, où seul un administrateur peut y toucher.
   - Sans PawnIO, rien ne tourne avec des droits élevés.
 
 Séparer l'affichage du reste a un autre avantage : un plantage du logiciel de réglage ne fige jamais l'écran.
@@ -271,23 +271,27 @@ Maquette de référence : `editor-grid-v3.html`.
 ## 9. Installation, première ouverture, mises à jour
 
 ### 9.1 Installateur
-- Un seul `Setup.exe` qui **embarque tout** : runtime .NET, polices, pilote PawnIO.
+*Remplace le Setup.exe de Velopack prévu au départ ; voir `2026-10-29-plan-6-distribution-design.md`, section 4.2 et 5.1.*
+- Un assistant d'installation classique, à pages, fabriqué avec **Inno Setup 7** : `Ashboard-Vision-Setup-<version>.exe`. Il tourne **en administrateur** et installe dans `Program Files\Ashboard Vision`.
+- Il **embarque** le runtime .NET (publication autonome) et les polices. Il installe l'assistant des capteurs et, si la case est cochée, PawnIO, qu'il télécharge alors depuis le site officiel (empreinte vérifiée, connexion Internet requise pour ce pilote ; décision d'Alex du 31/10/2026, la licence de redistribution de PawnIO n'étant pas claire).
 - Rien à télécharger ni à installer à la main.
+- **Aucune signature numérique** : l'avertissement SmartScreen est accepté, et le README explique comment le passer.
 
 ### 9.2 Assistant de première ouverture
 1. **Détection de l'écran.** Si le logiciel Thermalright tourne, l'assistant explique qu'il faut le fermer.
 2. **Orientation.** L'assistant affiche une image test sur l'écran et demande si elle est à l'endroit. Sinon, l'utilisateur la tourne.
 3. **Choix des modules** à placer : une disposition de départ est proposée.
-4. **Claude Code / Codex** : détection, puis proposition (avec consentement) d'installer la petite commande de barre d'état ou le hook (voir 6.2).
+4. **Claude Code / Codex** : détection, puis proposition (avec consentement) d'installer le mod `ashboard-quotas`, qui remplace la petite commande de barre d'état et le hook (voir 6.2 et `2026-10-29-plan-6-distribution-design.md`).
 5. **Réseau** : choix de la source et lancement de l'autorisation (Freebox) ou saisie de la clé (UniFi).
 6. **Météo** : ville.
 7. **Températures CPU** : case à cocher **« Installer le pilote PawnIO »**. On peut aussi l'installer plus tard depuis Paramètres.
 8. **Démarrage avec Windows.**
 
 ### 9.3 Mises à jour
-- Le logiciel **vérifie les releases GitHub** du projet au démarrage puis une fois par jour **(fréquence : choix de Claude)**.
-- Si une mise à jour existe, elle est signalée dans l'icône de notification et dans le logiciel. **Un clic télécharge, installe et redémarre.**
-- Outil proposé : **Velopack**, qui gère ce cycle avec GitHub Releases en .NET **(choix de Claude)**.
+*Plus de Velopack ; voir `2026-10-29-plan-6-distribution-design.md`, sections 4.3 et 5.3.*
+- Le logiciel **vérifie les releases GitHub** du projet au démarrage (60 s après) puis une fois par jour **(fréquence : choix de Claude)**.
+- Si une mise à jour existe, elle est signalée dans l'icône de notification et dans le logiciel. **Un clic télécharge la version, vérifie son empreinte SHA-256 et lance l'installateur** sans pages, après l'autorisation administrateur de Windows. Le logiciel est relancé ensuite.
+- **Deux canaux**, au choix dans Paramètres : **Stable** (par défaut, versions de `main`) et **Bêta** (préversions de `Canary`). Repasser de Bêta à Stable installe tout de suite la dernière stable, après une copie des réglages et un avertissement ; la case « Attendre la prochaine version stable » évite ce retour en arrière.
 
 ## 10. Robustesse
 
@@ -310,8 +314,8 @@ Maquette de référence : `editor-grid-v3.html`.
 
 ## 11. Projet GitHub
 
-- **Dépôt public**, nommé **`trofeo-HB-dashboard`** (choix d'Alex). Ce nom est l'identité définitive de l'appli : identifiant Velopack, dossiers d'installation et de réglages, nom de la tâche planifiée. Il ne doit plus changer une fois que des amis l'ont installée.
-- Les mises à jour en un clic lisent les releases publiques du dépôt, sans jeton.
+- **Dépôt public**, qui s'appelait `trofeo-HB-dashboard` (choix d'Alex) et devient **`Ashewos/ashboard-vision`** (renommage décidé au plan 6) : le logiciel s'appelle **Ashboard Vision** (identifiant technique `ashboard-vision`). Ce nom est l'identité définitive de l'appli : dossiers d'installation et de réglages, nom de la tâche planifiée, installateur. Il ne doit plus changer une fois que des amis l'ont installée. Seuls restent à l'ancien identifiant l'entropie DPAPI, l'identifiant Freebox et le format d'export de la disposition, pour relire ce qui existe déjà. GitHub redirige les anciens liens.
+- Les mises à jour en un clic lisent les releases publiques du dépôt, sans jeton. Les versions sont construites par GitHub Actions à partir d'une étiquette `vX.Y.Z`, avec tous les tests.
 - **Licence GPL-3.0**, acceptée par Alex, puisque le protocole de l'écran s'appuie sur des projets GPL-3.0. Créditer ces projets dans le README.
 - Les mascottes sont des redessins de fan des personnages de Claude (Anthropic) et de Codex (OpenAI). Le README doit l'indiquer et préciser que le projet n'est affilié à aucune des deux sociétés **(choix de Claude)**.
 

@@ -56,13 +56,13 @@ public sealed class CodexSourceTests : IDisposable
     }
 
     [Fact]
-    public void Source_ScansRecentDays_IgnoresOldFiles()
+    public void Source_ScansCreationFolders_IgnoresInactiveFiles()
     {
         var recent = Now.AddMinutes(-10);
         Rollout(Now, "rollout-today.jsonl", recent, Meta("today", Project("a"), Now.AddHours(-1)));
         Rollout(Now.AddDays(-1), "rollout-yesterday.jsonl", recent, Meta("yesterday", Project("a"), Now.AddHours(-2)));
         Rollout(Now.AddDays(-2), "rollout-two-days.jsonl", recent, Meta("two-days", Project("a"), Now.AddHours(-3)));
-        // Dossier de plus de 3 jours, ou fichier modifié il y a plus de 2 h, ou autre nom : ignorés.
+        // Une conversation reprise dans un vieux dossier reste visible ; un fichier réellement inactif reste ignoré.
         Rollout(Now.AddDays(-3), "rollout-three-days.jsonl", recent, Meta("three-days", Project("a"), Now.AddHours(-4)));
         Rollout(Now, "rollout-stale.jsonl", Now.AddHours(-3), Meta("stale", Project("a"), Now.AddHours(-5)));
         Rollout(Now, "notes.jsonl", recent, Meta("notes", Project("a"), Now.AddHours(-6)));
@@ -72,7 +72,7 @@ public sealed class CodexSourceTests : IDisposable
         var snapshot = source.Poll(null, Now);
 
         Assert.True(snapshot.Installed);
-        Assert.Equal(["two-days", "yesterday", "today"], snapshot.Sessions.Select(s => s.Id));
+        Assert.Equal(["three-days", "two-days", "yesterday", "today"], snapshot.Sessions.Select(s => s.Id));
     }
 
     [Fact]

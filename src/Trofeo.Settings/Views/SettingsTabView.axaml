@@ -6,7 +6,7 @@
              x:Class="Trofeo.Settings.Views.SettingsTabView"
              x:DataType="vm:SettingsTabViewModel">
 
-  <!-- Deux colonnes calmes, alignées à gauche : l'écran et l'aperçu ; puis les capteurs, la consommation et le partage. -->
+  <!-- Deux colonnes calmes et équilibrées, alignées à gauche : l'écran, l'aperçu, le démarrage et les mises à jour ; puis les capteurs, la consommation, le partage et l'assistant. -->
   <ScrollViewer VerticalScrollBarVisibility="Auto" AllowAutoHide="False">
     <Grid ColumnDefinitions="*,16,*" Margin="0,0,8,0">
 
@@ -65,6 +65,38 @@
             </StackPanel>
           </StackPanel>
         </Border>
+
+        <TextBlock Name="VersionText" Classes="muted" Margin="4,0,0,0" Text="{Binding VersionText}" />
+
+        <!-- Les mises à jour : Stable ou Bêta, la recherche, l'installation ; la boîte du retour en arrière s'ouvre ici. -->
+        <Border Name="UpdatesPanel" Classes="panel" Padding="20">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="section" Text="{x:Static t:Texts.SettingsUpdates}" />
+            <StackPanel Spacing="8">
+              <TextBlock Classes="name" Text="{x:Static t:Texts.UpdatesChannel}" />
+              <StackPanel Orientation="Horizontal" Spacing="8" AutomationProperties.Name="{x:Static t:Texts.UpdatesChannel}">
+                <Button Name="StableButton" Classes="choice" Classes.primary="{Binding IsStableChannel}"
+                        Content="{x:Static t:Texts.UpdatesStable}" Command="{Binding SetStableCommand}"
+                        IsEnabled="{Binding UpdateControlsEnabled}" />
+                <Button Name="BetaButton" Classes="choice" Classes.primary="{Binding IsBetaChannel}"
+                        Content="{x:Static t:Texts.UpdatesBeta}" Command="{Binding SetBetaCommand}"
+                        IsEnabled="{Binding UpdateControlsEnabled}" />
+              </StackPanel>
+            </StackPanel>
+            <TextBlock Name="UpdateStatus" Classes="muted" TextWrapping="Wrap" Text="{Binding UpdateStatusText}" IsVisible="{Binding HasUpdateStatus}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Name="CheckUpdatesButton" Content="{x:Static t:Texts.UpdatesCheck}" Command="{Binding CheckUpdatesCommand}"
+                      IsEnabled="{Binding CanCheckUpdates}" />
+              <Button Name="InstallUpdateButton" Classes="primary" Content="{Binding InstallUpdateText}" Command="{Binding InstallUpdateCommand}"
+                      IsVisible="{Binding ShowInstallUpdate}" IsEnabled="{Binding UpdateControlsEnabled}" />
+            </StackPanel>
+            <ContentControl Name="DowngradeBox" Content="{Binding Downgrade}" HorizontalContentAlignment="Stretch">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="vm:DowngradeDialogViewModel"><views:DowngradeDialogView /></DataTemplate>
+              </ContentControl.DataTemplates>
+            </ContentControl>
+          </StackPanel>
+        </Border>
       </StackPanel>
 
       <StackPanel Grid.Column="2" Spacing="16">
@@ -109,8 +141,6 @@
                     Content="{x:Static t:Texts.SettingsFirstRunRestart}" Command="{Binding RestartFirstRunCommand}" />
           </StackPanel>
         </Border>
-
-        <TextBlock Name="VersionText" Classes="muted" Margin="4,0,0,0" Text="{Binding VersionText}" />
       </StackPanel>
     </Grid>
   </ScrollViewer>

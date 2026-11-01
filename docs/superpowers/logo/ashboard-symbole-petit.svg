@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title">
+  <title id="title">Ashboard Vision (petites tailles)</title>
+  <!-- Coupe pour 16 à 24 px : le bloc remplit presque tout le carré et la fente est plus haute pour rester visible. -->
+  <path id="charbon" fill="#17181C" d="M88 16 H168 C221 16 240 35 240 88 V168 C240 221 221 240 168 240 H88 C35 240 16 221 16 168 V88 C16 35 35 16 88 16 Z"/>
+  <path id="fente" fill="#FF5B1F" d="M40 124 C86 88 170 88 216 124 C170 160 86 160 40 124 Z"/>
+</svg>

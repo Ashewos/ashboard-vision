@@ -38,6 +38,43 @@ public sealed class LyProtocolTests
         Assert.False(LyProtocol.IsValidHandshakeReply(new byte[] { 0x03, 0xFE, 0, 0, 0, 0, 0, 0, 0x01 }));
     }
 
+    private static byte[] ReplyWithModelByte(byte model)
+    {
+        var reply = new byte[512];
+        reply[0] = 0x03;
+        reply[1] = 0xFF;
+        reply[8] = 0x01;
+        reply[20] = model;
+        return reply;
+    }
+
+    [Theory]
+    [InlineData(0, 65)]
+    [InlineData(1, 65)]
+    [InlineData(2, 65)]
+    [InlineData(3, 65)]
+    [InlineData(4, 68)]
+    [InlineData(5, 69)]
+    public void ReadModel_Is64PlusByte20_With0To3CountingForOne(byte byte20, int expected)
+    {
+        Assert.Equal(expected, LyProtocol.ReadModel(ReplyWithModelByte(byte20)));
+    }
+
+    [Fact]
+    public void ReadModel_RealReply_IsTheSupportedModel()
+    {
+        var real = Convert.FromHexString("03ff0000000000000100000000000000498ed6bc02000400800700005702000041");
+
+        Assert.Equal(65, LyProtocol.ReadModel(real));
+        Assert.Equal(LyProtocol.SupportedModel, LyProtocol.ReadModel(real));
+    }
+
+    [Fact]
+    public void IsValidHandshakeReply_TooShortToHoldTheModel_IsInvalid()
+    {
+        Assert.False(LyProtocol.IsValidHandshakeReply(ReplyWithModelByte(2).AsSpan(0, 20)));
+    }
+
     [Fact]
     public void Packetize_1000Bytes()
     {

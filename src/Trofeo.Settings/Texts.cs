@@ -49,6 +49,14 @@ public static class Texts
     public static string StripWaiting => Get();
     /// <summary>Le service d'affichage ne tourne pas. Sans lui, l'écran reste éteint et rien ne peut être réglé.</summary>
     public static string ServiceStoppedMessage => Get();
+    /// <summary>Boîte de message au démarrage : le service n'a pas fini de déménager les réglages.</summary>
+    public static string MoveInProgress => Get();
+    /// <summary>Boîte de message au démarrage : le service n'a pas pu être lancé pour déménager les réglages.</summary>
+    public static string MoveServiceMissing => Get();
+    /// <summary>Pastille quand le service parle une autre version que la fenêtre.</summary>
+    public static string LinkVersionMismatch => Get();
+    /// <summary>Panneau quand le service parle une autre version que la fenêtre.</summary>
+    public static string VersionMismatchMessage => Get();
     /// <summary>Démarrer le service</summary>
     public static string StartService => Get();
     /// <summary>Le service d'affichage est introuvable. Lance Trofeo.Display.exe toi-même.</summary>
@@ -421,4 +429,22 @@ public static class Texts
     public static string SettingsFirstRunHelp => Get();
     /// <summary>Bouton.</summary>
     public static string SettingsFirstRunRestart => Get();
+    /// <summary>Titre de section, dans Paramètres.</summary>
+    public static string SettingsUpdates => Get();
+    /// <summary>Nom du choix entre Stable et Bêta (et nom accessible de ses deux boutons).</summary>
+    public static string UpdatesChannel => Get();
+    /// <summary>Bouton du choix de version : seulement les versions stables.</summary>
+    public static string UpdatesStable => Get();
+    /// <summary>Bouton du choix de version : aussi les bêtas d'essai.</summary>
+    public static string UpdatesBeta => Get();
+    /// <summary>Bouton : cherche une mise à jour tout de suite.</summary>
+    public static string UpdatesCheck => Get();
+    /// <summary>Bouton. {0} : la version proposée.</summary>
+    public static string UpdatesInstall => Get();
+    /// <summary>Boîte du retour de la bêta à la stable. {0} : la version stable proposée.</summary>
+    public static string UpdatesDowngrade => Get();
+    /// <summary>Case de la boîte du retour en arrière : garde la bêta jusqu'à une stable plus récente.</summary>
+    public static string UpdatesWaitForStable => Get();
+    /// <summary>Bouton de la boîte du retour en arrière quand la case « attendre » est cochée : rien n'est installé.</summary>
+    public static string UpdatesKeepBeta => Get();
 }

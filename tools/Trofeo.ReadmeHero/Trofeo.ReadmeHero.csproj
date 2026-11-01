@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Fabrique l'image d'accueil animée du README : les vrais rendus de l'écran (ceux de Trofeo.ThemePreview), inclinés dans une
+       scène sombre, avec une lueur, un reflet et le nom du thème. Écrit des PNG numérotés et les commandes ffmpeg (voir Program.cs). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Trofeo.ThemePreview\Trofeo.ThemePreview.csproj" />
+    <!-- Le logo en SVG : le même lecteur que pour fabriquer les images de la marque. -->
+    <ProjectReference Include="..\Trofeo.BrandAssets\Trofeo.BrandAssets.csproj" />
+  </ItemGroup>
+
+  <!-- Sous Linux, SkiaSharp a besoin de sa bibliothèque native (sous Windows, elle vient avec le paquet de base). -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
+  </ItemGroup>
+
+</Project>

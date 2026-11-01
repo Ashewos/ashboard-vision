@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Comme l'outil testé, ces tests ne dépendent pas de Windows : ils tournent aussi sous Linux. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\Trofeo.BrandAssets\Trofeo.BrandAssets.csproj" />
+  </ItemGroup>
+
+  <!-- La police du nom : celle du dépôt, copiée à côté des tests. -->
+  <ItemGroup>
+    <None Include="..\..\src\Trofeo.Core\Assets\Fonts\Manrope-Medium.ttf" Link="Manrope-Medium.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Le déroulé de l'image d'accueil est du calcul pur : on compile son fichier ici plutôt que de dépendre de l'outil, qui est un projet Windows. -->
+  <ItemGroup>
+    <Compile Include="..\..\tools\Trofeo.ReadmeHero\HeroTimeline.cs" Link="HeroTimeline.cs" />
+  </ItemGroup>
+
+</Project>

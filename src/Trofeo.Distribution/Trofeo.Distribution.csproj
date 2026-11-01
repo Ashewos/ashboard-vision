@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Versions, lecture des versions GitHub et choix de la mise à jour. Ni Windows ni WinForms :
+       testable sous Linux, et réutilisable par le service comme par le logiciel de réglage. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Trofeo.Core\Trofeo.Core.csproj" />
+    <!-- QuotaModInstaller et StatusLineInstaller : la préparation propre à l'utilisateur les réutilise. Agents n'est pas non plus Windows. -->
+    <ProjectReference Include="..\Trofeo.Modules.Agents\Trofeo.Modules.Agents.csproj" />
+  </ItemGroup>
+
+</Project>

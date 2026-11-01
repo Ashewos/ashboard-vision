@@ -7,7 +7,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
-    <ProjectReference Include="..\Trofeo.StatusLine\Trofeo.StatusLine.csproj" />
   </ItemGroup>
 
 </Project>

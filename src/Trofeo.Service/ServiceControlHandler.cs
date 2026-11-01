@@ -5,6 +5,7 @@ using Trofeo.Core.Layout;
 using Trofeo.Core.Rendering;
 using Trofeo.Core.Shortcuts;
 using Trofeo.Device;
+using Trofeo.Distribution;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Display;
@@ -29,13 +30,20 @@ namespace Trofeo.Display;
 /// La configuration que la boucle applique au démarrage : tant que l'apparence ne change pas, un rechargement garde son thème et
 /// son fond (une vidéo ne repart pas de zéro, une image n'est pas rouverte).
 /// </param>
+/// <param name="updates">Les mises à jour ; <c>null</c> : le service tourne sans (l'état reste « inconnu » et rien ne s'installe).</param>
 public sealed class ServiceControlHandler(
     LayoutStore store, DisplayLoop loop, ModuleRegistry registry, Func<ScreenInfo> screen, Func<SensorInfo> sensors,
     ProcessMeter meter, Func<DashboardLayout, LoopConfig?, LoopConfig> buildConfig, IHotkeyHost? hotkeys, WarningSink? buildWarnings = null,
-    LoopConfig? initialConfig = null)
-    : IControlHandler
+    LoopConfig? initialConfig = null, UpdateService? updates = null)
+    : IControlHandler, IDisposable
 {
     private static readonly string ServiceVersion = ReadVersion();
+
+    /// <summary>La version qui tourne (<c>AssemblyInformationalVersion</c>, sans le <c>+hash</c> du commit).</summary>
+    internal static string InstalledVersion => ServiceVersion;
+
+    // La vie du service : les installations lancées par une requête n'en dépendent pas.
+    private readonly CancellationTokenSource _lifetime = new();
 
     // Un rechargement à la fois : deux fenêtres de réglage ne s'entremêlent pas.
     private readonly SemaphoreSlim _reloadGate = new(1, 1);
@@ -214,6 +222,48 @@ public sealed class ServiceControlHandler(
     }
 
     public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame) => loop.SubscribePreview(maxFps, onFrame);
+
+    // ---- Mises à jour ----
+
+    private static readonly UpdateInfo NoUpdateInfo =
+        new(LinkUpdateState.Unknown, null, false, null, null, LinkUpdateChannel.Stable, false);
+
+    public UpdateInfo GetUpdate() => updates is null ? NoUpdateInfo : ToUpdateInfo(updates.Current);
+
+    public Task CheckUpdatesAsync(CancellationToken ct) => updates?.CheckNowAsync(ct) ?? Task.CompletedTask;
+
+    public Task SetUpdatePreferencesAsync(LinkUpdateChannel channel, bool waitForNextStable, CancellationToken ct) =>
+        updates?.SetPreferencesAsync(new UpdatePreferences(ToChannel(channel), waitForNextStable), ct) ?? Task.CompletedTask;
+
+    /// <summary>
+    /// Demandé par la fenêtre de réglage : elle est ouverte, on la rouvre après l'installation. Une mise à jour acceptée va jusqu'au bout
+    /// même si la fenêtre se ferme : l'installation suit la vie du service, la requête ne fait qu'attendre le résultat.
+    /// </summary>
+    public async Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade, CancellationToken ct)
+    {
+        if (updates is null) return new ActionResult(false, "Les mises à jour ne sont pas disponibles pour l'instant.");
+
+        var install = updates.InstallAsync(confirmDowngrade, reopenSettings: true, _lifetime.Token);
+        // Si on n'attend plus la requête, l'échec éventuel de l'installation est tout de même journalisé.
+        _ = install.ContinueWith(
+            t => Trace.TraceError($"Mise à jour : l'installation a échoué : {t.Exception?.GetBaseException()}"),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+
+        var (ok, message) = await install.WaitAsync(ct).ConfigureAwait(false);
+        return new ActionResult(ok, message);
+    }
+
+    /// <summary>L'arrêt du service annule l'installation en cours.</summary>
+    public void Dispose() => _lifetime.Cancel();
+
+    /// <summary>L'état des mises à jour tel que la fenêtre de réglage le connaît.</summary>
+    public static UpdateInfo ToUpdateInfo(UpdateStatus status) => new(
+        Enum.Parse<LinkUpdateState>(status.State.ToString()), status.Version, status.IsDowngrade, status.Percent, status.Message,
+        status.Preferences.Channel == UpdateChannel.Beta ? LinkUpdateChannel.Beta : LinkUpdateChannel.Stable,
+        status.Preferences.WaitForNextStable);
+
+    private static UpdateChannel ToChannel(LinkUpdateChannel channel) =>
+        channel == LinkUpdateChannel.Beta ? UpdateChannel.Beta : UpdateChannel.Stable;
 
     private static string ReadVersion()
     {

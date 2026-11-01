@@ -1,14 +1,13 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
-using Trofeo.StatusLine;
 
 namespace Trofeo.Modules.Agents;
 
 /// <summary>
 /// Source Claude Code : les sessions ouvertes (<c>sessions/*.json</c>), le détail de celle qui est choisie (sa
 /// transcription lue par la fin, puis seulement les octets ajoutés ; ses tâches), son contexte, et les quotas relevés
-/// par la barre d'état. Ne contacte rien en ligne et ne lit que les fichiers listés dans le plan. Appelée depuis un seul
+/// par le mod <c>ashboard-quotas</c>. Ne contacte rien en ligne et ne lit que les fichiers listés dans le plan. Appelée depuis un seul
 /// thread à la fois.
 /// </summary>
 /// <param name="claudeHome">Le dossier de configuration de Claude Code (voir <see cref="ClaudeHome.Resolve"/>).</param>
@@ -24,13 +23,15 @@ public sealed class ClaudeSource(string claudeHome, Func<int, bool> isProcessAli
     private readonly ClaudeSessionDirectory _directory = new(Path.Combine(claudeHome, "sessions"), isProcessAlive);
     private readonly string _projectsDir = Path.Combine(claudeHome, "projects");
     private readonly string _statusLineDir = ClaudeHome.StatusLineDir(claudeHome);
+    // Dossier des captures d'avant le changement de nom : lu après le nouveau tant que ses captures ont moins de 8 jours.
+    private readonly string _legacyStatusLineDir = ClaudeHome.LegacyStatusLineDir(claudeHome);
 
     // ProjectNames remonte l'arborescence sur le disque : un seul calcul par dossier de travail.
     private readonly Dictionary<string, string> _projectNames = new(StringComparer.Ordinal);
     // Transcription trouvée par session ; une absence n'est cherchée à nouveau que toutes les quelques secondes.
     private readonly Dictionary<string, (string? Path, DateTimeOffset CheckedAt)> _transcripts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DetailState> _details = new(StringComparer.Ordinal);
-    // Captures de la barre d'état déjà lues, par chemin : seuls les fichiers nouveaux ou modifiés sont relus.
+    // Captures déjà lues, par chemin : seuls les fichiers nouveaux ou modifiés sont relus.
     private readonly Dictionary<string, CachedCapture> _captures = new(StringComparer.Ordinal);
     // Liste de tâches par session, avec la signature du dossier (noms, dates, tailles) au moment de la lecture.
     private readonly Dictionary<string, (string Signature, IReadOnlyList<AgentTask> Tasks)> _taskLists = new(StringComparer.Ordinal);
@@ -184,7 +185,7 @@ public sealed class ClaudeSource(string claudeHome, Func<int, bool> isProcessAli
             return null;
         }
 
-        // La barre d'état peut rapporter « claude-opus-5-5[1m] » là où la transcription écrit « claude-opus-5-5 ».
+        // Le mod peut rapporter « claude-opus-5-5[1m] » là où la transcription écrit « claude-opus-5-5 ».
         var wanted = ModelNames.WithoutSuffix(model);
         return captures.FirstOrDefault(c => c.ContextWindowSize is > 0
                 && string.Equals(ModelNames.WithoutSuffix(c.ModelId), wanted, StringComparison.OrdinalIgnoreCase))
@@ -324,50 +325,54 @@ public sealed class ClaudeSource(string claudeHome, Func<int, bool> isProcessAli
     }
 
     /// <summary>
-    /// Les captures de moins de 8 jours, de la plus récente à la plus ancienne. Un fichier n'est relu que s'il est
-    /// nouveau ou si sa date d'écriture ou sa taille a changé ; l'âge se juge à chaque relevé.
+    /// Les captures de moins de 8 jours, de la plus récente à la plus ancienne : celles du dossier actuel, puis celles de
+    /// l'ancien (pour une même session, le dossier actuel l'emporte). Un fichier n'est relu que s'il est nouveau ou si sa
+    /// date d'écriture ou sa taille a changé ; l'âge se juge à chaque relevé.
     /// </summary>
     private IReadOnlyList<StatusLineRecord> ReadCaptures(DateTimeOffset now)
     {
         try
         {
-            if (!Directory.Exists(_statusLineDir))
-            {
-                _captures.Clear();
-                return [];
-            }
-
             var seen = new HashSet<string>(StringComparer.Ordinal);
+            var sessions = new HashSet<string>(StringComparer.Ordinal);
             var records = new List<StatusLineRecord>();
-            // EnumerateFiles d'un DirectoryInfo donne date et taille sans appel supplémentaire par fichier.
-            foreach (var info in new DirectoryInfo(_statusLineDir).EnumerateFiles("*.json"))
+            foreach (var dir in new[] { _statusLineDir, _legacyStatusLineDir })
             {
-                var path = info.FullName;
-                if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                if (!Directory.Exists(dir))
                 {
                     continue;
                 }
 
-                seen.Add(path);
-                if (!_captures.TryGetValue(path, out var cached)
-                    || cached.WriteTimeUtc != info.LastWriteTimeUtc || cached.Length != info.Length)
+                // EnumerateFiles d'un DirectoryInfo donne date et taille sans appel supplémentaire par fichier.
+                foreach (var info in new DirectoryInfo(dir).EnumerateFiles("*.json"))
                 {
-                    // Un fichier illisible n'est pas gardé : on le réessaie au prochain relevé.
-                    cached = StatusLineFile.Read(path) is { } record
-                        ? new CachedCapture(info.LastWriteTimeUtc, info.Length, record)
-                        : null;
-                    if (cached is null)
+                    var path = info.FullName;
+                    if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
                     {
-                        _captures.Remove(path);
                         continue;
                     }
 
-                    _captures[path] = cached;
-                }
+                    seen.Add(path);
+                    if (!_captures.TryGetValue(path, out var cached)
+                        || cached.WriteTimeUtc != info.LastWriteTimeUtc || cached.Length != info.Length)
+                    {
+                        // Un fichier illisible n'est pas gardé : on le réessaie au prochain relevé.
+                        cached = StatusLineFile.Read(path) is { } record
+                            ? new CachedCapture(info.LastWriteTimeUtc, info.Length, record)
+                            : null;
+                        if (cached is null)
+                        {
+                            _captures.Remove(path);
+                            continue;
+                        }
 
-                if (now - cached.Record.CapturedAt <= CaptureMaxAge)
-                {
-                    records.Add(cached.Record);
+                        _captures[path] = cached;
+                    }
+
+                    if (now - cached.Record.CapturedAt <= CaptureMaxAge && sessions.Add(cached.Record.SessionId))
+                    {
+                        records.Add(cached.Record);
+                    }
                 }
             }
 
@@ -407,7 +412,7 @@ public sealed class ClaudeSource(string claudeHome, Func<int, bool> isProcessAli
 
     private static QuotaWindow? Window(CapturedQuota? quota) => quota is null ? null : new QuotaWindow(quota.UsedPercent, quota.ResetsAt);
 
-    /// <summary>Supprime les vieilles captures, au plus une fois par heure.</summary>
+    /// <summary>Supprime les vieilles captures des deux dossiers, au plus une fois par heure.</summary>
     private void Cleanup(DateTimeOffset now)
     {
         if (now - _lastCleanup < CleanupEvery)
@@ -419,6 +424,7 @@ public sealed class ClaudeSource(string claudeHome, Func<int, bool> isProcessAli
         try
         {
             StatusLineFile.DeleteOlderThan(_statusLineDir, now, CaptureDeleteAge);
+            StatusLineFile.DeleteOlderThan(_legacyStatusLineDir, now, CaptureDeleteAge);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

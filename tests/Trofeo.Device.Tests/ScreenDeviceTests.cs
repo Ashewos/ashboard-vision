@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using Trofeo.TestDoubles;
 
 namespace Trofeo.Device.Tests;
@@ -6,7 +7,24 @@ public sealed class ScreenDeviceTests
 {
     private static byte[] Jpeg(int length, byte fill = 0xAB) => Enumerable.Repeat(fill, length).ToArray();
 
-    private static ScreenDevice NewDevice(FakeUsbTransportFactory factory) => new(factory, TimeProvider.System);
+    private static readonly IReadOnlyList<(ushort Vid, ushort Pid)> NothingPresent = [];
+
+    /// <summary>Aucun scan USB réel pendant les tests : sans écran Thermalright branché, sauf si le test en fournit un.</summary>
+    private static ScreenDevice NewDevice(FakeUsbTransportFactory factory) => new(factory, TimeProvider.System, () => NothingPresent);
+
+    /// <summary>Réponse valide à la poignée de main avec ce code de modèle à l'octet 20.</summary>
+    private static byte[] HandshakeReplyWithModelByte(byte model)
+    {
+        var reply = new byte[512];
+        reply[0] = 0x03;
+        reply[1] = 0xFF;
+        reply[8] = 0x01;
+        reply[20] = model;
+        return reply;
+    }
+
+    private static FakeUsbTransport UnsupportedModelTransport() =>
+        new FakeUsbTransport().EnqueueReadTimeout().EnqueueRead(HandshakeReplyWithModelByte(4)); // 64 + 4 = 68
 
     /// <summary>Écran sain : la connexion vide la file (délai dépassé) puis la poignée de main réussit.</summary>
     private static FakeUsbTransport ReadyTransport() => new FakeUsbTransport().EnqueueReadTimeout().EnqueueHandshakeReply();
@@ -401,6 +419,148 @@ public sealed class ScreenDeviceTests
             seen);
         Assert.Equal(device.Status.Reason, device.Reason);
         Assert.Equal(device.Status.State, device.State);
+    }
+
+    [Fact]
+    public void Handshake_UnsupportedModel_DisconnectedWithReason()
+    {
+        var transport = UnsupportedModelTransport();
+        using var device = NewDevice(new FakeUsbTransportFactory().EnqueueTransport(transport));
+
+        Assert.False(device.TryConnect());
+
+        Assert.Equal(ScreenState.Disconnected, device.State);
+        Assert.Equal(
+            "Ce modèle d'écran Thermalright (code 68) n'est pas encore pris en charge : seul le Trofeo Vision 9,16 pouces (1920 × 462) l'est pour l'instant.",
+            device.Reason);
+        Assert.True(transport.IsDisposed);
+        Assert.Single(transport.Writes); // la poignée de main seule : aucune image
+        Assert.Equal(2048, transport.Writes.Single().Length);
+    }
+
+    [Fact]
+    public void Handshake_SupportedModelByte0To3_StillReady()
+    {
+        var transport = new FakeUsbTransport().EnqueueReadTimeout().EnqueueRead(HandshakeReplyWithModelByte(3));
+        using var device = NewDevice(new FakeUsbTransportFactory().EnqueueTransport(transport));
+
+        Assert.True(device.TryConnect());
+
+        Assert.Equal(ScreenState.Ready, device.State);
+    }
+
+    [Fact]
+    public void Unsupported_RetriesAtMostEvery30Seconds()
+    {
+        var time = new FakeTimeProvider();
+        var factory = new FakeUsbTransportFactory()
+            .EnqueueTransport(UnsupportedModelTransport())
+            .EnqueueTransport(UnsupportedModelTransport())
+            .EnqueueTransport(ReadyTransport());
+        using var device = new ScreenDevice(factory, time, () => NothingPresent);
+        var changes = 0;
+        device.StateChanged += (_, _) => changes++;
+
+        Assert.False(device.TryConnect());
+        Assert.Equal(1, factory.OpenCount);
+        var reason = device.Reason;
+
+        time.Advance(TimeSpan.FromSeconds(2)); // la boucle d'affichage retente toutes les 2 s
+        Assert.False(device.TryConnect());
+        time.Advance(TimeSpan.FromSeconds(27));
+        Assert.False(device.TryConnect());
+        Assert.Equal(1, factory.OpenCount); // 29 s : l'écran n'est pas rouvert
+        Assert.Equal(reason, device.Reason);
+
+        time.Advance(TimeSpan.FromSeconds(1)); // 30 s
+        Assert.False(device.TryConnect());
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(reason, device.Reason);
+
+        Assert.False(device.TryConnect()); // le délai repart de la dernière tentative
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, changes); // le motif n'a pas bougé : aucune notification superflue
+
+        time.Advance(TimeSpan.FromSeconds(30));
+        Assert.True(device.TryConnect()); // l'écran branché entre-temps est enfin le bon
+        Assert.Equal(3, factory.OpenCount);
+        Assert.Equal(ScreenState.Ready, device.State);
+    }
+
+    [Fact]
+    public void NoScreen_KnownThermalrightPresent_ReasonNamesIt()
+    {
+        var factory = new FakeUsbTransportFactory().EnqueueAbsent();
+        using var device = new ScreenDevice(factory, TimeProvider.System, () => [(0x0416, 0x5302)]);
+
+        Assert.False(device.TryConnect());
+
+        Assert.Equal(ScreenState.Disconnected, device.State);
+        Assert.StartsWith("Écran Thermalright détecté (HID type 2)", device.Reason);
+        Assert.Contains("pas encore pris en charge", device.Reason);
+        Assert.EndsWith("Seul le Trofeo Vision 9,16 pouces (1920 × 462) l'est pour l'instant.", device.Reason);
+    }
+
+    [Fact]
+    public void NoScreen_NothingKnownPresent_ReasonIsNotPlugged()
+    {
+        var factory = new FakeUsbTransportFactory().EnqueueAbsent();
+        using var device = new ScreenDevice(factory, TimeProvider.System, () => [(0x1234, 0x5678)]);
+
+        Assert.False(device.TryConnect());
+
+        Assert.Equal(ScreenDevice.AbsentReason, device.Reason);
+    }
+
+    [Fact]
+    public void NoScreen_ScanAtMostEvery30Seconds()
+    {
+        var time = new FakeTimeProvider();
+        var scans = 0;
+        IReadOnlyList<(ushort Vid, ushort Pid)> present = [];
+        using var device = new ScreenDevice(new FakeUsbTransportFactory(), time, () =>
+        {
+            scans++;
+            return present;
+        });
+
+        device.TryConnect();
+        Assert.Equal(1, scans);
+        Assert.Equal(ScreenDevice.AbsentReason, device.Reason);
+
+        present = [(0x0416, 0x5302)]; // branché entre deux scans
+        for (var i = 0; i < 14; i++) // 2 s, 4 s, … 28 s
+        {
+            time.Advance(TimeSpan.FromSeconds(2));
+            device.TryConnect();
+        }
+
+        Assert.Equal(1, scans);
+        Assert.Equal(ScreenDevice.AbsentReason, device.Reason); // le dernier résultat reste affiché
+
+        time.Advance(TimeSpan.FromSeconds(2)); // 30 s
+        device.TryConnect();
+
+        Assert.Equal(2, scans);
+        Assert.StartsWith("Écran Thermalright détecté (HID type 2)", device.Reason);
+    }
+
+    [Fact]
+    public void ScreenOpens_NoUsbScan()
+    {
+        var scans = 0;
+        var factory = new FakeUsbTransportFactory().EnqueueTransport(ReadyTransport()).EnqueueBusy();
+        using var device = new ScreenDevice(factory, TimeProvider.System, () =>
+        {
+            scans++;
+            return [];
+        });
+
+        device.TryConnect(); // prêt
+        device.MarkLost("perdu");
+        device.TryConnect(); // occupé : l'écran existe, il n'y a rien à chercher
+
+        Assert.Equal(0, scans);
     }
 
     private static void AssertCall(UsbCall call, UsbCallKind kind, int length, int timeoutMs)

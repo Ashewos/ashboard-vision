@@ -26,8 +26,8 @@ public static class SampleData
             .. AgentFields(),
             new ActionField("install-quotas", "Installer le mod des quotas")
             {
-                Confirm = "Le mod trofeo-quotas sera ajouté à Claude Code pour ton compte (claude plugin install). "
-                    + "Tu pourras le retirer avec claude plugin uninstall trofeo-quotas@trofeo-hb-dashboard.",
+                Confirm = "Le mod ashboard-quotas sera ajouté à Claude Code pour ton compte (claude plugin install). "
+                    + "Tu pourras le retirer avec claude plugin uninstall ashboard-quotas@ashboard-vision.",
             },
         ]), acceptsCommands: true),
         Type("codex", "Codex", new(6, 3), new(6, 3), new(8, 4), new(10, 4), new SettingsSchema(AgentFields()), acceptsCommands: true),

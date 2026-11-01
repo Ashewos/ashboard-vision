@@ -17,7 +17,7 @@ namespace Trofeo.Core.Secrets;
 public sealed class DpapiSecretVault
 {
     private const string MutexName = @"Local\trofeo-HB-dashboard.secrets";
-    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("trofeo-HB-dashboard");
+    internal static readonly byte[] Entropy = Encoding.UTF8.GetBytes("trofeo-HB-dashboard");
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(10);
 
     private readonly string _filePath;
