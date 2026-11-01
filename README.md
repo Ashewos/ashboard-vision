@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-  <a href="https://github.com/Ashewos/ashboard-vision/releases/latest"><img alt="Version" src="https://img.shields.io/github/v/release/Ashewos/ashboard-vision?label=version&amp;color=2ea043"></a>
+  <a href="https://github.com/Ashewos/ashboard-vision/releases/latest"><img alt="Version" src="https://img.shields.io/github/v/release/Ashewos/ashboard-vision?label=version&amp;include_prereleases&amp;color=2ea043"></a>
   <a href="https://github.com/Ashewos/ashboard-vision/releases"><img alt="Bêta" src="https://img.shields.io/github/v/release/Ashewos/ashboard-vision?include_prereleases&amp;label=b%C3%AAta&amp;color=d29922"></a>
   <img alt="Windows 10 | 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4">
   <a href="LICENSE"><img alt="Licence GPL-3.0" src="https://img.shields.io/badge/licence-GPL--3.0-3b7dd8"></a>
@@ -65,11 +65,6 @@ Les captures sont en thème Classique : chaque module prend les couleurs du thè
 2. **Lance-le.** Windows affiche peut-être l'écran bleu « Windows a protégé votre ordinateur » : l'installateur n'est pas signé numériquement, donc Windows ne connaît pas son éditeur. Ce n'est pas un signe de danger en soi, mais c'est à toi de décider si tu fais confiance à ce fichier (voir « Vérifier le fichier » plus bas). Pour continuer :
    1. clique sur **Informations complémentaires** ;
    2. puis sur **Exécuter quand même**.
-
-   <p>
-     <img src="docs/images/smartscreen-1.png" alt="L'écran « Windows a protégé votre ordinateur », avec le lien Informations complémentaires" width="48%">
-     <img src="docs/images/smartscreen-2.png" alt="Le même écran, avec le bouton Exécuter quand même" width="48%">
-   </p>
 3. **Accepte l'autorisation administrateur** que Windows demande : l'installateur copie les fichiers dans `Program Files` et peut installer le pilote des températures.
 4. **Suis les pages** : bienvenue, licence, dossier d'installation, puis les options :
    - un raccourci sur le bureau ;

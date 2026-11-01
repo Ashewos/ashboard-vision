@@ -611,7 +611,7 @@ Chaque action vers GitHub attend l'accord d'Alex, donné pour cette action-là :
 - [ ] **Step 2 : Renommer le dépôt** en `ashboard-vision`, avec l'accord d'Alex (`gh repo rename ashboard-vision`). Vérifier la redirection de l'ancienne adresse et mettre à jour `origin`.
 - [ ] **Step 3 : Publier `v1.0.0-beta.1`** depuis `Canary`, avec l'accord d'Alex : pousser, puis poser l'étiquette. La recette est verte, et la préversion porte le `Setup.exe` et son `.sha256`.
 - [ ] **Step 4 : Avec Alex et l'écran.** Il faut d'abord fermer le service lancé depuis le dépôt ; l'installateur doit de toute façon l'arrêter.
-  - installer la bêta depuis GitHub, et prendre les captures SmartScreen pour le README ;
+  - installer la bêta depuis GitHub (les captures SmartScreen sont abandonnées le 01/11/2026, sur décision d'Alex : le README décrit les deux clics en texte) ;
   - vérifier le déménagement :
     - la disposition, la Freebox **toujours autorisée** et la clé UniFi lisible ;
     - l'ancienne valeur `Run`, l'ancienne tâche et l'ancien mod remplacés ;
