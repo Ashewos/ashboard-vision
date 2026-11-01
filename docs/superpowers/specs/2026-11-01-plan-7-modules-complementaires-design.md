@@ -197,6 +197,14 @@ Un outil en ligne de commande livré avec le SDK (outil .NET), qui fait trois ch
 - `dotnet new ashboard-module` crée un module qui marche, avec son manifeste, ses tests et la commande `check` prête.
 - Documentation en français dans `docs/sdk/` : démarrer, le contrat, les permissions, le dessin, les réglages, les tests, publier sur GitHub, la compatibilité.
 - **Module d'exemple officiel : « Dépôt GitHub »** (étoiles, dernière version, téléchargements d'un dépôt, jeton facultatif). Alex n'a ni Home Assistant, ni Frigate, ni Proxmox, ni Pi-hole : cet exemple se teste sans rien installer et touche à Internet, aux secrets, aux réglages et aux mises à jour. Un second exemple sans réseau, animé, sert à essayer les images rapides et la consommation.
+- **Module d'exemple « Serveur Minecraft »** (idée d'Alex, 01/11/2026 : un serveur Minecraft se monte vite pour tester). Il interroge un serveur Java par le protocole public de la liste des serveurs (« Server List Ping », port 25565 par défaut) et affiche :
+  - son nom (le message du jour) et sa version ;
+  - les joueurs connectés sur le maximum, et quelques pseudos ;
+  - la latence ;
+  - l'icône du serveur.
+
+  Il demande la permission « Réseau local » pour un serveur de la maison, ou « Internet » pour un serveur public. C'est l'exemple qui éprouve le réseau local, les images (l'icône) et les états « en ligne / hors ligne ».
+  - **Attention à la limite `localhost` (5.3)** : un serveur Minecraft lancé **sur le même PC** que l'écran n'est pas joignable par un module enfermé. Pour l'essai, il faut un serveur sur une autre machine du réseau, ou l'exemption de Windows pour ce module seul (`CheckNetIsolation LoopbackExempt`, une commande d'administrateur que la documentation du mode développeur donne).
 
 ### 5.12 Découpage
 Un projet plus gros que le plan 6, en deux parties :
