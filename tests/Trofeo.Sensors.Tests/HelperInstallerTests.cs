@@ -113,6 +113,26 @@ public sealed class HelperInstallerTests : IDisposable
     }
 
     [Fact]
+    public void Install_RemovesTheLegacyParentWhenEmpty_EvenIfTheFolderWasAlreadyGone()
+    {
+        // Le cas du PC d'Alex : %ProgramFiles%\trofeo-HB-dashboard restait vide après le retrait de son sous-dossier sensors.
+        _pawnIo.Installed = true;
+        var emptyParent = Path.Combine(_root, "ancien-vide");
+        var fullParent = Path.Combine(_root, "ancien-plein");
+        Directory.CreateDirectory(emptyParent);
+        Directory.CreateDirectory(Path.Combine(fullParent, "sensors"));
+        File.WriteAllText(Path.Combine(fullParent, "autre.txt"), "à garder");
+        var installer = new HelperInstaller(_runner, _pawnIo, _source, _install, _sleeps.Add,
+            [Path.Combine(emptyParent, "sensors") + Path.DirectorySeparatorChar, Path.Combine(fullParent, "sensors") + Path.DirectorySeparatorChar]);
+
+        Assert.Equal(InstallResult.Installed, installer.Install(null));
+
+        Assert.False(Directory.Exists(emptyParent));
+        Assert.False(Directory.Exists(Path.Combine(fullParent, "sensors")));
+        Assert.True(File.Exists(Path.Combine(fullParent, "autre.txt"))); // un parent qui contient autre chose reste
+    }
+
+    [Fact]
     public void Install_DestinationInsideSource_DoesNotCopyIntoItself()
     {
         // Cas réel : l'installateur lance l'assistant depuis le dossier de l'application, et la destination s'y trouve.

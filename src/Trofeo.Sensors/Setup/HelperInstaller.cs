@@ -75,9 +75,11 @@ public sealed class HelperInstaller(
 
     /// <summary>
     /// Retire l'installation d'avant : la tâche (arrêtée d'abord, pour que l'ancien assistant relâche ses fichiers), puis les
-    /// anciens dossiers. Une tâche absente n'est pas une erreur : les codes de sortie sont ignorés, rien n'est signalé.
-    /// Un dossier n'est pas supprimé si c'est celui d'où l'on s'exécute ou celui où l'on installe. S'il reste tenu après les
-    /// attentes, il est laissé en place avec un avertissement dans la trace : la nouvelle installation n'en dépend pas.
+    /// anciens dossiers, et leur dossier parent s'il ne contient plus rien (<c>%ProgramFiles%\trofeo-HB-dashboard</c>), même quand
+    /// une installation précédente avait déjà retiré le sous-dossier. Une tâche absente n'est pas une erreur : les codes de sortie
+    /// sont ignorés, rien n'est signalé. Un dossier n'est pas supprimé si c'est celui d'où l'on s'exécute ou celui où l'on installe.
+    /// S'il reste tenu après les attentes, il est laissé en place avec un avertissement dans la trace : la nouvelle installation
+    /// n'en dépend pas.
     /// </summary>
     private void RemoveLegacy()
     {
@@ -86,15 +88,34 @@ public sealed class HelperInstaller(
         foreach (var legacyInstallDir in legacyInstallDirs ?? [])
         {
             if (SameDirectory(sourceDir, legacyInstallDir) || SameDirectory(installDir, legacyInstallDir)) continue;
-            if (!Directory.Exists(legacyInstallDir)) continue;
-            try
+            if (Directory.Exists(legacyInstallDir))
             {
-                Retry(() => Directory.Delete(legacyInstallDir, recursive: true));
+                try
+                {
+                    Retry(() => Directory.Delete(legacyInstallDir, recursive: true));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Trace.TraceWarning($"Ancien dossier de l'assistant de capteurs non supprimé ({legacyInstallDir}) : {ex.Message}");
+                    continue;
+                }
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                Trace.TraceWarning($"Ancien dossier de l'assistant de capteurs non supprimé ({legacyInstallDir}) : {ex.Message}");
-            }
+
+            DeleteIfEmpty(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(legacyInstallDir)));
+        }
+    }
+
+    // Jamais récursif : un dossier qui contient quoi que ce soit (le dossier de l'application, par exemple) reste en place.
+    private static void DeleteIfEmpty(string? directory)
+    {
+        if (directory is null || !Directory.Exists(directory) || Directory.EnumerateFileSystemEntries(directory).Any()) return;
+        try
+        {
+            Directory.Delete(directory, recursive: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning($"Ancien dossier vide non supprimé ({directory}) : {ex.Message}");
         }
     }
 
