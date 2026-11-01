@@ -8,15 +8,13 @@ namespace Trofeo.Modules.Agents;
 /// Installe le mod <c>ashboard-quotas</c> dans Claude Code : ajoute le dossier <c>mods</c> comme marché de modules, puis installe
 /// le mod ; sait aussi le retirer, avec l'ancien mod <c>trofeo-quotas</c>. <paramref name="run"/> lance <c>claude</c> avec les arguments donnés et rend le code de retour et la sortie ;
 /// elle lève <see cref="Win32Exception"/> (ou <see cref="FileNotFoundException"/>) quand <c>claude</c> est introuvable.
-/// L'installation essaie <c>claude</c> dans le PATH, puis le CLI natif ou embarqué dans Claude Desktop s'il est introuvable.
+/// Chaque commande essaie <c>claude</c> dans le PATH, puis, s'il est introuvable, les exécutables de
+/// <paramref name="fallbackExecutables"/> (par défaut le CLI natif ou celui fourni par l'application Claude, voir <see cref="ClaudeCliLocator"/>).
 /// </summary>
 public sealed class QuotaModInstaller(
     Func<string, string, CancellationToken, Task<(int ExitCode, string Output)>> run, string? modsDir,
-    Func<IReadOnlyList<string>>? fallbackExecutables)
+    Func<IReadOnlyList<string>>? fallbackExecutables = null)
 {
-    public QuotaModInstaller(Func<string, string, CancellationToken, Task<(int ExitCode, string Output)>> run,
-        string? modsDir) : this(run, modsDir, null) { }
-
     /// <summary>Le mod, sous la forme <c>mod@marché</c> que demande <c>claude plugin</c>.</summary>
     public const string PluginName = "ashboard-quotas@ashboard-vision";
 
@@ -45,27 +43,11 @@ public sealed class QuotaModInstaller(
 
         try
         {
-            var executable = "claude";
-            Queue<string>? fallbacks = null;
+            var claude = ClaudeLauncher();
             foreach (var arguments in new[] { $"plugin marketplace add \"{modsDir}\"", $"plugin install {PluginName}" })
             {
-                var (exitCode, output) = await RunAsync(arguments);
+                var (exitCode, output) = await claude(arguments, ct);
                 if (exitCode != 0) return new ActionResult(false, "L'installation a échoué : " + Truncated(output));
-            }
-
-            async Task<(int ExitCode, string Output)> RunAsync(string arguments)
-            {
-                while (true)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    try { return await run(executable, arguments, ct); }
-                    catch (Exception e) when (e is FileNotFoundException || e is Win32Exception { NativeErrorCode: 2 or 3 })
-                    {
-                        fallbacks ??= new Queue<string>(FallbackExecutables);
-                        if (!fallbacks.TryDequeue(out var next)) throw;
-                        executable = next;
-                    }
-                }
             }
         }
         catch (Exception e) when (e is Win32Exception or FileNotFoundException)
@@ -84,7 +66,7 @@ public sealed class QuotaModInstaller(
     {
         try
         {
-            var (exitCode, output) = await run("claude", "plugin list --json", ct);
+            var (exitCode, output) = await ClaudeLauncher()("plugin list --json", ct);
             return exitCode == 0
                 ? new ActionResult(true, output)
                 : new ActionResult(false, "La liste des mods n'a pas pu être lue : " + Truncated(output));
@@ -105,9 +87,10 @@ public sealed class QuotaModInstaller(
         string? failure = null;
         try
         {
+            var claude = ClaudeLauncher();
             foreach (var arguments in new[] { $"plugin marketplace update {Marketplace}", $"plugin update {PluginName}" })
             {
-                var (exitCode, output) = await run("claude", arguments, ct);
+                var (exitCode, output) = await claude(arguments, ct);
                 if (exitCode != 0) failure ??= Truncated(output);
             }
         }
@@ -131,9 +114,10 @@ public sealed class QuotaModInstaller(
         string? failure = null;
         try
         {
+            var claude = ClaudeLauncher();
             foreach (var arguments in new[] { $"plugin uninstall {plugin}", $"plugin marketplace remove {marketplace}" })
             {
-                var (exitCode, output) = await run("claude", arguments, ct);
+                var (exitCode, output) = await claude(arguments, ct);
                 if (exitCode != 0) failure ??= Truncated(output);
             }
         }
@@ -145,6 +129,31 @@ public sealed class QuotaModInstaller(
         return failure is null
             ? new ActionResult(true, "Mod retiré de Claude Code.")
             : new ActionResult(false, "Le retrait a échoué : " + failure);
+    }
+
+    /// <summary>
+    /// Le lanceur d'une opération : essaie <c>claude</c> du PATH, puis, s'il est introuvable, chaque exécutable de repli dans l'ordre,
+    /// et garde le premier qui se lance pour les commandes suivantes de la même opération. Quand aucun ne se lance, la dernière
+    /// erreur remonte (l'appelant la rend en <see cref="ClaudeMissingMessage"/>).
+    /// </summary>
+    private Func<string, CancellationToken, Task<(int ExitCode, string Output)>> ClaudeLauncher()
+    {
+        var executable = "claude";
+        Queue<string>? fallbacks = null;
+        return async (arguments, ct) =>
+        {
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                try { return await run(executable, arguments, ct); }
+                catch (Exception e) when (e is FileNotFoundException || e is Win32Exception { NativeErrorCode: 2 or 3 })
+                {
+                    fallbacks ??= new Queue<string>(FallbackExecutables);
+                    if (!fallbacks.TryDequeue(out var next)) throw;
+                    executable = next;
+                }
+            }
+        };
     }
 
     private static string Truncated(string output)

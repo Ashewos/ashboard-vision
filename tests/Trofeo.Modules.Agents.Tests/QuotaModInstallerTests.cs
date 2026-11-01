@@ -298,5 +298,48 @@ public class QuotaModInstallerTests : IDisposable
         Assert.True((await installer.InstallAsync(CancellationToken.None)).Ok);
     }
 
+    // Les commandes du plan 6 (liste, mise à jour, retrait) cherchent Claude Code comme l'installation : sinon la préparation et
+    // la désinstallation diraient « introuvable » sur un PC où seule l'application Claude le fournit.
+    public static TheoryData<string> OtherCommands => ["list", "update", "uninstall"];
+
+    private static Task<Trofeo.ModuleKit.ActionResult> RunCommand(QuotaModInstaller installer, string command) => command switch
+    {
+        "list" => installer.ListAsync(CancellationToken.None),
+        "update" => installer.UpdateAsync(CancellationToken.None),
+        _ => installer.UninstallAsync(QuotaModInstaller.PluginName, QuotaModInstaller.Marketplace, CancellationToken.None),
+    };
+
+    [Theory]
+    [MemberData(nameof(OtherCommands))]
+    public async Task OtherCommands_PathMissing_UseBundledCli(string command)
+    {
+        var calls = new List<(string File, string Args)>();
+        var cli = Path.Combine(_mods, "desktop", "claude.exe");
+        var installer = new QuotaModInstaller((file, args, _) =>
+        {
+            calls.Add((file, args));
+            if (file == "claude") throw new Win32Exception(2);
+            return Task.FromResult((0, "[]"));
+        }, null, () => [cli]);
+
+        var result = await RunCommand(installer, command);
+
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal("claude", calls[0].File);
+        Assert.All(calls.Skip(1), call => Assert.Equal(cli, call.File));
+        Assert.Equal(command == "list" ? 2 : 3, calls.Count); // « claude » refusé, puis chaque commande avec le CLI trouvé
+    }
+
+    [Theory]
+    [MemberData(nameof(OtherCommands))]
+    public async Task OtherCommands_NoInstallationFound_SayClaudeMissing(string command)
+    {
+        var installer = new QuotaModInstaller((_, _, _) => throw new Win32Exception(2), null, () => []);
+
+        var result = await RunCommand(installer, command);
+
+        Assert.Equal(new ModuleKitResult(false, QuotaModInstaller.ClaudeMissingMessage), Convert(result));
+    }
+
     private static ModuleKitResult Convert(Trofeo.ModuleKit.ActionResult r) => new(r.Ok, r.Message);
 }
