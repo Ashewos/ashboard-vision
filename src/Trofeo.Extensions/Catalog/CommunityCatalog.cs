@@ -26,12 +26,18 @@ public sealed class CommunityCatalog(Func<ApprovedLoad> load)
 
     private readonly Func<ApprovedLoad> _load = load ?? throw new ArgumentNullException(nameof(load));
 
+    // Le dossier des modules de la dernière lecture réussie de la liste scellée.
+    private string? _lastGoodRoot;
+
     /// <summary>
     /// Les modules du dossier des modules (triés par identifiant), puis ceux des dossiers de développement si le mode
     /// développeur est allumé. Liste altérée : tout est à valider et le mode développeur est éteint. Liste illisible :
     /// les modules qu'il faudrait juger d'après les validations sont <see cref="CommunityState.Unavailable"/> et les
     /// dossiers de développement ne sont pas listés (le mode développeur est inconnu). Ne lève pas d'exception pour un
     /// dossier absent ou illisible.
+    /// Le dossier des modules vient de la dernière lecture réussie de la liste (ni altérée ni illisible), gardée en
+    /// mémoire : une liste altérée ou illisible ne dit plus où sont les modules (le magasin rend alors une liste vide).
+    /// Tant que ce processus n'a lu aucune liste valide, c'est le dossier par défaut.
     /// </summary>
     public IReadOnlyList<CommunityEntry> Scan()
     {
@@ -39,15 +45,26 @@ public sealed class CommunityCatalog(Func<ApprovedLoad> load)
         var modules = loaded.Tampered ? ApprovedModules.Empty : loaded.Modules;
         var judgement = new Judgement(modules, loaded.Unreadable);
 
-        // Seul le dossier à parcourir vient de la liste telle quelle (le magasin réel rend une liste vide si elle est
-        // altérée) ; les validations et le mode développeur, eux, ne sont jamais lus d'une liste altérée.
-        var entries = ScanInstalled(ModulesFolder.Resolve(loaded.Modules), judgement);
+        var entries = ScanInstalled(ResolveRoot(loaded), judgement);
         if (modules.DeveloperMode && !loaded.Tampered && !loaded.Unreadable)
         {
             entries.AddRange(ScanDevFolders(modules.DevFolders, entries));
         }
 
         return entries;
+    }
+
+    /// <summary>Le dossier à parcourir pour cette lecture ; retient celui d'une lecture réussie.</summary>
+    internal string ResolveRoot(ApprovedLoad loaded)
+    {
+        if (loaded.Tampered || loaded.Unreadable)
+        {
+            return Volatile.Read(ref _lastGoodRoot) ?? ModulesFolder.Default;
+        }
+
+        var root = ModulesFolder.Resolve(loaded.Modules);
+        Volatile.Write(ref _lastGoodRoot, root);
+        return root;
     }
 
     private readonly record struct Judgement(ApprovedModules Approvals, bool ApprovalsUnknown);

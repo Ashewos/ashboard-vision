@@ -45,8 +45,8 @@ public sealed class CommunityCatalogTests : IDisposable
     private ApprovedModules State(IEnumerable<ApprovedModule>? modules = null, bool developerMode = false, IEnumerable<DevFolder>? devFolders = null) =>
         new(ModulesRoot, developerMode, (devFolders ?? []).ToList(), (modules ?? []).ToList());
 
-    private static CommunityCatalog Catalog(ApprovedModules state, bool tampered = false, bool unreadable = false) =>
-        new(() => new ApprovedLoad(state, tampered, unreadable));
+    private static CommunityCatalog Catalog(ApprovedModules state) =>
+        new(() => new ApprovedLoad(state, Tampered: false));
 
     [Fact]
     public void Scan_ApprovedAndUnchanged_IsReady()
@@ -163,10 +163,14 @@ public sealed class CommunityCatalogTests : IDisposable
         var dev = Path.Combine(_root, "dev");
         Directory.CreateDirectory(dev);
         File.WriteAllText(Path.Combine(dev, "manifest.json"), Manifest("alex.dev", "0.1.0"));
-        // Même une liste altérée qui dirait « tout est validé, mode développeur allumé » ne compte pas.
         var state = State([Approve("alex.demo", "1.0.0", directory)], developerMode: true, [new DevFolder(dev, [])]);
+        // Après une lecture valide, une liste altérée (rendue vide par le magasin) ne valide ni ne développe rien.
+        var (catalog, next) = Sequenced();
+        next(new ApprovedLoad(state, Tampered: false));
+        catalog.Scan();
+        next(new ApprovedLoad(ApprovedModules.Empty, Tampered: true));
 
-        var entries = Catalog(state, tampered: true).Scan();
+        var entries = catalog.Scan();
 
         var entry = Assert.Single(entries);
         Assert.Equal(CommunityState.NeedsApproval, entry.State);
@@ -184,7 +188,12 @@ public sealed class CommunityCatalogTests : IDisposable
         File.WriteAllText(Path.Combine(dev, "manifest.json"), Manifest("alex.dev", "0.1.0"));
         var state = State([Approve("alex.demo", "1.0.0", directory)], developerMode: true, [new DevFolder(dev, [])]);
 
-        var entries = Catalog(state, unreadable: true).Scan();
+        var (catalog, next) = Sequenced();
+        next(new ApprovedLoad(state, Tampered: false));
+        catalog.Scan();
+        next(new ApprovedLoad(ApprovedModules.Empty, Tampered: false, Unreadable: true));
+
+        var entries = catalog.Scan();
 
         Assert.Equal(["alex.casse", "alex.demo", "alex.vieux"], entries.Select(e => e.Id).ToArray());
         Assert.DoesNotContain(entries, e => e.FromDevFolder);
@@ -195,6 +204,72 @@ public sealed class CommunityCatalogTests : IDisposable
         // Ce qui ne dépend pas des validations reste jugé comme d'habitude.
         Assert.Equal(CommunityState.Invalid, entries.Single(e => e.Id == "alex.casse").State);
         Assert.Equal(CommunityState.TooOld, entries.Single(e => e.Id == "alex.vieux").State);
+    }
+
+    /// <summary>Un catalogue dont la lecture de la liste change d'un scan à l'autre (le magasin réel rend <see cref="ApprovedModules.Empty"/> si elle est altérée ou illisible).</summary>
+    private static (CommunityCatalog Catalog, Action<ApprovedLoad> Next) Sequenced()
+    {
+        ApprovedLoad current = new(ApprovedModules.Empty, Tampered: false);
+        return (new CommunityCatalog(() => current), load => current = load);
+    }
+
+    [Fact]
+    public void Scan_UnreadableStoreAfterGoodLoad_KeepsCustomRootAndIsUnavailable()
+    {
+        var directory = Install("alex.demo", "1.0.0");
+        var (catalog, next) = Sequenced();
+        next(new ApprovedLoad(State([Approve("alex.demo", "1.0.0", directory)]), Tampered: false));
+        Assert.Equal(CommunityState.Ready, Assert.Single(catalog.Scan()).State);
+
+        next(new ApprovedLoad(ApprovedModules.Empty, Tampered: false, Unreadable: true));
+        var entry = Assert.Single(catalog.Scan());
+
+        Assert.Equal(directory, entry.Directory);
+        Assert.Equal(CommunityState.Unavailable, entry.State);
+        Assert.Equal("Liste des modules validés illisible pour le moment : réessaie dans un instant.", entry.Message);
+    }
+
+    [Fact]
+    public void Scan_TamperedStoreAfterGoodLoad_KeepsCustomRootAndNeedsApproval()
+    {
+        var directory = Install("alex.demo", "1.0.0");
+        var (catalog, next) = Sequenced();
+        next(new ApprovedLoad(State([Approve("alex.demo", "1.0.0", directory)]), Tampered: false));
+        catalog.Scan();
+
+        next(new ApprovedLoad(ApprovedModules.Empty, Tampered: true));
+        var entry = Assert.Single(catalog.Scan());
+
+        Assert.Equal(directory, entry.Directory);
+        Assert.Equal(CommunityState.NeedsApproval, entry.State);
+        Assert.Null(entry.Approval);
+    }
+
+    [Fact]
+    public void Scan_GoodLoadChangesRoot_LaterBadLoadUsesTheNewestGoodRoot()
+    {
+        var directory = Install("alex.demo", "1.0.0");
+        var (catalog, next) = Sequenced();
+        next(new ApprovedLoad(State(), Tampered: false));
+        catalog.Scan();
+        // L'utilisateur change de dossier : la dernière lecture réussie fait foi.
+        next(new ApprovedLoad(State() with { ModulesRoot = Path.Combine(_root, "autre") }, Tampered: false));
+        catalog.Scan();
+        next(new ApprovedLoad(ApprovedModules.Empty, Tampered: true));
+
+        Assert.Empty(catalog.Scan());
+        Assert.True(Directory.Exists(directory));
+    }
+
+    [Fact]
+    public void ResolveRoot_NoGoodLoadYet_UsesDefaultWithoutScanningIt()
+    {
+        var catalog = Catalog(State());
+
+        Assert.Equal(ModulesFolder.Default, catalog.ResolveRoot(new ApprovedLoad(ApprovedModules.Empty, Tampered: true)));
+        Assert.Equal(ModulesFolder.Default, catalog.ResolveRoot(new ApprovedLoad(ApprovedModules.Empty, Tampered: false, Unreadable: true)));
+        Assert.Equal(ModulesRoot, catalog.ResolveRoot(new ApprovedLoad(State(), Tampered: false)));
+        Assert.Equal(ModulesRoot, catalog.ResolveRoot(new ApprovedLoad(ApprovedModules.Empty, Tampered: true)));
     }
 
     [Fact]
