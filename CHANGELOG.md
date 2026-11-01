@@ -2,6 +2,12 @@
 
 Les versions sont numérotées selon [SemVer](https://semver.org/lang/fr/) : les bêtas s'écrivent `1.0.0-beta.N`, les stables `1.0.0`, `1.1.0`, etc. Le texte de chaque section sert de notes à la version GitHub du même numéro.
 
+## 1.0.0-beta.2
+
+Deuxième bêta, surtout pour essayer la mise à jour depuis la bêta 1.
+
+- L'ancien dossier `Program Files\trofeo-HB-dashboard`, resté vide après le passage à Ashboard Vision, est maintenant retiré.
+
 ## 1.0.0-beta.1
 
 Première bêta publique. Le projet, qui s'appelait trofeo-HB-dashboard, devient Ashboard Vision.
