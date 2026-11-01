@@ -1,6 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Le SDK des modules de la communauté. Pour l'instant : les permissions ; le reste (classe de base,
-       thème, réglages) arrive avec l'hôte de module. Numéroté à part du logiciel (voir la conception, 5.6). -->
+  <!-- Le SDK des modules de la communauté : la classe de base, les services que le logiciel offre à un module, les permissions.
+       Numéroté à part du logiciel (voir la conception, 5.6) : AssemblyVersion reste 1.0.0.0 pour toute la ligne 1.x, de sorte
+       qu'un module compilé contre la 1.0 se lie à l'assemblage de l'hôte quelle que soit sa version mineure. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
+  </ItemGroup>
+
+  <!-- La construction des services d'un module et le lien d'une instance avec son hôte restent internes (API publique minimale). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Trofeo.ModuleHost" />
+    <InternalsVisibleTo Include="AshboardVision.Sdk.Testing" />
+  </ItemGroup>
 
 </Project>

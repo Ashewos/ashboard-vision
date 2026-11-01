@@ -12,11 +12,13 @@ using System.Runtime.InteropServices;
 //   sleep <ms>          attend, puis répond OK
 //   alloc <Mo>          alloue (mémoire native) et touche ce nombre de Mio
 //   allocgc <Mo>        pareil avec la mémoire gérée de .NET (celle d'un vrai module)
+//   churn <Mo> <Mo> [Kio]  alloue <Mo> au total par blocs (1024 Kio par défaut) jetés aussitôt, en gardant le second nombre de Mio vivants
+//                       (un module qui produit beaucoup de déchets : le ramasse-miettes doit suivre sans dépasser la limite)
 // Affiche « OK » ou « DENIED <code> » et se termine par 0 dans les deux cas ; un code de sortie non nul ne
 // veut dire qu'un mauvais appel (ou, pour alloc, un processus arrêté par Windows avant d'avoir répondu).
 if (args.Length < 2)
 {
-    Console.Error.WriteLine("Usage : Trofeo.SandboxProbe <read|write|tcp|spawn|env|sleep|alloc|allocgc> <argument> [port]");
+    Console.Error.WriteLine("Usage : Trofeo.SandboxProbe <read|write|tcp|spawn|env|sleep|alloc|allocgc|churn> <argument> [port]");
     return 2;
 }
 
@@ -93,6 +95,9 @@ try
             }
 
             break;
+        case "churn" when args.Length >= 3:
+            Churn(long.Parse(args[1]), long.Parse(args[2]), args.Length >= 4 ? int.Parse(args[3]) : 1024);
+            break;
         default:
             Console.Error.WriteLine("Action inconnue : " + args[0]);
             return 2;
@@ -108,6 +113,35 @@ catch (Exception e) when (e is not OutOfMemoryException)
 }
 
 return 0;
+
+static void Churn(long totalMebibytes, long liveMebibytes, int blockKibibytes)
+{
+    var live = new List<byte[]>();
+    for (var i = 0; i < liveMebibytes; i++)
+    {
+        live.Add(Touched(1024));
+    }
+
+    byte[]? last = null;
+    for (var i = 0; i < totalMebibytes * 1024 / blockKibibytes; i++)
+    {
+        last = Touched(blockKibibytes); // jeté au tour suivant : de la mémoire de courte durée
+    }
+
+    GC.KeepAlive(last);
+    GC.KeepAlive(live);
+}
+
+static byte[] Touched(int kibibytes)
+{
+    var block = new byte[kibibytes * 1024];
+    for (var j = 0; j < block.Length; j += 4096)
+    {
+        block[j] = 1;
+    }
+
+    return block;
+}
 
 static int CodeOf(Exception e) => e switch
 {

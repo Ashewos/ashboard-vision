@@ -224,7 +224,20 @@ public sealed class SandboxTests : IDisposable
         Assert.True(run.Usage.MemoryLimitHit);
     }
 
+    // Décision de la tâche 7 (R13), mesurée : l'hôte de module a le même System.GC.HeapHardLimit que la sonde (voir son
+    // runtimeconfig.template.json). Un module qui produit beaucoup de déchets (2,5 Go de blocs d'un Mio jetés aussitôt, 100 Mio
+    // vivants) doit survivre : le ramasse-miettes suit, sans que la limite du job ne soit touchée.
     [WindowsSandboxFact]
+    public async Task Probe_ManagedChurn_StaysAliveUnderTheJobLimit()
+    {
+        var run = await RunProbeAsync(["churn", "2500", "100"], None);
+
+        Assert.Equal("OK", run.Output);
+        Assert.Equal(0, run.ExitCode);
+        Assert.False(run.Usage.MemoryLimitHit, $"pic {run.Usage.PeakProcessMemory / 1048576} Mo");
+        Assert.True(run.Usage.PeakProcessMemory < ModuleJob.MemoryLimit);
+    }
+
     public async Task Probe_ManagedMemoryOverLimit_IsKilled()
     {
         var run = await RunProbeAsync(["allocgc", "700"], None);

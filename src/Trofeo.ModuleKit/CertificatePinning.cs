@@ -1,9 +1,9 @@
 using System.Net.Security;
 
-namespace Trofeo.Modules.Network;
+namespace Trofeo.ModuleKit;
 
 /// <summary>
-/// Épinglage du certificat de la console UniFi. Une console locale présente un certificat qu'aucune autorité ne
+/// Épinglage d'un certificat « maison » (console UniFi, serveur local d'un module de la communauté). Un appareil local présente un certificat qu'aucune autorité ne
 /// signe : on retient l'empreinte du premier vu, puis on refuse tout autre.
 /// </summary>
 public static class CertificatePinning

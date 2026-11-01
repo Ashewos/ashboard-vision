@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Un module de la communauté pour tester l'hôte (Trofeo.ModuleHost.Tests le copie dans le sous-dossier « sample » de sa
+       sortie). Ses copies du SDK, de ModuleKit et de SkiaSharp restent à côté de la DLL exprès : l'hôte doit les ignorer. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestSupportLibrary>true</IsTestSupportLibrary>
+    <!-- Comme un module publié : ses dépendances (SkiaSharp compris) sont à côté de sa DLL. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>
