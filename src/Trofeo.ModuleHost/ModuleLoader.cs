@@ -91,6 +91,22 @@ internal static class ModuleLoader
         return new LoadedModule(moduleType, RequiredSdkOf(assembly));
     }
 
+    /// <summary>
+    /// Le fichier <c>nom.dll</c> d'une dépendance dans le dossier du module, s'il existe. Le nom vient des métadonnées du module :
+    /// un nom qui porte un séparateur ou <c>..</c> (donc qui sortirait du dossier) ne donne jamais de chemin.
+    /// </summary>
+    internal static string? ResolveDependency(string directory, string name)
+    {
+        if (name.Length == 0 || name.AsSpan().IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.Contains("..", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)) + Path.DirectorySeparatorChar;
+        var candidate = Path.GetFullPath(Path.Combine(root, name + ".dll"));
+        return candidate.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(candidate) ? candidate : null;
+    }
+
     /// <summary>La version du SDK contre laquelle le module a été compilé, sous la forme <c>majeur.mineur</c>.</summary>
     private static string RequiredSdkOf(Assembly module)
     {
@@ -143,8 +159,7 @@ internal static class ModuleLoader
                 return null; // .NET et l'hôte : la résolution normale, jamais une copie du dossier du module
             }
 
-            var candidate = Path.Combine(_directory, name + ".dll");
-            return File.Exists(candidate) ? LoadFromAssemblyPath(candidate) : null;
+            return ResolveDependency(_directory, name) is { } candidate ? LoadFromAssemblyPath(candidate) : null;
         }
     }
 }

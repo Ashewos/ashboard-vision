@@ -8,7 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Trofeo.Extensions\Trofeo.Extensions.csproj" />
-    <ProjectReference Include="..\..\src\Trofeo.ModuleHost\Trofeo.ModuleHost.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\Trofeo.ModuleHost\Trofeo.ModuleHost.csproj" />
     <ProjectReference Include="..\Trofeo.ModuleHost.Tests.SampleModule\Trofeo.ModuleHost.Tests.SampleModule.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\Trofeo.ModuleHost.Tests.TwoClassesModule\Trofeo.ModuleHost.Tests.TwoClassesModule.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>

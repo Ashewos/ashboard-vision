@@ -248,7 +248,7 @@ internal sealed class HostSession
         IReadOnlyList<LookupResult> results = [];
         try
         {
-            await WithModuleAsync(EmptySettings, async (module, ct) =>
+            await WithModuleAsync(EmptySettings, Guid.Empty, async (module, ct) =>
             {
                 var found = await module.LookupAsync(lookup.FieldKey, lookup.Query, ct).ConfigureAwait(false);
                 results = found is null ? [] : [.. found.Where(r => r is not null).Select(Sanitize)];
@@ -260,7 +260,7 @@ internal sealed class HostSession
             results = [];
         }
 
-        _link.Post(new LookupReply(lookup.Id, results));
+        _link.Post(new LookupReply(lookup.Id, results), new LookupReply(lookup.Id, []));
     }
 
     private async Task AnswerActionAsync(RunAction action)
@@ -268,7 +268,7 @@ internal sealed class HostSession
         var result = new ActionResult(false, "Erreur du module.");
         try
         {
-            await WithModuleAsync(action.Settings.ValueKind == JsonValueKind.Object ? action.Settings : EmptySettings, async (module, ct) =>
+            await WithModuleAsync(action.Settings.ValueKind == JsonValueKind.Object ? action.Settings : EmptySettings, action.InstanceId, async (module, ct) =>
             {
                 var done = await module.RunActionAsync(action.ActionKey, ct).ConfigureAwait(false);
                 if (done is not null)
@@ -282,7 +282,7 @@ internal sealed class HostSession
             ReportSettingsFailure("l'action", ex);
         }
 
-        _link.Post(new ActionReply(action.Id, result));
+        _link.Post(new ActionReply(action.Id, result), new ActionReply(action.Id, new ActionResult(false, "La réponse du module est trop grosse : raccourcis-la.")));
     }
 
     /// <summary>Un résultat que le protocole sait écrire et lire : texte non nul, valeur JSON présente.</summary>
@@ -290,9 +290,9 @@ internal sealed class HostSession
         new(HostLink.Clip(result.Label), result.Value.ValueKind == JsonValueKind.Undefined ? JsonNull : result.Value);
 
     /// <summary>Crée une instance à part (sans <c>StartAsync</c>), lui fait faire un travail, puis la libère.</summary>
-    private async Task WithModuleAsync(JsonElement settings, Func<CommunityModule, CancellationToken, Task> work)
+    private async Task WithModuleAsync(JsonElement settings, Guid instanceId, Func<CommunityModule, CancellationToken, Task> work)
     {
-        var module = _context!.CreateModule(settings, new HostLog(_link, "[réglages] "), HostBackend.Detached(_link, Guid.Empty));
+        var module = _context!.CreateModule(settings, new HostLog(_link, "[réglages] "), HostBackend.Detached(_link, instanceId));
         try
         {
             await work(module, _stop.Token).ConfigureAwait(false);
@@ -365,7 +365,7 @@ internal sealed class HostSession
         {
             await Task.WhenAll(closing.Concat(pending)).WaitAsync(Patience).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception ex) when (!ModuleGuard.CrashIfFatal(ex))
         {
             // une instance qui ne se laisse pas fermer n'empêche pas l'hôte de s'arrêter : le processus finit de toute façon
         }

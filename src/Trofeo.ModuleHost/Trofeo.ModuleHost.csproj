@@ -24,4 +24,8 @@
     <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Trofeo.ModuleHost.Tests" />
+  </ItemGroup>
+
 </Project>

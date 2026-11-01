@@ -310,6 +310,105 @@ public sealed class HostProcessTests
     }
 
     [WindowsHostFact]
+    public async Task Host_OutOfMemoryInTheConstructor_CrashesTheHost()
+    {
+        // Activator.CreateInstance enveloppe l'exception dans une TargetInvocationException : elle doit tout de même tuer l'hôte.
+        await using var rig = HostRig.Start(environment: new Dictionary<string, string> { ["SAMPLE_OOM_CTOR"] = "1" });
+        await rig.SendSampleHelloAsync();
+        await rig.WaitAsync<Ready>();
+
+        await rig.OpenAsync();
+
+        Assert.Equal(unchecked((int)0xE0434352), await rig.WaitForExitAsync());
+        Assert.Empty(rig.Of<Status>());
+    }
+
+    [WindowsHostFact]
+    public async Task Host_RenderThrowsOnce_RecoversWithoutInvalidate()
+    {
+        await using var rig = await StartedAsync();
+
+        var instance = await rig.OpenAsync("""{"mode":"throwOnce"}""");
+
+        var error = await rig.WaitAsync<Status>(s => s.InstanceId == instance.Id);
+        Assert.Equal((ModuleHealth.Offline, "Erreur du module"), (error.Health, error.Message));
+        // Sans que le module ne redemande quoi que ce soit : un nouvel essai après le délai d'une seconde réussit.
+        var frame = await rig.WaitAsync<Frame>(f => f.InstanceId == instance.Id, TimeSpan.FromSeconds(10));
+        await rig.WaitUntilAsync(() => rig.Of<Status>().Count(s => s.InstanceId == instance.Id) == 2);
+        Assert.Equal(ModuleHealth.Online, rig.Of<Status>().Last(s => s.InstanceId == instance.Id).Health);
+        using var bitmap = instance.Read(frame.Buffer);
+        Assert.Equal(SKColors.Red, bitmap.GetPixel(5, 5));
+    }
+
+    [WindowsHostFact]
+    public async Task Host_LookupReplyTooBigForAFrame_AnswersEmptyInsteadOfNothing()
+    {
+        await using var rig = await StartedAsync();
+
+        await rig.SendAsync(new Lookup(21, "repo", "huge"));
+        await rig.SendAsync(new Lookup(22, "repo", "ok"));
+
+        Assert.Empty((await rig.WaitAsync<LookupReply>(r => r.Id == 21)).Results);
+        Assert.Single((await rig.WaitAsync<LookupReply>(r => r.Id == 22)).Results);
+    }
+
+    [WindowsHostFact]
+    public async Task Host_RunActionConnectingToThisComputer_CarriesTheInstanceId()
+    {
+        await using var rig = HostRig.Start();
+        rig.Handler = async message =>
+        {
+            if (message is LocalConnect connect)
+            {
+                await rig.SendAsync(new LocalRefused(connect.Id, "Port non autorisé"));
+            }
+        };
+        await rig.SendSampleHelloAsync([ModulePermission.ThisComputer]);
+        await rig.WaitAsync<Ready>();
+        var instance = Guid.NewGuid();
+        using var settings = JsonDocument.Parse("""{"mode":"réglé"}""");
+
+        await rig.SendAsync(new RunAction(5, instance, "connect", settings.RootElement.Clone()));
+
+        var reply = await rig.WaitAsync<ActionReply>(r => r.Id == 5);
+        Assert.Equal(new ActionResult(false, "connect:Denied"), reply.Result);
+        Assert.Equal(instance, Assert.Single(rig.Of<LocalConnect>()).InstanceId);
+    }
+
+    [WindowsHostTheory]
+    [InlineData("http://localhost:4321/", true, 4321)]
+    [InlineData("http://LOCALHOST:4322/", true, 4322)]
+    [InlineData("http://127.0.0.1:4323/", true, 4323)]
+    [InlineData("http://[::1]:4324/", true, 4324)]
+    [InlineData("http://nom-inexistant.invalid:4325/", false, 0)]
+    [InlineData("http://[::ffff:127.0.0.1]:1/", false, 0)]
+    public async Task HttpClient_OnlyTheAddressesOfThisComputerGoThroughTheRelay(string url, bool relayed, int port)
+    {
+        await using var rig = HostRig.Start();
+        rig.Handler = async message =>
+        {
+            if (message is LocalConnect connect)
+            {
+                await rig.SendAsync(new LocalRefused(connect.Id, "Port non autorisé"));
+            }
+        };
+        await rig.SendSampleHelloAsync([ModulePermission.ThisComputer, ModulePermission.Internet]);
+        await rig.WaitAsync<Ready>();
+
+        await rig.OpenAsync(JsonSerializer.Serialize(new { mode = "http", url }));
+
+        await rig.WaitForLogAsync("http-error:");
+        if (relayed)
+        {
+            Assert.Equal(port, Assert.Single(rig.Of<LocalConnect>()).Port);
+        }
+        else
+        {
+            Assert.Empty(rig.Of<LocalConnect>());
+        }
+    }
+
+    [WindowsHostFact]
     public async Task Host_OutOfMemoryInRender_CrashesTheHost()
     {
         await using var rig = await StartedAsync();

@@ -14,7 +14,7 @@ internal sealed class HostLink : IAsyncDisposable
     public const int MaxTextLength = 2000;
 
     private readonly MessageChannel _channel;
-    private readonly Channel<HostMessage> _outbox = Channel.CreateUnbounded<HostMessage>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<(HostMessage Message, HostMessage? Fallback)> _outbox = Channel.CreateUnbounded<(HostMessage, HostMessage?)>(new UnboundedChannelOptions { SingleReader = true });
     private readonly ConcurrentDictionary<int, TaskCompletionSource<HostMessage>> _pending = new();
     private readonly Task _writer;
     private int _nextId;
@@ -26,7 +26,13 @@ internal sealed class HostLink : IAsyncDisposable
     }
 
     /// <summary>Met un message dans la file d'envoi. Sans effet une fois la file fermée.</summary>
-    public void Post(HostMessage message) => _outbox.Writer.TryWrite(message);
+    public void Post(HostMessage message) => _outbox.Writer.TryWrite((message, null));
+
+    /// <summary>
+    /// Comme <see cref="Post(HostMessage)"/>, avec un message de remplacement court pour le cas où le premier ne peut pas s'écrire
+    /// (réponse de plus d'1 Mio, JSON invalide) : celui qui attend la réponse la reçoit au lieu d'attendre son délai.
+    /// </summary>
+    public void Post(HostMessage message, HostMessage fallback) => _outbox.Writer.TryWrite((message, fallback));
 
     /// <summary>
     /// Envoie la demande construite avec un numéro neuf et attend la réponse portant ce numéro. Lève
@@ -87,20 +93,36 @@ internal sealed class HostLink : IAsyncDisposable
     public static string Clip(string? text) =>
         text is null ? "" : text.Length <= MaxTextLength ? text : string.Concat(text.AsSpan(0, MaxTextLength), "…");
 
+    /// <summary>
+    /// Envoie un message. Faux s'il ne s'écrit pas (trop gros pour une trame, valeur JSON vide venue d'un module) : il est perdu, mais
+    /// l'écriture des autres ne s'arrête jamais. Un tube fermé (<see cref="IOException"/>, <see cref="ObjectDisposedException"/>) remonte.
+    /// </summary>
+    private async Task<bool> TrySendAsync(HostMessage message)
+    {
+        try
+        {
+            await _channel.SendAsync(message, CancellationToken.None).ConfigureAwait(false);
+            return true;
+        }
+        catch (ObjectDisposedException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException or System.Text.Json.JsonException)
+        {
+            return false;
+        }
+    }
+
     private async Task WriteAsync()
     {
         try
         {
-            await foreach (var message in _outbox.Reader.ReadAllAsync().ConfigureAwait(false))
+            await foreach (var (message, fallback) in _outbox.Reader.ReadAllAsync().ConfigureAwait(false))
             {
-                try
+                if (!await TrySendAsync(message).ConfigureAwait(false) && fallback is not null)
                 {
-                    await _channel.SendAsync(message, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException or System.Text.Json.JsonException)
-                {
-                    // Un message qui ne s'écrit pas (trop gros pour une trame, valeur JSON vide venue d'un module) est perdu ;
-                    // les textes d'un module sont raccourcis et ses résultats assainis, mais l'écriture des autres ne s'arrête jamais.
+                    await TrySendAsync(fallback).ConfigureAwait(false);
                 }
             }
         }

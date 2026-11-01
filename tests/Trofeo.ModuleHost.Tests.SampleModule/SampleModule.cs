@@ -15,6 +15,16 @@ public sealed class SampleModule : CommunityModule
     private SKColor _color = SKColors.Red;
     private int _frames;
 
+    private bool _thrown;
+
+    public SampleModule()
+    {
+        if (Environment.GetEnvironmentVariable("SAMPLE_OOM_CTOR") == "1")
+        {
+            throw new OutOfMemoryException();
+        }
+    }
+
     public override bool IsAnimating => _mode == "animated" && !_stopped;
 
     private volatile bool _stopped;
@@ -83,7 +93,16 @@ public sealed class SampleModule : CommunityModule
             case "http":
             {
                 using var http = Services.CreateHttpClient();
-                Services.Log.Info("http:" + await http.GetStringAsync("http://localhost:1234/", ct));
+                var url = Services.Settings.TryGetProperty("url", out var u) && u.GetString() is { } text ? text : "http://localhost:1234/";
+                try
+                {
+                    Services.Log.Info("http:" + await http.GetStringAsync(url, ct));
+                }
+                catch (HttpRequestException ex)
+                {
+                    Services.Log.Info("http-error:" + ex.GetType().Name);
+                }
+
                 break;
             }
 
@@ -123,6 +142,12 @@ public sealed class SampleModule : CommunityModule
             throw new OutOfMemoryException();
         }
 
+        if (_mode == "throwOnce" && _frames == 0 && !_thrown)
+        {
+            _thrown = true;
+            throw new InvalidOperationException("boom unique");
+        }
+
         if (_mode == "throwRender")
         {
             throw new InvalidOperationException("boom au dessin");
@@ -141,6 +166,12 @@ public sealed class SampleModule : CommunityModule
 
     public override Task<IReadOnlyList<LookupResult>> LookupAsync(string fieldKey, string query, CancellationToken ct)
     {
+        if (query == "huge")
+        {
+            // Plus d'1 Mio de réponse : le protocole ne sait pas l'écrire.
+            return Task.FromResult<IReadOnlyList<LookupResult>>([.. Enumerable.Range(0, 800).Select(i => new LookupResult(new string('x', 2000), default))]);
+        }
+
         if (query == "boom")
         {
             throw new InvalidOperationException("boom de la recherche");
@@ -150,10 +181,16 @@ public sealed class SampleModule : CommunityModule
         return Task.FromResult<IReadOnlyList<LookupResult>>([new LookupResult("Résultat " + query, document.RootElement.Clone())]);
     }
 
-    public override Task<ActionResult> RunActionAsync(string actionKey, CancellationToken ct)
+    public override async Task<ActionResult> RunActionAsync(string actionKey, CancellationToken ct)
     {
+        if (actionKey == "connect")
+        {
+            var result = await Services.ConnectLocalAsync(1234, ct);
+            return new ActionResult(result.Status == DataStatus.Ok, "connect:" + result.Status);
+        }
+
         var mode = Services.Settings.ValueKind == JsonValueKind.Object && Services.Settings.TryGetProperty("mode", out var m) ? m.GetString() : "?";
-        return Task.FromResult(new ActionResult(actionKey != "echec", $"action {actionKey} avec {mode}"));
+        return new ActionResult(actionKey != "echec", $"action {actionKey} avec {mode}");
     }
 
     public override ValueTask DisposeAsync()

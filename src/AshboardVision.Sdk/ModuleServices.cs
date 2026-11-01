@@ -65,8 +65,9 @@ public sealed class ModuleServices
 
     /// <summary>
     /// Ouvre une connexion vers un service lancé sur ce PC (le relais passe par le logiciel, car Windows interdit à un module
-    /// enfermé de joindre <c>localhost</c>). Le port doit être la valeur d'un champ <c>port</c> des réglages de cette case, et la
-    /// permission « Cet ordinateur » doit être accordée ; sinon (ou si le port n'est pas entre 1 et 65535) le résultat est <see cref="DataStatus.Denied"/>. Le flux
+    /// enfermé de joindre <c>localhost</c>). Le SDK ne vérifie que la permission « Cet ordinateur » et un port entre 1 et 65535 ; sinon le
+    /// résultat est <see cref="DataStatus.Denied"/>. C'est le <b>service</b> qui vérifie ensuite que le port est la valeur d'un champ
+    /// <c>port</c> des réglages de cette case et qui, sinon, refuse (<see cref="DataStatus.Denied"/> aussi). Le flux
     /// renvoyé se lit et s'écrit comme une connexion TCP ; le fermer ferme la connexion.
     /// </summary>
     public Task<DataResult<Stream>> ConnectLocalAsync(int port, CancellationToken ct) =>

@@ -306,6 +306,7 @@ internal sealed class InstanceRenderer : IAsyncDisposable
                 lock (_gate)
                 {
                     _busy[buffer] = false;
+                    _dirty = true; // la demande n'a pas été satisfaite : un nouvel essai suivra, après le délai, sans que le module ait à la renouveler
                     _cooldownUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency; // pas plus d'un essai par seconde après une panne
                 }
             }

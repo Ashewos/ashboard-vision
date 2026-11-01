@@ -47,17 +47,22 @@ internal sealed class HostRig : IAsyncDisposable
 
     public static string SampleFolder => Path.Combine(BaseFolder, "sample");
 
-    public static HostRig Start(string? hostExe = null)
+    public static HostRig Start(string? hostExe = null, IReadOnlyDictionary<string, string>? environment = null)
     {
         var toHost = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
         var fromHost = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
         var exe = hostExe ?? Path.Combine(BaseFolder, "host", "Trofeo.ModuleHost.exe");
-        var process = Process.Start(new ProcessStartInfo(exe,
-            $"--in {toHost.GetClientHandleAsString()} --out {fromHost.GetClientHandleAsString()}")
+        var startInfo = new ProcessStartInfo(exe, $"--in {toHost.GetClientHandleAsString()} --out {fromHost.GetClientHandleAsString()}")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
-        })!;
+        };
+        foreach (var (name, value) in environment ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[name] = value;
+        }
+
+        var process = Process.Start(startInfo)!;
         toHost.DisposeLocalCopyOfClientHandle();
         fromHost.DisposeLocalCopyOfClientHandle();
         return new HostRig(process, toHost, fromHost);

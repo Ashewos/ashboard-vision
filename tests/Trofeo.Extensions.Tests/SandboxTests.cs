@@ -238,6 +238,7 @@ public sealed class SandboxTests : IDisposable
         Assert.True(run.Usage.PeakProcessMemory < ModuleJob.MemoryLimit);
     }
 
+    [WindowsSandboxFact]
     public async Task Probe_ManagedMemoryOverLimit_IsKilled()
     {
         var run = await RunProbeAsync(["allocgc", "700"], None);

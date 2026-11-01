@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.ExceptionServices;
 
 namespace Trofeo.ModuleHost;
@@ -10,17 +11,41 @@ namespace Trofeo.ModuleHost;
 internal static class ModuleGuard
 {
     /// <summary>
-    /// Si l'exception est fatale (mémoire épuisée), la relance sur un fil du pool où personne ne la rattrape : le processus
+    /// Si l'exception est fatale (mémoire épuisée, même enveloppée dans une <see cref="TargetInvocationException"/> du constructeur
+    /// ou une <see cref="AggregateException"/>), la relance sur un fil du pool où personne ne la rattrape : le processus
     /// s'arrête (code 0xE0434352), même quand l'appelant n'est qu'une tâche dont on n'observe pas l'échec. Renvoie vrai dans ce cas.
     /// </summary>
     public static bool CrashIfFatal(Exception exception)
     {
-        if (exception is not OutOfMemoryException)
+        if (FindFatal(exception) is not { } fatal)
         {
             return false;
         }
 
-        ThreadPool.UnsafeQueueUserWorkItem(static state => ExceptionDispatchInfo.Capture((Exception)state!).Throw(), exception, preferLocal: false);
+        ThreadPool.UnsafeQueueUserWorkItem(static state => ExceptionDispatchInfo.Capture((Exception)state!).Throw(), fatal, preferLocal: false);
         return true;
+    }
+
+    private static OutOfMemoryException? FindFatal(Exception? exception)
+    {
+        switch (exception)
+        {
+            case OutOfMemoryException memory:
+                return memory;
+            case AggregateException aggregate:
+                foreach (var inner in aggregate.InnerExceptions)
+                {
+                    if (FindFatal(inner) is { } found)
+                    {
+                        return found;
+                    }
+                }
+
+                return null;
+            case TargetInvocationException invocation:
+                return FindFatal(invocation.InnerException);
+            default:
+                return null;
+        }
     }
 }
