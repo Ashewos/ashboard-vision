@@ -2,6 +2,23 @@
 
 Les versions sont numérotées selon [SemVer](https://semver.org/lang/fr/) : les bêtas s'écrivent `1.0.0-beta.N`, les stables `1.0.0`, `1.1.0`, etc. Le texte de chaque section sert de notes à la version GitHub du même numéro.
 
+## 1.0.0
+
+Première version stable d'Ashboard Vision. Elle réunit tout ce que les quatre bêtas ont apporté (voir leurs sections ci-dessous) :
+
+- un installateur Windows qui installe tout, propose le démarrage avec Windows et se désinstalle proprement, en gardant tes réglages ou en les effaçant ;
+- les mises à jour depuis GitHub en un clic, sur le canal de ton choix (Stable ou Bêta), vérifiées par leur empreinte SHA-256 ;
+- le passage de trofeo-HB-dashboard à Ashboard Vision, réglages compris ;
+- le mod des quotas de Claude Code, installé même quand Claude Code n'est fourni que par l'application Claude.
+
+Si tu as mis à jour depuis la bêta 2 ou une plus ancienne sans redémarrer Windows depuis, le service tourne peut-être encore en administrateur : un redémarrage de Windows suffit à le remettre avec tes droits normaux.
+
+## 1.0.0-beta.4
+
+- Le mod des quotas s'installe aussi quand Claude Code n'est fourni que par l'application Claude, sans commande `claude` dans le PATH. Merci à Macorou pour ce correctif !
+- La mise à jour du mod à chaque nouvelle version et son retrait à la désinstallation trouvent aussi ce Claude Code.
+- Depuis la bêta 3, une mise à jour en un clic relance le service avec tes droits normaux : cette version est la première à le montrer.
+
 ## 1.0.0-beta.3
 
 - Après une mise à jour en un clic, le service repart avec tes droits normaux, et non plus en administrateur. C'est maintenant l'installateur qui demande l'autorisation à Windows.
