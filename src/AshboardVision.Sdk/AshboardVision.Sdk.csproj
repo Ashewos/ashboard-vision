@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Le SDK des modules de la communauté. Pour l'instant : les permissions ; le reste (classe de base,
+       thème, réglages) arrive avec l'hôte de module. Numéroté à part du logiciel (voir la conception, 5.6). -->
+
+</Project>

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Les modules complémentaires : manifeste, paquet, liste scellée, supervision. Ne référence jamais
+       Trofeo.Service (c'est le service qui référence cette bibliothèque). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+    <ProjectReference Include="..\Trofeo.Core\Trofeo.Core.csproj" />
+    <ProjectReference Include="..\Trofeo.Distribution\Trofeo.Distribution.csproj" />
+    <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Trofeo.Extensions.Tests" />
+  </ItemGroup>
+
+</Project>

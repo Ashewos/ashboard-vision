@@ -102,6 +102,8 @@ public static class SettingsDocument
             ChoiceField c => c.Default,
             ToggleField t => t.Default ? "true" : "false",
             TextField => "",
+            NumberField n => n.Default.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            PortField p => p.Default.ToString(System.Globalization.CultureInfo.InvariantCulture),
             _ => null,
         };
 

@@ -15,6 +15,8 @@ namespace Trofeo.ModuleKit;
 [JsonDerivedType(typeof(SecretField), "secret")]
 [JsonDerivedType(typeof(LookupField), "lookup")]
 [JsonDerivedType(typeof(ActionField), "action")]
+[JsonDerivedType(typeof(NumberField), "number")]
+[JsonDerivedType(typeof(PortField), "port")]
 public abstract record SettingField(string Key, string Label)
 {
     /// <summary>Phrase d'aide affichée sous le champ.</summary>
@@ -64,6 +66,12 @@ public sealed record ActionField(string Key, string Label) : SettingField(Key, L
     /// <summary>Question de confirmation avant de lancer l'action ; absente : pas de confirmation.</summary>
     public string? Confirm { get; init; }
 }
+
+/// <summary>Un nombre entier entre <c>Min</c> et <c>Max</c> (bornes comprises), proposé à <c>Default</c>.</summary>
+public sealed record NumberField(string Key, string Label, int Min, int Max, int Default) : SettingField(Key, Label);
+
+/// <summary>Un numéro de port TCP, de 1 à 65535, proposé à <c>Default</c>. Les ports saisis ici sont ceux que le service relaie à un module qui a la permission « Cet ordinateur ».</summary>
+public sealed record PortField(string Key, string Label, int Default) : SettingField(Key, Label);
 
 /// <summary>Les réglages d'un type de module, dans l'ordre d'affichage.</summary>
 public sealed record SettingsSchema(IReadOnlyList<SettingField> Fields)
