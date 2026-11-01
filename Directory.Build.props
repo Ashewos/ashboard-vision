@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>latest</LangVersion>
-    <Version>0.5.0</Version>
+    <Version>1.0.0-beta.1</Version>
     <Product>Ashboard Vision</Product>
     <Company>Ashewos</Company>
   </PropertyGroup>

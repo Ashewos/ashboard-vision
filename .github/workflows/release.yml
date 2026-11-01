@@ -1,0 +1,220 @@
+# Publie une version d'Ashboard Vision : étiquette vX.Y.Z (stable depuis main, bêta depuis Canary).
+#
+# - Étiquette `v*` poussée : vérifie, teste, fabrique l'installateur et crée la version GitHub (préversion pour une bêta).
+# - Lancement manuel : ne publie jamais. Avec `essai`, construit seulement (numéro lu dans Directory.Build.props, ni vérification
+#   de branche, ni notes) et dépose l'installateur comme artefact du lancement. Sans `essai`, fait aussi les vérifications et
+#   l'extraction des notes, comme une vraie publication, sans la dernière étape.
+#
+# Les actions sont épinglées sur le commit d'une version précise (le numéro de version est en commentaire).
+name: Publier une version
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      essai:
+        description: "Essai : construire l'installateur sans vérifier la branche ni publier"
+        type: boolean
+        default: false
+
+# Une seule publication à la fois par étiquette ou par branche ; on ne coupe jamais une publication en cours.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  # Inno Setup 7.1.1 exactement, installé par la recette elle-même. Le fichier vient de la version immuable `is-7_1_1` du dépôt
+  # officiel jrsoftware/issrc ; l'empreinte est celle de GitHub pour ce fichier, aussi donnée par jrsoftware dans son
+  # innosetup-7.1.1-x64.exe.issig (https://files.jrsoftware.org/is/7/), et recalculée à la main. Pour changer de version : adresse,
+  # empreinte et numéro ensemble.
+  INNO_VERSION: '7.1.1'
+  INNO_URL: 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x64.exe'
+  INNO_SHA256: '8a5a6711c3766a6e5fb74f280ba0e3551e719ce94538d901fdbd1f8f9920b3f0'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  release:
+    name: Construire et publier
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Récupérer le dépôt (historique et branches compris)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Installer .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Déterminer le mode et le numéro de version
+        id: contexte
+        env:
+          EVENEMENT: ${{ github.event_name }}
+          TYPE_REF: ${{ github.ref_type }}
+          NOM_REF: ${{ github.ref_name }}
+          ESSAI: ${{ inputs.essai }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $semver = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+
+          # Publier exige une étiquette `v*` poussée. Un lancement manuel ne publie jamais, même posé sur une étiquette.
+          $publier = ($env:EVENEMENT -eq 'push') -and ($env:TYPE_REF -eq 'tag') -and ($env:NOM_REF -like 'v*')
+          $essai = (-not $publier) -and ($env:ESSAI -eq 'true')
+
+          $props = ([xml](Get-Content -LiteralPath 'Directory.Build.props' -Raw -Encoding utf8)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if (-not $props) { throw "Aucune <Version> dans Directory.Build.props." }
+          $props = $props.Trim()
+
+          if ($publier) {
+            $version = $env:NOM_REF.Substring(1)
+            if ($version -notmatch $semver) { throw "L'étiquette $($env:NOM_REF) n'est pas de la forme vX.Y.Z[-prérelease]." }
+          } else {
+            $version = $props
+            if ($version -notmatch $semver) { throw "La version de Directory.Build.props ($version) n'est pas un numéro SemVer." }
+          }
+          # Tout numéro avec un tiret est une préversion (1.0.0-beta.1, 1.0.0-rc.1) : il part de Canary et n'est jamais « la dernière ».
+          $beta = $version.Contains('-')
+
+          "publier=$($publier.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "essai=$($essai.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "beta=$($beta.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          Write-Host "Version $version ($(if ($beta) { 'bêta' } else { 'stable' })), publier=$publier, essai=$essai"
+
+      - name: Vérifier que l'étiquette porte le numéro de Directory.Build.props
+        if: steps.contexte.outputs.essai != 'true' && steps.contexte.outputs.publier == 'true'
+        env:
+          VERSION: ${{ steps.contexte.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $props = ([xml](Get-Content -LiteralPath 'Directory.Build.props' -Raw -Encoding utf8)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if ($props.Trim() -ne $env:VERSION) {
+            throw "L'étiquette dit $($env:VERSION), mais Directory.Build.props dit $($props.Trim()). Corrige le fichier avant de poser l'étiquette."
+          }
+          Write-Host "Directory.Build.props : $($env:VERSION)"
+
+      - name: Vérifier la branche (stable dans main, bêta dans Canary)
+        if: steps.contexte.outputs.essai != 'true'
+        env:
+          BETA: ${{ steps.contexte.outputs.beta }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $branche = if ($env:BETA -eq 'true') { 'Canary' } else { 'main' }
+          git merge-base --is-ancestor $env:GITHUB_SHA "origin/$branche"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Le commit $($env:GITHUB_SHA) n'est pas contenu dans origin/$branche : $(if ($env:BETA -eq 'true') { 'une bêta part de Canary' } else { 'une stable part de main' })."
+          }
+          Write-Host "Le commit est bien dans origin/$branche."
+
+      - name: Tester toute la solution (Release)
+        run: dotnet test trofeo-HB-dashboard.sln -c Release --nologo
+
+      - name: Installer Inno Setup (version et empreinte épinglées)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dossier = Join-Path $env:RUNNER_TEMP 'innosetup'
+          New-Item -ItemType Directory -Force -Path $dossier | Out-Null
+          $fichier = Join-Path $dossier "innosetup-$($env:INNO_VERSION)-x64.exe"
+          Invoke-WebRequest -Uri $env:INNO_URL -OutFile $fichier
+
+          $empreinte = (Get-FileHash -LiteralPath $fichier -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($empreinte -ne $env:INNO_SHA256) {
+            throw "Empreinte inattendue pour Inno Setup : $empreinte (attendue : $($env:INNO_SHA256)). L'installateur n'est pas lancé."
+          }
+          Write-Host "Empreinte vérifiée : $empreinte"
+
+          $installation = Start-Process -FilePath $fichier -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' -Wait -PassThru
+          if ($installation.ExitCode -ne 0) { throw "L'installation d'Inno Setup a échoué (code $($installation.ExitCode))." }
+
+          $iscc = Join-Path $env:ProgramFiles 'Inno Setup 7\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC.exe est introuvable après l'installation : $iscc" }
+          "ISCC=$iscc" >> $env:GITHUB_ENV
+          Write-Host "ISCC : $iscc"
+
+      - name: Fabriquer l'installateur
+        id: installateur
+        env:
+          VERSION: ${{ steps.contexte.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          pwsh -NoProfile -File installer/build.ps1 -Version $env:VERSION -Iscc $env:ISCC
+          if ($LASTEXITCODE -ne 0) { throw "installer/build.ps1 a échoué (code $LASTEXITCODE)." }
+          $setup = Join-Path $env:GITHUB_WORKSPACE "installer/out/Ashboard-Vision-Setup-$($env:VERSION).exe"
+          foreach ($f in $setup, "$setup.sha256") {
+            if (-not (Test-Path -LiteralPath $f)) { throw "Fichier attendu absent : $f" }
+          }
+          "setup=$setup" >> $env:GITHUB_OUTPUT
+
+      - name: Extraire les notes de version de CHANGELOG.md
+        id: notes
+        if: steps.contexte.outputs.essai != 'true'
+        env:
+          VERSION: ${{ steps.contexte.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # La section `## <version>` (éventuellement suivie d'un espace et d'une date), jusqu'au prochain titre `## ` ou à la fin.
+          $titre = '^##\s+\[?' + [regex]::Escape($env:VERSION) + '\]?(\s.*)?$'
+          $lignes = Get-Content -LiteralPath 'CHANGELOG.md' -Encoding utf8
+          $section = [System.Collections.Generic.List[string]]::new()
+          $dedans = $false
+          foreach ($ligne in $lignes) {
+            if ($dedans) {
+              if ($ligne -match '^##\s') { break }
+              $section.Add($ligne)
+            } elseif ($ligne -match $titre) {
+              $dedans = $true
+            }
+          }
+          if (-not $dedans) { throw "CHANGELOG.md n'a pas de section « ## $($env:VERSION) »." }
+          while ($section.Count -gt 0 -and [string]::IsNullOrWhiteSpace($section[0])) { $section.RemoveAt(0) }
+          while ($section.Count -gt 0 -and [string]::IsNullOrWhiteSpace($section[$section.Count - 1])) { $section.RemoveAt($section.Count - 1) }
+          if ($section.Count -eq 0) { throw "La section « ## $($env:VERSION) » de CHANGELOG.md est vide." }
+
+          $fichier = Join-Path $env:RUNNER_TEMP 'notes-de-version.md'
+          [System.IO.File]::WriteAllText($fichier, ($section -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
+          "fichier=$fichier" >> $env:GITHUB_OUTPUT
+          Write-Host "Notes de version ($($section.Count) lignes) :"
+          Get-Content -LiteralPath $fichier -Encoding utf8
+
+      - name: Déposer l'installateur comme artefact (sans publication)
+        if: steps.contexte.outputs.publier != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Ashboard-Vision-Setup-${{ steps.contexte.outputs.version }}
+          path: |
+            installer/out/Ashboard-Vision-Setup-${{ steps.contexte.outputs.version }}.exe
+            installer/out/Ashboard-Vision-Setup-${{ steps.contexte.outputs.version }}.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Créer la version GitHub
+        if: steps.contexte.outputs.publier == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.contexte.outputs.version }}
+          BETA: ${{ steps.contexte.outputs.beta }}
+          SETUP: ${{ steps.installateur.outputs.setup }}
+          NOTES: ${{ steps.notes.outputs.fichier }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arguments = @(
+            'release', 'create', "v$($env:VERSION)",
+            $env:SETUP, "$($env:SETUP).sha256",
+            '--title', "Ashboard Vision $($env:VERSION)",
+            '--notes-file', $env:NOTES,
+            '--verify-tag'
+          )
+          if ($env:BETA -eq 'true') { $arguments += '--prerelease' }
+          gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw "gh release create a échoué (code $LASTEXITCODE)." }
