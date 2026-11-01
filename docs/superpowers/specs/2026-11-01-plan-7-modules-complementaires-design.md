@@ -96,7 +96,8 @@ Un module ancien n'est pas refusé parce qu'il est ancien (question d'Alex, rép
 
 ### 4.8 Ajouts d'Alex à la relecture (01/11/2026)
 - **Autoriser simplement un module à joindre un service de cet ordinateur**, par exemple un serveur Minecraft lancé sur le même PC, sans commande d'administrateur (voir 5.2, permission « Cet ordinateur »).
-- **Un `.avmod` doit être exactement le fichier d'origine**, ni modifié ni compromis, au moment où il s'exécute, et **cette vérification doit marcher hors ligne** (voir 5.5).
+- **Un module ne doit pas pouvoir être modifié ou compromis entre son installation et son exécution**, et **cette vérification doit marcher hors ligne** (voir 5.5). Une signature par clé du créateur a été envisagée puis **écartée par Alex** (01/11/2026) : trop compliquée pour le projet à ce stade.
+- **Les ports ne sont pas écrits en dur dans le module** : c'est l'utilisateur qui les choisit dans les réglages du module (plusieurs serveurs, port changé). Plus généralement, le SDK permet au module de proposer des champs de réglage dans la fenêtre : listes de choix, cases à cocher, textes, nombres, ports (voir 5.6).
 - **Le SDK n'est pas publié sur nuget.org.** Il est joint aux versions GitHub d'Ashboard Vision, et **l'installateur propose de l'installer** : case décochée par défaut, mais cochée lors d'une mise à jour s'il était déjà installé (voir 5.12).
 
 ### 4.9 Sobriété
@@ -124,7 +125,7 @@ Tout ce qui suit est marqué **(choix de Claude)** : Alex peut le revoir.
 |---|---|---|
 | Réseau local | les appareils et serveurs de ton réseau (Home Assistant, Frigate, Proxmox…) | Windows (capacité `privateNetworkClientServer`) |
 | Internet | les services sur Internet (Downdetector…) | Windows (capacité `internetClient`) |
-| Cet ordinateur | un service lancé sur ce PC, sur les **ports déclarés** dans le manifeste (serveur Minecraft sur le port 25565, Home Assistant sur le 8123…) | le service, qui relaie la connexion (5.3) |
+| Cet ordinateur | un service lancé sur ce PC, sur les **ports choisis par l'utilisateur** dans les réglages du module (serveur Minecraft sur le 25565, Home Assistant sur le 8123…) | le service, qui relaie la connexion (5.3) |
 | Capteurs | températures, charges, mémoire, lues par le service | le service |
 | Musique en cours | titre, artiste, pochette | le service |
 
@@ -136,7 +137,7 @@ Tout ce qui suit est marqué **(choix de Claude)** : Alex peut le revoir.
 ### 5.3 Enfermement
 - Chaque hôte de module tourne dans un **AppContainer** Windows propre au module (le mécanisme des applications du Store) : il ne voit pas les fichiers de l'utilisateur, et le réseau ne lui est ouvert que par les capacités du tableau 5.2. Les droits de lecture nécessaires (le dossier du module) sont accordés à l'identité de ce module seulement.
 - Chaque hôte tourne aussi dans un **job object** Windows qui plafonne sa mémoire et son processeur. Point de départ : 512 Mo de mémoire (au-delà, Windows l'arrête) et 25 % du processeur de la machine. Ce sont des garde-fous contre les énormités, pas la limite de « consommation élevée » (5.9).
-- **Joindre un service de ce PC** : Windows interdit à un AppContainer de joindre un serveur du même PC (`localhost`), et l'exemption demande une commande d'administrateur. Demande d'Alex : plus simple. Le **service relaie** donc la connexion : le module demande « ouvre-moi le port 25565 de ce PC », le service (qui n'est pas enfermé) se connecte à `127.0.0.1` sur ce port et fait passer les octets dans les deux sens. Seuls les ports déclarés dans le manifeste (`localPorts`) et accordés par l'utilisateur sont relayés ; l'utilisateur voit « Cet ordinateur : port 25565 ». Côté SDK, c'est transparent : le client HTTP du SDK passe par ce relais pour `localhost` et `127.0.0.1`, et une connexion TCP brute s'ouvre avec une méthode du SDK.
+- **Joindre un service de ce PC** : Windows interdit à un AppContainer de joindre un serveur du même PC (`localhost`), et l'exemption demande une commande d'administrateur. Demande d'Alex : plus simple. Le **service relaie** donc la connexion : le module demande « ouvre-moi le port 25565 de ce PC », le service (qui n'est pas enfermé) se connecte à `127.0.0.1` sur ce port et fait passer les octets dans les deux sens. Seuls sont relayés les ports **que l'utilisateur a saisis dans les champs « port » des réglages** de la case concernée, et seulement si la permission « Cet ordinateur » est accordée. Le créateur n'écrit donc aucun port en dur : il déclare un champ « port » (avec une valeur proposée, 25565 par exemple), et l'utilisateur le change s'il a plusieurs serveurs ou un autre port. Côté SDK, c'est transparent : le client HTTP du SDK passe par ce relais pour `localhost` et `127.0.0.1`, et une connexion TCP brute s'ouvre avec une méthode du SDK.
 - **Conséquence pour l'overlay Discord** : Discord se parle par un tube local et une interface sur `localhost`, tous deux fermés à un module enfermé, et l'accès au vocal demande en plus l'autorisation de Discord. La première version **ne promet donc pas** l'overlay Discord. Il demanderait une source de données Discord fournie par le service, comme les capteurs : une idée pour une version suivante du SDK.
 - La protection est forte mais pas absolue : un module autorisé à aller sur Internet peut y envoyer les données qu'on lui confie. L'avertissement reste donc toujours.
 
@@ -155,16 +156,15 @@ Tout ce qui suit est marqué **(choix de Claude)** : Alex peut le revoir.
 - **Aucun code d'un module non validé ne tourne**, même enfermé. Tout ce que la fenêtre montre avant la validation (nom, description, auteur, permissions, **formulaire des réglages**) vient du manifeste. Le schéma des réglages est donc écrit dans le manifeste. Les recherches et les actions des champs de réglage n'existent qu'une fois le module validé, quand son hôte tourne.
 - **Nom des fichiers publiés** : `<identifiant>-<version>.avmod` et `<identifiant>-<version>.avmod.sha256`, joints à une version GitHub du dépôt nommé dans le manifeste.
 - **Conflit d'identifiant** : un `.avmod` qui porte l'identifiant d'un module déjà installé n'est accepté comme mise à jour que s'il nomme le même dépôt GitHub. Sinon, il est refusé avec le message « Un autre module porte déjà cet identifiant » ; l'utilisateur doit d'abord désinstaller l'autre.
-- L'empreinte SHA-256 publiée à côté protège d'un fichier abîmé ou d'un téléchargement détourné, pas d'un dépôt de créateur piraté. C'est la raison de la signature (ci-dessous), de l'avertissement permanent et de la validation des permissions nouvelles.
-- **Signature du créateur (demande d'Alex : un `.avmod` exactement identique à l'original, vérifié hors ligne).** Chaque créateur a une paire de clés, créée une fois par le banc d'essai (`ashboard-module keygen`) et gardée sur son PC, jamais dans son dépôt. `ashboard-module pack` signe le paquet : le `.avmod` contient la clé publique et la signature (ECDSA P-256 avec SHA-256, fournie par .NET sans dépendance) de l'empreinte de tout son contenu, de l'identifiant et de la version. À l'installation, le logiciel vérifie la signature **sans Internet** : un seul octet changé et le paquet est refusé. La fenêtre montre l'empreinte courte de la clé (« Signé par la clé 3F2A-91C0 »). **À la première installation, la clé est retenue** pour cet identifiant ; une mise à jour signée par une autre clé est refusée (« Ce module n'est plus signé par la même clé que la version installée »), ce qui protège même si le dépôt GitHub du créateur est piraté sans sa clé. Un `.avmod` sans signature est refusé ; seuls les dossiers du mode développeur s'en passent.
-- **Au moment de l'exécuter** : avant de lancer l'hôte, le service ouvre chaque fichier du module **en interdisant l'écriture et la suppression**, recalcule l'empreinte, puis garde ces fichiers ouverts tant que l'hôte tourne. Entre la vérification et la fin de l'exécution, aucun programme ne peut donc les modifier.
+- L'empreinte SHA-256 publiée à côté d'un `.avmod` protège d'un fichier abîmé ou d'un téléchargement détourné, pas d'un dépôt de créateur piraté. C'est la raison de l'avertissement permanent et de la validation des permissions nouvelles.
+- **Intégrité, hors ligne (demande d'Alex, sans système de clés).** À l'installation, le logiciel calcule l'empreinte de tout le contenu du module et la range dans la liste scellée. **Au moment de l'exécuter**, avant de lancer l'hôte, le service ouvre chaque fichier du module **en interdisant l'écriture et la suppression**, recalcule l'empreinte et la compare à celle de l'installation, puis garde ces fichiers ouverts tant que l'hôte tourne. Un seul octet changé depuis l'installation, et le module n'est pas lancé : il faut le valider de nouveau. Rien de tout cela ne demande Internet.
 - **Les secrets** d'un module restent dans le coffre du service : le module les lit et les écrit par le canal, au moment où il en a besoin.
 - **Désinstaller un module** retire son dossier, son AppContainer, son coffre à secrets et ses données privées. Désinstaller Ashboard Vision retire aussi les AppContainer et les secrets des modules ; le dossier des modules, dans Documents, suit le choix « garder mes réglages ».
 
 ### 5.6 Ce que le SDK offre au créateur
 - Une classe de base de module, proche de `IModule` : démarrer, dessiner dans sa case (avec `SKCanvas`), dire « redessine-moi », changer d'état (`Online`, `Offline`, `NotConfigured` avec un message).
 - **Le thème** : couleurs, polices, arrondi et facteur de texte du thème choisi, et les outils de dessin de `ModuleDrawing`, pour qu'un module puisse ressembler aux modules d'origine sans y être obligé.
-- **Les réglages** décrits avec `SettingsSchema` (champs texte, choix, liste, secret, recherche, action) : la fenêtre de réglage les dessine comme pour les modules d'origine ; les recherches et actions sont transmises au module.
+- **Les réglages** décrits avec `SettingsSchema` : liste de choix, case à cocher, texte, sélection multiple, secret, recherche, bouton d'action, et deux champs nouveaux, **nombre** (avec minimum et maximum) et **port** (1 à 65535, avec une valeur proposée). La fenêtre de réglage les dessine comme pour les modules d'origine ; les recherches et actions sont transmises au module. Chaque case placée a ses propres réglages : deux cases du même module peuvent viser deux serveurs différents.
 - **Les données du service** (avec la permission) : instantané des capteurs, musique en cours.
 - **Les certificats « maison »** : un outil du SDK pour faire confiance à un certificat précis, validé une fois par l'utilisateur dans les réglages, comme le module Réseau le fait pour UniFi.
 - **Le rythme** : un module redessine quand il le demande (événement ou minuterie), et le service plafonne le tout par le réglage « images par seconde » de l'écran. Une caméra en direct écrit plusieurs images par seconde, dans la même limite. Il n'y a pas d'autre plafond propre au module (décision d'Alex : guider, puis laisser le créateur optimiser). Le repère « Consommation élevée » et le banc d'essai disent ce que coûte une caméra.
@@ -197,7 +197,7 @@ Un outil en ligne de commande livré avec le SDK (outil .NET), qui fait trois ch
   - le temps de dessin, le processeur et la mémoire, avec les mêmes repères que la fenêtre de réglage.
 
   Il conclut « compatible » ou explique ce qui coince, en français.
-- **`pack`** : fabrique le `.avmod` **signé** et son empreinte SHA-256. **`keygen`** crée la paire de clés du créateur et rappelle de la sauvegarder (sans elle, il ne pourra plus publier de mise à jour de ses modules).
+- **`pack`** : fabrique le `.avmod` et son empreinte SHA-256.
 - `check` et la vérification d'un `.avmod` marchent **hors ligne**.
 - L'outil **embarque sa propre copie de l'hôte de module**, de la même version que le SDK : le créateur n'a pas besoin d'installer Ashboard Vision pour tester, et l'outil marche aussi sur les machines Windows de GitHub. Il ne marche que sous Windows, comme le logiciel.
 - Des aides de test pour xUnit, que le modèle de projet utilise déjà.
@@ -212,7 +212,7 @@ Un outil en ligne de commande livré avec le SDK (outil .NET), qui fait trois ch
   - la latence ;
   - l'icône du serveur.
 
-  Il déclare « Cet ordinateur » (port 25565), « Réseau local » et « Internet » : l'utilisateur ne coche que ce qui correspond à son serveur. C'est l'exemple qui éprouve le relais vers ce PC, le réseau local, les images (l'icône) et les états « en ligne / hors ligne ». Un serveur lancé sur le PC d'Alex suffit pour l'essai.
+  Ses réglages : l'adresse du serveur et un champ « port » (25565 proposé). Il déclare « Cet ordinateur », « Réseau local » et « Internet » : l'utilisateur ne coche que ce qui correspond à son serveur. C'est l'exemple qui éprouve le relais vers ce PC, le réseau local, les images (l'icône) et les états « en ligne / hors ligne ». Un serveur lancé sur le PC d'Alex suffit pour l'essai.
 
 ### 5.12 Distribution du SDK (décision d'Alex)
 - Pas de nuget.org. Les paquets du SDK (`AshboardVision.Sdk`, ses aides de test, le banc d'essai et le modèle de projet) sont **joints à chaque version GitHub** d'Ashboard Vision, construits par la recette de publication.
