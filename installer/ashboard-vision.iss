@@ -97,10 +97,11 @@ Type: files; Name: "{app}\*.runtimeconfig.json"; Check: PreviousInstallExists
 
 [Run]
 ; L'assistant des capteurs s'installe dans CurStepChanged (ssPostInstall) : le code de sortie est journalisé et, sauf en mode
-; silencieux, une panne est signalée. Le service, lui, est lancé sans élévation (le tuyau de contrôle n'accepte que l'utilisateur
-; courant). Une seule entrée : la case « Lancer » de la dernière page, et, en mode silencieux (mise à jour lancée par le logiciel),
-; un lancement sans question.
-Filename: "{app}\Trofeo.Display.exe"; Description: "Lancer {#AppName}"; Flags: nowait postinstall runasoriginaluser
+; silencieux, une panne est signalée. Tout est lancé sans élévation (le tuyau de contrôle n'accepte que l'utilisateur courant).
+; La case « Lancer » de la dernière page ouvre la fenêtre de réglage, qui démarre le service (et, la première fois, son assistant).
+; En mode silencieux (mise à jour lancée par le logiciel), seul le service repart ; il rouvre la fenêtre si elle était ouverte.
+Filename: "{app}\Trofeo.Settings.exe"; Description: "Lancer {#AppName}"; Flags: nowait postinstall runasoriginaluser skipifsilent
+Filename: "{app}\Trofeo.Display.exe"; Flags: nowait postinstall runasoriginaluser; Check: WizardSilent
 
 [UninstallDelete]
 ; Le seul fichier écrit à côté des programmes sans que Setup le suive : le choix de l'installateur (le service, lui, écrit dans

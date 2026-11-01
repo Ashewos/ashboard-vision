@@ -77,7 +77,7 @@ Ses pages :
    - démarrer avec Windows ;
    - installer le pilote des températures (PawnIO), coché par défaut, avec la mention « connexion Internet requise » ;
 5. installation ;
-6. « Terminer », avec la case « Lancer Ashboard Vision ».
+6. « Terminer », avec la case « Lancer Ashboard Vision », qui ouvre la fenêtre de réglage (et son assistant la première fois) ; la fenêtre démarre le service s'il ne tourne pas, comme quand on l'ouvre depuis le menu Démarrer. Le démarrage avec Windows, lui, ne lance que le service, sans fenêtre (décidé avec Alex le 01/11/2026, après l'essai dans le Bac à sable).
 
 Au premier lancement, l'assistant de première ouverture qui existe déjà prend le relais : écran, orientation, modules, Claude Code, réseau, météo, capteurs, démarrage.
 

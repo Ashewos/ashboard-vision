@@ -22,7 +22,6 @@ namespace Trofeo.Display;
 static class Program
 {
     private const string HelperExeName = "Trofeo.SensorHelper.exe";
-    private const string MutexName = @"Local\trofeo-HB-dashboard.display";
     private const string UninstallUserFlag = "--desinstaller-utilisateur";
     private const string SilentFlag = "--silencieux";
     private const string KeepSettingsQuestion = "Garder tes réglages (disposition, connexions) ?";
@@ -34,7 +33,7 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
-        using var mutex = new Mutex(true, MutexName, out var createdNew);
+        using var mutex = new Mutex(true, ProductIdentity.ServiceMutexName, out var createdNew);
         if (!createdNew) return 0; // une seule instance
 
         try

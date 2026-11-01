@@ -24,6 +24,10 @@ internal static class Program
             return 0;
         }
 
+        // Ouvrir la fenêtre, c'est lancer Ashboard Vision (menu Démarrer, bureau, fin de l'installation) : le service démarre s'il ne
+        // tourne pas. S'il ne démarre pas, la fenêtre le dit et garde son bouton « Démarrer le service ».
+        ServiceStarter.Default.TryStartIfStopped(() => ServiceStarter.IsServiceRunning());
+
         // Le journal et le filet d'abord : un plantage de la fenêtre laisse une trace dans logs\settings.log.
         var log = SettingsLog.TryOpen(SettingsLog.DefaultPath);
         using var guard = new CrashGuard();

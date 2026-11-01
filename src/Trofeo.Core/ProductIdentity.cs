@@ -16,6 +16,12 @@ public static class ProductIdentity
     /// <summary>L'identifiant d'avant le changement de nom (<c>%AppData%\trofeo-HB-dashboard</c>).</summary>
     public const string LegacyId = "trofeo-HB-dashboard";
 
+    /// <summary>
+    /// Le mutex que le service d'affichage tient tant qu'il tourne (une seule instance), et que la fenêtre de réglage regarde pour
+    /// savoir s'il faut le lancer. Il garde l'ancien identifiant : un service d'avant le changement de nom compte aussi.
+    /// </summary>
+    public const string ServiceMutexName = @"Local\trofeo-HB-dashboard.display";
+
     /// <summary>L'éditeur, tel qu'il apparaît dans l'installateur.</summary>
     public const string Publisher = "Ashewos";
 

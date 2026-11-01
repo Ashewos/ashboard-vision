@@ -25,6 +25,21 @@ public sealed class ServiceStarter(Func<string?> locate, Func<string, bool> laun
         }
     }
 
+    /// <summary>
+    /// Vrai si le service tourne déjà ou vient d'être lancé ; faux s'il est arrêté et ne démarre pas. <paramref name="isRunning"/> :
+    /// <see cref="IsServiceRunning(string)"/> en production.
+    /// </summary>
+    public bool TryStartIfStopped(Func<bool> isRunning) => isRunning() || TryStart();
+
+    /// <summary>Vrai tant qu'un service tient son mutex (<see cref="ProductIdentity.ServiceMutexName"/>), dans cette session Windows.</summary>
+    public static bool IsServiceRunning(string mutexName = ProductIdentity.ServiceMutexName)
+    {
+        if (!Mutex.TryOpenExisting(mutexName, out var mutex))
+            return false;
+        mutex.Dispose();
+        return true;
+    }
+
     private static bool Launch(string path)
     {
         // Le shell lance le service comme si Alex avait double-cliqué : il vit sa vie, sans dépendre de cette fenêtre.
