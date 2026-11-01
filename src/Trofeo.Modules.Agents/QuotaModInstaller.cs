@@ -8,10 +8,15 @@ namespace Trofeo.Modules.Agents;
 /// Installe le mod <c>ashboard-quotas</c> dans Claude Code : ajoute le dossier <c>mods</c> comme marché de modules, puis installe
 /// le mod ; sait aussi le retirer, avec l'ancien mod <c>trofeo-quotas</c>. <paramref name="run"/> lance <c>claude</c> avec les arguments donnés et rend le code de retour et la sortie ;
 /// elle lève <see cref="Win32Exception"/> (ou <see cref="FileNotFoundException"/>) quand <c>claude</c> est introuvable.
+/// L'installation essaie <c>claude</c> dans le PATH, puis le CLI natif ou embarqué dans Claude Desktop s'il est introuvable.
 /// </summary>
 public sealed class QuotaModInstaller(
-    Func<string, string, CancellationToken, Task<(int ExitCode, string Output)>> run, string? modsDir)
+    Func<string, string, CancellationToken, Task<(int ExitCode, string Output)>> run, string? modsDir,
+    Func<IReadOnlyList<string>>? fallbackExecutables)
 {
+    public QuotaModInstaller(Func<string, string, CancellationToken, Task<(int ExitCode, string Output)>> run,
+        string? modsDir) : this(run, modsDir, null) { }
+
     /// <summary>Le mod, sous la forme <c>mod@marché</c> que demande <c>claude plugin</c>.</summary>
     public const string PluginName = "ashboard-quotas@ashboard-vision";
 
@@ -28,6 +33,7 @@ public sealed class QuotaModInstaller(
     public const string ClaudeMissingMessage = "Claude Code est introuvable sur ce PC.";
 
     private const int MaxOutputLength = 300;
+    private IReadOnlyList<string> FallbackExecutables => fallbackExecutables?.Invoke() ?? ClaudeCliLocator.FindCandidates();
 
     /// <summary>L'installateur réel, qui lance <c>claude</c> ; <paramref name="modsDir"/> n'est utile qu'à l'installation.</summary>
     public static QuotaModInstaller CreateProduction(string? modsDir) => new(RunProcessAsync, modsDir);
@@ -39,10 +45,27 @@ public sealed class QuotaModInstaller(
 
         try
         {
+            var executable = "claude";
+            Queue<string>? fallbacks = null;
             foreach (var arguments in new[] { $"plugin marketplace add \"{modsDir}\"", $"plugin install {PluginName}" })
             {
-                var (exitCode, output) = await run("claude", arguments, ct);
+                var (exitCode, output) = await RunAsync(arguments);
                 if (exitCode != 0) return new ActionResult(false, "L'installation a échoué : " + Truncated(output));
+            }
+
+            async Task<(int ExitCode, string Output)> RunAsync(string arguments)
+            {
+                while (true)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try { return await run(executable, arguments, ct); }
+                    catch (Exception e) when (e is FileNotFoundException || e is Win32Exception { NativeErrorCode: 2 or 3 })
+                    {
+                        fallbacks ??= new Queue<string>(FallbackExecutables);
+                        if (!fallbacks.TryDequeue(out var next)) throw;
+                        executable = next;
+                    }
+                }
             }
         }
         catch (Exception e) when (e is Win32Exception or FileNotFoundException)
@@ -130,7 +153,7 @@ public sealed class QuotaModInstaller(
         return text.Length > MaxOutputLength ? text[..MaxOutputLength] : text;
     }
 
-    /// <summary>Lanceur réel : <c>claude</c> est résolu par le <c>PATH</c> ; 60 s au plus par commande.</summary>
+    /// <summary>Lanceur réel sans shell, pour le PATH ou un chemin absolu ; 60 s au plus par commande.</summary>
     internal static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName, string arguments, CancellationToken ct)
     {
         using var process = new Process();

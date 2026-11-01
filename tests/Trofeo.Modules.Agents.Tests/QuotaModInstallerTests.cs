@@ -247,5 +247,56 @@ public class QuotaModInstallerTests : IDisposable
 
     private sealed record ModuleKitResult(bool Ok, string Message);
 
+    [Fact]
+    public async Task QuotaMod_PathMissing_UsesBundledCliForBothCommands()
+    {
+        var calls = new List<(string File, string Args)>();
+        var cli = Path.Combine(_mods, "desktop", "claude.exe");
+        var installer = new QuotaModInstaller((file, args, _) =>
+        {
+            calls.Add((file, args));
+            if (file == "claude") throw new Win32Exception(2);
+            return Task.FromResult((0, "ok"));
+        }, _mods, () => [cli]);
+
+        var result = await installer.InstallAsync(CancellationToken.None);
+
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal(new[]
+        {
+            ("claude", $"plugin marketplace add \"{_mods}\""),
+            (cli, $"plugin marketplace add \"{_mods}\""),
+            (cli, $"plugin install {QuotaModInstaller.PluginName}"),
+        }, calls);
+    }
+
+    [Fact]
+    public async Task QuotaMod_PathWorks_DoesNotSearchDesktop()
+    {
+        var installer = new QuotaModInstaller((_, _, _) => Task.FromResult((0, "")), _mods,
+            () => throw new InvalidOperationException("Fallback should not be searched"));
+        Assert.True((await installer.InstallAsync(CancellationToken.None)).Ok);
+    }
+
+    [Fact]
+    public async Task QuotaMod_CommandFails_DoesNotTryAnotherInstallation()
+    {
+        var installer = new QuotaModInstaller((_, _, _) => Task.FromResult((1, "command failed")), _mods,
+            () => throw new InvalidOperationException("A failed command is not a missing executable"));
+        var result = await installer.InstallAsync(CancellationToken.None);
+        Assert.False(result.Ok);
+        Assert.Contains("command failed", result.Message);
+    }
+
+    [Fact]
+    public async Task QuotaMod_StaleDesktopCandidate_TriesNext()
+    {
+        var cli = Path.Combine(_mods, "working", "claude.exe");
+        var installer = new QuotaModInstaller((file, _, _) =>
+            file == cli ? Task.FromResult((0, "")) : throw new FileNotFoundException(),
+            _mods, () => [Path.Combine(_mods, "removed", "claude.exe"), cli]);
+        Assert.True((await installer.InstallAsync(CancellationToken.None)).Ok);
+    }
+
     private static ModuleKitResult Convert(Trofeo.ModuleKit.ActionResult r) => new(r.Ok, r.Message);
 }
