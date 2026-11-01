@@ -4,6 +4,7 @@
        Trofeo.Service (c'est le service qui référence cette bibliothèque). -->
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

@@ -3,6 +3,16 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Trofeo.Extensions\Trofeo.Extensions.csproj" />
     <ProjectReference Include="..\Trofeo.TestDoubles\Trofeo.TestDoubles.csproj" />
+    <!-- La sonde de l'enfermement : construite avant les tests, puis copiée dans le sous-dossier « probe » de la sortie
+         (les tests la recopient dans un dossier temporaire avant d'en accorder la lecture à un conteneur). -->
+    <ProjectReference Include="..\Trofeo.SandboxProbe\Trofeo.SandboxProbe.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <Target Name="CopySandboxProbe" AfterTargets="Build">
+    <ItemGroup>
+      <SandboxProbeFile Include="$(MSBuildThisFileDirectory)..\Trofeo.SandboxProbe\bin\$(Configuration)\$(TargetFramework)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SandboxProbeFile)" DestinationFolder="$(OutDir)probe\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>
