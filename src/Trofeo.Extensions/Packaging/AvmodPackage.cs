@@ -28,6 +28,12 @@ public static class AvmodPackage
     private const int MaxManifestBytes = 256 * 1024;
     private const int MaxListedErrors = 10;
 
+    /// <summary>Longueur maximale d'un chemin dans le paquet (le dossier d'installation s'y ajoute, sous les 260 caractères de Windows).</summary>
+    public const int MaxPathLength = 200;
+
+    /// <summary>Nombre maximal de niveaux (dossiers et fichier) d'un chemin dans le paquet.</summary>
+    public const int MaxPathDepth = 16;
+
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "CON", "PRN", "AUX", "NUL",
@@ -231,10 +237,9 @@ public static class AvmodPackage
             }
 
             // Les dossiers parents existent, explicitement ou non : un fichier ne peut pas porter leur nom.
-            var parts = normalized.Split('/');
-            for (var i = 1; i < parts.Length; i++)
+            for (var slash = normalized.IndexOf('/'); slash >= 0; slash = normalized.IndexOf('/', slash + 1))
             {
-                folders.Add(string.Join('/', parts.Take(i)));
+                folders.Add(normalized[..slash]);
             }
 
             if (isDirectory)
@@ -336,6 +341,13 @@ public static class AvmodPackage
         isDirectory = false;
         problem = "";
 
+        // Les bornes d'abord, avant tout travail sur le nom : un nom de ZIP peut faire 65 535 octets.
+        if (raw.Length > MaxPathLength + 1)
+        {
+            problem = $"chemin de plus de {MaxPathLength} caractères";
+            return false;
+        }
+
         var name = raw.Replace('\\', '/');
         if (name.Length == 0)
         {
@@ -357,6 +369,18 @@ public static class AvmodPackage
 
         isDirectory = name.EndsWith('/');
         var body = isDirectory ? name[..^1] : name;
+        if (body.Length > MaxPathLength)
+        {
+            problem = $"chemin de plus de {MaxPathLength} caractères";
+            return false;
+        }
+
+        if (body.Count(c => c == '/') >= MaxPathDepth)
+        {
+            problem = $"chemin de plus de {MaxPathDepth} niveaux";
+            return false;
+        }
+
         foreach (var segment in body.Split('/'))
         {
             if (segment.Length == 0)
@@ -398,7 +422,8 @@ public static class AvmodPackage
     /// <summary>Un nom venu d'un paquet, rendu montrable : sans caractère de contrôle, et pas trop long.</summary>
     private static string Display(string text)
     {
-        var cleaned = new string(text.Select(c => char.IsControl(c) ? '?' : c).ToArray());
-        return cleaned.Length > 80 ? cleaned[..80] + "…" : cleaned;
+        var shown = text.Length > 80 ? text[..80] : text;
+        var cleaned = new string(shown.Select(c => char.IsControl(c) ? '?' : c).ToArray());
+        return text.Length > 80 ? cleaned + "…" : cleaned;
     }
 }

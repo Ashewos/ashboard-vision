@@ -268,6 +268,46 @@ public sealed class AvmodPackageTests : IDisposable
     }
 
     [Fact]
+    public void Inspect_HugeEntryName_IsRefusedQuickly()
+    {
+        // 65 000 caractères en 32 500 niveaux : le traitement des dossiers parents ne doit pas devenir quadratique.
+        var path = MakeZip("huge.avmod", ("manifest.json", Bytes(ManifestJson)), ("Demo.dll", Bytes("dll")), (string.Concat(Enumerable.Repeat("a/", 32_500)) + "x.dll", Bytes("x")));
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"trop lent : {watch.Elapsed}");
+        Assert.Null(result.Manifest);
+        Assert.Contains(result.Errors, e => e.Contains("200 caractères", StringComparison.Ordinal));
+        Assert.All(result.Errors, e => Assert.True(e.Length < 400));
+    }
+
+    [Fact]
+    public void Inspect_PathOfTheMaximumLength_IsAcceptedAndOneMoreIsRefused()
+    {
+        var atLimit = "lib/" + new string('a', AvmodPackage.MaxPathLength - 4);
+        var accepted = MakeZip("len-ok.avmod", ("manifest.json", Bytes(ManifestJson)), ("Demo.dll", Bytes("dll")), (atLimit, Bytes("x")));
+        var refused = MakeZip("len-ko.avmod", ("manifest.json", Bytes(ManifestJson)), ("Demo.dll", Bytes("dll")), (atLimit + "b", Bytes("x")));
+
+        Assert.Equal(AvmodPackage.MaxPathLength, atLimit.Length);
+        Assert.Empty(AvmodPackage.Inspect(accepted).Errors);
+        Assert.Contains(AvmodPackage.Inspect(refused).Errors, e => e.Contains("200 caractères", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Inspect_PathOfTheMaximumDepth_IsAcceptedAndOneMoreIsRefused()
+    {
+        var atLimit = string.Join('/', Enumerable.Repeat("d", AvmodPackage.MaxPathDepth - 1)) + "/f.txt";
+        var tooDeep = "d/" + atLimit;
+        var accepted = MakeZip("deep-ok.avmod", ("manifest.json", Bytes(ManifestJson)), ("Demo.dll", Bytes("dll")), (atLimit, Bytes("x")));
+        var refused = MakeZip("deep-ko.avmod", ("manifest.json", Bytes(ManifestJson)), ("Demo.dll", Bytes("dll")), (tooDeep, Bytes("x")));
+
+        Assert.Equal(AvmodPackage.MaxPathDepth, atLimit.Split('/').Length);
+        Assert.Empty(AvmodPackage.Inspect(accepted).Errors);
+        Assert.Contains(AvmodPackage.Inspect(refused).Errors, e => e.Contains("16 niveaux", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Inspect_TooLarge_IsRefused()
     {
         var path = MakeBigZip("big.avmod", AvmodPackage.MaxUncompressedBytes + 1024 * 1024);
@@ -579,10 +619,14 @@ public sealed class AvmodPackageTests : IDisposable
         var module = MakeTree("module", ("manifest.json", ManifestJson), ("Demo.dll", "dll"));
         var package = Path.Combine(module, "dist", "m.avmod");
 
+        // Le premier paquet existe quand le second est fait : c'est lui que l'énumération du dossier rencontre.
+        AvmodWriter.Pack(module, package);
+        Assert.True(File.Exists(package));
         AvmodWriter.Pack(module, package);
         using var zip = ZipFile.OpenRead(package);
 
         Assert.DoesNotContain(zip.Entries, e => e.FullName.EndsWith(".avmod", StringComparison.Ordinal));
+        Assert.Equal(["Demo.dll", "manifest.json"], zip.Entries.Select(e => e.FullName).Order(StringComparer.Ordinal));
     }
 
     [Fact]
