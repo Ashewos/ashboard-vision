@@ -16,6 +16,7 @@ internal static partial class Native
     public const uint ExtendedStartupInfoPresent = 0x00080000;
     public const uint CreateSuspended = 0x00000004;
     public const uint CreateNoWindow = 0x08000000;
+    public const uint CreateUnicodeEnvironment = 0x00000400;
 
     public const nuint ProcThreadAttributeSecurityCapabilities = 0x00020009;
     public const nuint ProcThreadAttributeHandleList = 0x00020002;
@@ -190,7 +191,7 @@ internal static partial class Native
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool TerminateProcess(nint process, uint exitCode);
+    public static partial bool TerminateProcess(SafeProcessHandle process, uint exitCode);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -210,7 +211,7 @@ internal static partial class Native
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool DuplicateHandle(nint sourceProcess, nint sourceHandle, nint targetProcess, out nint targetHandle,
+    public static partial bool DuplicateHandle(nint sourceProcess, SafeHandle sourceHandle, SafeProcessHandle targetProcess, out nint targetHandle,
         uint desiredAccess, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint options);
 
     [LibraryImport("kernel32.dll")]

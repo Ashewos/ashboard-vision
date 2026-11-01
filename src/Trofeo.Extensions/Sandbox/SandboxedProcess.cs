@@ -47,7 +47,15 @@ public sealed class SandboxedProcess : IDisposable
 
         // Une attente enregistrée sur le processus (pas de minuteur, pas de fil bloqué) : elle se déclenche à sa fin.
         _waitHandle = new ManualResetEvent(false) { SafeWaitHandle = new SafeWaitHandle(handle.DangerousGetHandle(), ownsHandle: false) };
-        _registration = ThreadPool.RegisterWaitForSingleObject(_waitHandle, (_, _) => OnExited(), null, Timeout.Infinite, executeOnlyOnce: true);
+        try
+        {
+            _registration = ThreadPool.RegisterWaitForSingleObject(_waitHandle, (_, _) => OnExited(), null, Timeout.Infinite, executeOnlyOnce: true);
+        }
+        catch
+        {
+            _waitHandle.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Numéro du processus.</summary>
@@ -68,18 +76,34 @@ public sealed class SandboxedProcess : IDisposable
             throw new ArgumentException("Le chemin du programme doit être complet.", nameof(start));
         }
 
-        var inherited = new List<SafeHandle>(start.InheritedHandles);
-        if (start.StandardOutput is not null && !inherited.Contains(start.StandardOutput))
+        // Les poignées héritées, sans doublon de valeur (CreateProcess refuse une liste qui répète une poignée).
+        var inherited = new List<SafeHandle>();
+        var seen = new HashSet<IntPtr>();
+        foreach (var candidate in start.InheritedHandles.Concat(start.StandardOutput is null ? [] : [start.StandardOutput]))
         {
-            inherited.Add(start.StandardOutput);
+            if (seen.Add(candidate.DangerousGetHandle()))
+            {
+                inherited.Add(candidate);
+            }
         }
 
         var allocations = new List<IntPtr>();
         var attributeList = IntPtr.Zero;
         var attributeListInitialized = false;
         var restoreInheritance = new List<(IntPtr Handle, bool WasInheritable)>();
+        var referenced = new List<SafeHandle>(); // retenues le temps du lancement : une fermeture concurrente ne les libère pas
         try
         {
+            foreach (var handle in inherited)
+            {
+                var added = false;
+                handle.DangerousAddRef(ref added);
+                if (added)
+                {
+                    referenced.Add(handle);
+                }
+            }
+
             var attributeCount = inherited.Count > 0 ? 2 : 1;
 
             // La liste d'attributs : taille, puis initialisation.
@@ -144,6 +168,9 @@ public sealed class SandboxedProcess : IDisposable
                 startupInfo.StartupInfo.StdError = output;
             }
 
+            // L'environnement : une liste blanche, jamais celui du service (jetons, chemins hors de portée du conteneur).
+            var environment = AllocText(allocations, EnvironmentBlock(start.Profile));
+
             var commandLine = ("\"" + start.Executable + "\"" + (start.Arguments.Length > 0 ? " " + start.Arguments : "") + "\0").ToCharArray();
             bool created;
             Native.ProcessInformation info;
@@ -153,7 +180,7 @@ public sealed class SandboxedProcess : IDisposable
                 fixed (char* commandLinePointer = commandLine)
                 {
                     created = Native.CreateProcess(start.Executable, commandLinePointer, IntPtr.Zero, IntPtr.Zero, inherited.Count > 0,
-                        Native.ExtendedStartupInfoPresent | Native.CreateSuspended | Native.CreateNoWindow, IntPtr.Zero,
+                        Native.ExtendedStartupInfoPresent | Native.CreateSuspended | Native.CreateNoWindow | Native.CreateUnicodeEnvironment, environment,
                         Path.GetDirectoryName(start.Executable)!, ref startupInfo, out info);
                     error = Marshal.GetLastWin32Error();
                 }
@@ -168,25 +195,17 @@ public sealed class SandboxedProcess : IDisposable
             try
             {
                 // Dans le job AVANT la première instruction : si le job refuse, le processus meurt sans avoir rien fait.
-                try
-                {
-                    start.Job.Assign(process);
-                }
-                catch
-                {
-                    Native.TerminateProcess(info.Process, 1);
-                    throw;
-                }
-
+                start.Job.Assign(process);
                 if (Native.ResumeThread(info.Thread) == uint.MaxValue)
                 {
-                    var resumeError = Marshal.GetLastWin32Error();
-                    Native.TerminateProcess(info.Process, 1);
-                    throw new Win32Exception(resumeError);
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
+
+                return new SandboxedProcess((int)info.ProcessId, process);
             }
             catch
             {
+                Native.TerminateProcess(process, 1); // le processus ne doit pas survivre à l'échec
                 process.Dispose();
                 throw;
             }
@@ -194,8 +213,6 @@ public sealed class SandboxedProcess : IDisposable
             {
                 Native.CloseHandle(info.Thread);
             }
-
-            return new SandboxedProcess((int)info.ProcessId, process);
         }
         finally
         {
@@ -217,7 +234,10 @@ public sealed class SandboxedProcess : IDisposable
                 Marshal.FreeHGlobal(pointer);
             }
 
-            GC.KeepAlive(inherited);
+            foreach (var handle in referenced)
+            {
+                handle.DangerousRelease();
+            }
         }
     }
 
@@ -228,23 +248,22 @@ public sealed class SandboxedProcess : IDisposable
     {
         ArgumentNullException.ThrowIfNull(source);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        Check(Native.DuplicateHandle(Native.GetCurrentProcess(), source.DangerousGetHandle(), Handle.DangerousGetHandle(), out var target, 0,
-            false, Native.DuplicateSameAccess));
+
+        // Les poignées passent par le marshaller : il les retient pendant l'appel, une fermeture concurrente ne les recycle pas.
+        Check(Native.DuplicateHandle(Native.GetCurrentProcess(), source, Handle, out var target, 0, false, Native.DuplicateSameAccess));
         return target;
     }
 
-    /// <summary>Arrête le processus (sans effet s'il est déjà terminé).</summary>
+    /// <summary>Arrête le processus (sans effet s'il est déjà terminé). Lève <see cref="ObjectDisposedException"/> après <see cref="Dispose"/>.</summary>
     public void Kill()
     {
-        if (Volatile.Read(ref _disposed) == 0 && !Handle.IsClosed)
-        {
-            Native.TerminateProcess(Handle.DangerousGetHandle(), 1);
-        }
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        Native.TerminateProcess(Handle, 1);
     }
 
     /// <summary>
     /// Ferme les poignées de ce côté-ci. N'arrête pas le processus : c'est la fermeture du <see cref="ModuleJob"/> qui s'en
-    /// charge (ou <see cref="Kill"/>).
+    /// charge (ou <see cref="Kill"/>). Si le processus n'avait pas fini, <see cref="Exited"/> est annulée.
     /// </summary>
     public void Dispose()
     {
@@ -253,20 +272,68 @@ public sealed class SandboxedProcess : IDisposable
             return;
         }
 
-        _registration.Unregister(null);
+        // On attend que l'attente soit défaite (rappel en cours compris) avant de fermer la poignée qu'elle surveille.
+        using (var unregistered = new ManualResetEvent(false))
+        {
+            if (_registration.Unregister(unregistered))
+            {
+                unregistered.WaitOne(TimeSpan.FromSeconds(5));
+            }
+        }
+
         _waitHandle.Dispose();
         Handle.Dispose();
+        _exited.TrySetCanceled();
     }
 
     private void OnExited()
     {
-        if (Volatile.Read(ref _disposed) != 0)
+        try
         {
-            _exited.TrySetCanceled();
-            return;
+            _exited.TrySetResult(Native.GetExitCodeProcess(Handle, out var code) ? unchecked((int)code) : -1);
+        }
+        catch (ObjectDisposedException)
+        {
+            _exited.TrySetCanceled(); // fermé pendant que le rappel partait : rien à lire
+        }
+    }
+
+    /// <summary>Le bloc d'environnement du processus : liste blanche, trié, terminé par un double zéro.</summary>
+    private static string EnvironmentBlock(AppContainerProfile profile)
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var data = profile.DataDirectory;
+        var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SystemRoot"] = windows,
+            ["windir"] = windows,
+            ["SystemDrive"] = (Path.GetPathRoot(windows) ?? "C:\\").TrimEnd('\\'),
+            ["PATH"] = $"{windows}\\system32;{windows};{windows}\\System32\\Wbem",
+
+            // Windows exige LOCALAPPDATA pour lancer un AppContainer et en déduit TEMP et TMP (<dossier>\Packages\<nom>\AC\Temp, où
+            // le conteneur peut écrire). On lui donne donc le dossier qui contient « Packages\<nom>\AC », jamais un dossier du
+            // conteneur (Windows y rajouterait « Packages\<nom>\AC »).
+            ["LOCALAPPDATA"] = Path.GetFullPath(Path.Combine(data, "..", "..", "..")),
+        };
+        foreach (var name in new[]
+                 {
+                     "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "PROCESSOR_IDENTIFIER", "PROCESSOR_LEVEL", "PROCESSOR_REVISION", "OS",
+                     "DOTNET_ROOT", // l'hôte doit retrouver le runtime
+                 })
+        {
+            if (Environment.GetEnvironmentVariable(name) is { Length: > 0 } value)
+            {
+                variables[name] = value;
+            }
         }
 
-        _exited.TrySetResult(Native.GetExitCodeProcess(Handle, out var code) ? unchecked((int)code) : -1);
+        var block = new System.Text.StringBuilder();
+        foreach (var (name, value) in variables.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            block.Append(name).Append('=').Append(value).Append('\0');
+        }
+
+        return block.Append('\0').ToString();
     }
 
     private static List<IntPtr> CapabilitySids(IReadOnlyList<ModulePermission> granted, List<IntPtr> allocations)
@@ -294,6 +361,13 @@ public sealed class SandboxedProcess : IDisposable
         }
 
         return sids;
+    }
+
+    private static IntPtr AllocText(List<IntPtr> allocations, string text)
+    {
+        var pointer = Marshal.StringToHGlobalUni(text);
+        allocations.Add(pointer);
+        return pointer;
     }
 
     private static IntPtr Alloc(List<IntPtr> allocations, int size)

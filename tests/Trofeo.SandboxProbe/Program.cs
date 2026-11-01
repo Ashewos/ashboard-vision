@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 //   write <dossier>     crée puis relit un fichier dans le dossier
 //   tcp <hôte> <port>   ouvre une connexion TCP
 //   spawn <exe>         lance le programme et attend qu'il se termine sans erreur
+//   env <nom>           affiche « OK <valeur> » si la variable d'environnement existe, sinon « DENIED absent »
 //   sleep <ms>          attend, puis répond OK
 //   alloc <Mo>          alloue (mémoire native) et touche ce nombre de Mio
 //   allocgc <Mo>        pareil avec la mémoire gérée de .NET (celle d'un vrai module)
@@ -15,7 +16,7 @@ using System.Runtime.InteropServices;
 // veut dire qu'un mauvais appel (ou, pour alloc, un processus arrêté par Windows avant d'avoir répondu).
 if (args.Length < 2)
 {
-    Console.Error.WriteLine("Usage : Trofeo.SandboxProbe <read|write|tcp|spawn|sleep|alloc|allocgc> <argument> [port]");
+    Console.Error.WriteLine("Usage : Trofeo.SandboxProbe <read|write|tcp|spawn|env|sleep|alloc|allocgc> <argument> [port]");
     return 2;
 }
 
@@ -63,6 +64,15 @@ try
             }
 
             break;
+        case "env":
+            if (Environment.GetEnvironmentVariable(args[1]) is { } value)
+            {
+                Console.WriteLine("OK " + value);
+                return 0;
+            }
+
+            Console.WriteLine("DENIED absent");
+            return 0;
         case "sleep":
             Thread.Sleep(int.Parse(args[1]));
             break;

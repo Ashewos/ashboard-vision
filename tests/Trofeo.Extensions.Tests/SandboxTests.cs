@@ -262,6 +262,66 @@ public sealed class SandboxTests : IDisposable
         Assert.Equal(2500u, cpu.CpuRate);
     }
 
+    // ---- environnement -------------------------------------------------------------------------------------------------
+
+    [WindowsSandboxFact]
+    public async Task Environment_DoesNotLeakTheServiceVariables()
+    {
+        var canary = "ASHBOARD_CANARY_" + Guid.NewGuid().ToString("N")[..8];
+        Environment.SetEnvironmentVariable(canary, "secret");
+        try
+        {
+            var inside = await RunUnsandboxedAsync(["env", canary]);
+            Assert.Equal("OK secret", inside.Output); // le contrôle : un enfant ordinaire la voit
+
+            var sandboxed = await RunProbeAsync(["env", canary], None);
+            Assert.Equal("DENIED absent", sandboxed.Output);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(canary, null);
+        }
+    }
+
+    [WindowsSandboxFact]
+    public async Task Environment_TempIsInsideTheContainerAndWritable()
+    {
+        var profile = NewProfile();
+        var temp = Path.Combine(profile.DataDirectory, "Temp");
+
+        foreach (var name in new[] { "TEMP", "TMP" })
+        {
+            var run = await RunProbeAsync(["env", name], None, profile: profile);
+            Assert.Equal("OK " + temp, run.Output); // le dossier temporaire que Windows réserve au conteneur
+        }
+
+        // Windows le crée au besoin ; sinon la sonde échouerait ici.
+        Directory.CreateDirectory(temp);
+        var write = await RunProbeAsync(["write", temp], None, profile: profile);
+        Assert.Equal("OK", write.Output);
+    }
+
+    [WindowsSandboxFact]
+    public async Task Environment_DoesNotExposeTheUserProfile()
+    {
+        foreach (var name in new[] { "USERPROFILE", "APPDATA", "HOMEPATH", "USERNAME", "COMPUTERNAME" })
+        {
+            var run = await RunProbeAsync(["env", name], None);
+            Assert.Equal("DENIED absent", run.Output);
+        }
+    }
+
+    [WindowsSandboxFact]
+    public async Task Environment_KeepsTheMinimumTheRuntimeNeeds()
+    {
+        var root = await RunProbeAsync(["env", "SystemRoot"], None);
+        Assert.Equal("OK " + Environment.GetFolderPath(Environment.SpecialFolder.Windows), root.Output);
+
+        var path = await RunProbeAsync(["env", "PATH"], None);
+        Assert.StartsWith("OK ", path.Output);
+        Assert.DoesNotContain("Users", path.Output); // un PATH système seulement
+    }
+
     // ---- poignées et fin du processus -----------------------------------------------------------------------------------
 
     [WindowsSandboxFact]
@@ -309,6 +369,84 @@ public sealed class SandboxTests : IDisposable
         Assert.False(read.IsCompleted);
         await process.Exited.WaitAsync(Patience);
         Assert.Equal(0, await read.WaitAsync(Patience));
+    }
+
+    [WindowsSandboxFact]
+    public async Task UnlistedInheritableHandle_IsNotInheritedByTheChild()
+    {
+        // Deux tubes héritables ; un seul est dans la liste. L'enfant ne doit tenir que celui-là.
+        var profile = NewProfile();
+        var exe = ProbeExe(profile);
+        var job = Track(new ModuleJob());
+        var listed = Track(new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable));
+        var unlisted = Track(new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable));
+        var process = Track(SandboxedProcess.Start(new SandboxStart(exe, "sleep 1500", profile, None, [listed.ClientSafePipeHandle], job)));
+        listed.DisposeLocalCopyOfClientHandle();
+        unlisted.DisposeLocalCopyOfClientHandle();
+        var listedRead = listed.ReadAsync(new byte[1]).AsTask();
+        var unlistedRead = unlisted.ReadAsync(new byte[1]).AsTask();
+
+        // Le tube hors liste est déjà fini : personne d'autre que nous ne l'avait.
+        Assert.Equal(0, await unlistedRead.WaitAsync(TimeSpan.FromSeconds(5)));
+        await Task.Delay(300);
+        Assert.False(listedRead.IsCompleted);
+        await process.Exited.WaitAsync(Patience);
+        Assert.Equal(0, await listedRead.WaitAsync(Patience));
+    }
+
+    [WindowsSandboxFact]
+    public async Task Start_ListedTwiceOrAlsoAsStandardOutput_IsDeduplicated()
+    {
+        var profile = NewProfile();
+        var exe = ProbeExe(profile);
+        var job = Track(new ModuleJob());
+        var pipe = Track(new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable));
+        var client = pipe.ClientSafePipeHandle;
+        var process = Track(SandboxedProcess.Start(new SandboxStart(exe, "env SystemRoot", profile, None, [client, client], job, client)));
+        pipe.DisposeLocalCopyOfClientHandle();
+
+        var output = await new StreamReader(pipe).ReadToEndAsync().WaitAsync(Patience);
+        Assert.StartsWith("OK ", output.Trim());
+        Assert.Equal(0, await process.Exited.WaitAsync(Patience));
+    }
+
+    [WindowsSandboxFact]
+    public async Task KillThenDispose_Repeatedly_NeverRaisesUnhandledExceptions()
+    {
+        var unhandled = new List<Exception>();
+        void OnUnhandled(object? sender, UnhandledExceptionEventArgs e) => unhandled.Add((Exception)e.ExceptionObject);
+        void OnUnobserved(object? sender, UnobservedTaskExceptionEventArgs e) => unhandled.Add(e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandled;
+        TaskScheduler.UnobservedTaskException += OnUnobserved;
+        try
+        {
+            var profile = NewProfile();
+            var exe = ProbeExe(profile);
+            for (var i = 0; i < 50; i++)
+            {
+                using var job = new ModuleJob();
+                var process = SandboxedProcess.Start(new SandboxStart(exe, "sleep 30000", profile, None, [], job));
+                process.Kill();
+                process.Dispose();
+
+                // Terminé (code de sortie) ou annulé selon la course : jamais en échec, jamais en attente.
+                var finished = await Task.WhenAny(process.Exited, Task.Delay(Patience));
+                Assert.Same(process.Exited, finished);
+                Assert.False(process.Exited.IsFaulted);
+                Assert.Throws<ObjectDisposedException>(() => process.Kill());
+                Assert.Throws<ObjectDisposedException>(() => process.DuplicateInto(job.Handle));
+            }
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            await Task.Delay(200);
+            Assert.Empty(unhandled);
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.UnhandledException -= OnUnhandled;
+            TaskScheduler.UnobservedTaskException -= OnUnobserved;
+        }
     }
 
     [WindowsSandboxFact]
