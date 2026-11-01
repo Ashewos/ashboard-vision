@@ -6,14 +6,19 @@ namespace Trofeo.Modules.Agents;
 
 /// <summary>
 /// Installe le mod <c>trofeo-quotas</c> dans Claude Code : ajoute le dossier <c>mods</c> comme marché de modules, puis installe
-/// le mod. <paramref name="run"/> lance <c>claude</c> avec les arguments donnés et rend le code de retour et la sortie ;
-/// elle lève <see cref="Win32Exception"/> (ou <see cref="FileNotFoundException"/>) quand <c>claude</c> est introuvable.
+/// le mod. Essaie <c>claude</c> dans le PATH, puis le CLI natif ou embarqué dans Claude Desktop s'il est introuvable.
+/// <paramref name="run"/> lance l'exécutable choisi et rend le code de retour et la sortie.
 /// </summary>
 public sealed class QuotaModInstaller(
-    Func<string, string, CancellationToken, Task<(int ExitCode, string Output)>> run, string? modsDir)
+    Func<string, string, CancellationToken, Task<(int ExitCode, string Output)>> run, string? modsDir,
+    Func<IReadOnlyList<string>>? fallbackExecutables)
 {
+    public QuotaModInstaller(Func<string, string, CancellationToken, Task<(int ExitCode, string Output)>> run,
+        string? modsDir) : this(run, modsDir, null) { }
+
     internal const string PluginName = "trofeo-quotas@trofeo-hb-dashboard";
     private const int MaxOutputLength = 300;
+    private IReadOnlyList<string> FallbackExecutables => fallbackExecutables?.Invoke() ?? ClaudeCliLocator.FindCandidates();
 
     public async Task<ActionResult> InstallAsync(CancellationToken ct)
     {
@@ -22,14 +27,31 @@ public sealed class QuotaModInstaller(
 
         try
         {
+            var executable = "claude";
+            Queue<string>? fallbacks = null;
             foreach (var arguments in new[] { $"plugin marketplace add \"{modsDir}\"", $"plugin install {PluginName}" })
             {
-                var (exitCode, output) = await run("claude", arguments, ct);
+                var (exitCode, output) = await RunAsync(arguments);
                 if (exitCode != 0)
                 {
                     var text = output.Trim();
                     if (text.Length > MaxOutputLength) text = text[..MaxOutputLength];
                     return new ActionResult(false, "L'installation a échoué : " + text);
+                }
+            }
+
+            async Task<(int ExitCode, string Output)> RunAsync(string arguments)
+            {
+                while (true)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try { return await run(executable, arguments, ct); }
+                    catch (Exception e) when (e is FileNotFoundException || e is Win32Exception { NativeErrorCode: 2 or 3 })
+                    {
+                        fallbacks ??= new Queue<string>(FallbackExecutables);
+                        if (!fallbacks.TryDequeue(out var next)) throw;
+                        executable = next;
+                    }
                 }
             }
         }
@@ -41,7 +63,7 @@ public sealed class QuotaModInstaller(
         return new ActionResult(true, "Mod installé : il sera chargé par les nouvelles sessions de Claude Code.");
     }
 
-    /// <summary>Lanceur réel : <c>claude</c> est résolu par le <c>PATH</c> ; 60 s au plus par commande.</summary>
+    /// <summary>Lanceur réel sans shell, pour le PATH ou un chemin absolu ; 60 s au plus par commande.</summary>
     internal static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName, string arguments, CancellationToken ct)
     {
         using var process = new Process();
