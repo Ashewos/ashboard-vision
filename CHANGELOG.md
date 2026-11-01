@@ -2,6 +2,12 @@
 
 Les versions sont numérotées selon [SemVer](https://semver.org/lang/fr/) : les bêtas s'écrivent `1.0.0-beta.N`, les stables `1.0.0`, `1.1.0`, etc. Le texte de chaque section sert de notes à la version GitHub du même numéro.
 
+## 1.0.0-beta.4
+
+- Le mod des quotas s'installe aussi quand Claude Code n'est fourni que par l'application Claude, sans commande `claude` dans le PATH. Merci à Macorou pour ce correctif !
+- La mise à jour du mod à chaque nouvelle version et son retrait à la désinstallation trouvent aussi ce Claude Code.
+- Depuis la bêta 3, une mise à jour en un clic relance le service avec tes droits normaux : cette version est la première à le montrer.
+
 ## 1.0.0-beta.3
 
 - Après une mise à jour en un clic, le service repart avec tes droits normaux, et non plus en administrateur. C'est maintenant l'installateur qui demande l'autorisation à Windows.
