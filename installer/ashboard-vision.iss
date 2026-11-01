@@ -284,11 +284,11 @@ begin
   if UninstallSilent() then Parameters := Parameters + ' --silencieux';
   if not Exec(ExpandConstant('{app}\' + ServiceExe), Parameters, '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
     Log('Le nettoyage de l''utilisateur n''a pas pu être lancé : ' + SysErrorMessage(ResultCode))
-  else if ResultCode <> 0 then
-    Log('Le nettoyage de l''utilisateur a rendu le code ' + IntToStr(ResultCode));
+  else
+    Log('Nettoyage de l''utilisateur (' + Parameters + ') : code de sortie ' + IntToStr(ResultCode));
 
   if not Exec(ExpandConstant('{app}\' + HelperExe), 'uninstall', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     Log('Le retrait de l''assistant des capteurs n''a pas pu être lancé : ' + SysErrorMessage(ResultCode))
-  else if ResultCode <> 0 then
-    Log('Le retrait de l''assistant des capteurs a rendu le code ' + IntToStr(ResultCode));
+  else
+    Log('Retrait de l''assistant des capteurs : code de sortie ' + IntToStr(ResultCode));
 end;
