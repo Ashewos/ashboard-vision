@@ -187,6 +187,87 @@ public sealed class ApprovedModulesStoreTests : IDisposable
     }
 
     [Fact]
+    public void Load_FileLocked_IsUnreadableNotTampered()
+    {
+        var store = NewStore();
+        store.Save(Sample());
+
+        ApprovedLoad load;
+        using (new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            load = store.Load();
+        }
+
+        Assert.True(load.Unreadable);
+        Assert.False(load.Tampered);
+        Assert.Empty(load.Modules.Modules);
+        Assert.Single(_warnings);
+        Assert.False(store.Load().Unreadable);
+        Assert.Equal(2, store.Load().Modules.Modules.Count);
+    }
+
+    [Fact]
+    public void Load_KeyLocked_IsUnreadableNotTampered()
+    {
+        var store = NewStore();
+        store.Save(Sample());
+
+        ApprovedLoad load;
+        using (new FileStream(KeyPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            load = store.Load();
+        }
+
+        Assert.True(load.Unreadable);
+        Assert.False(load.Tampered);
+    }
+
+    [Fact]
+    public void Save_KeyLocked_ThrowsAndKeepsKeyAndList()
+    {
+        var store = NewStore();
+        store.Save(Sample());
+        var keyBefore = File.ReadAllBytes(KeyPath);
+        var listBefore = File.ReadAllBytes(FilePath);
+
+        using (new FileStream(KeyPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Throws<IOException>(() => store.Save(ApprovedModules.Empty));
+        }
+
+        Assert.Equal(keyBefore, File.ReadAllBytes(KeyPath));
+        Assert.Equal(listBefore, File.ReadAllBytes(FilePath));
+        var load = store.Load();
+        Assert.False(load.Tampered);
+        Assert.Equal(2, load.Modules.Modules.Count);
+    }
+
+    [Fact]
+    public void Save_NewKey_DoesNotTouchExistingListWhenListTemporaryFileCannotBeWritten()
+    {
+        var store = NewStore();
+        store.Save(Sample());
+        File.Delete(KeyPath);
+        var listBefore = File.ReadAllBytes(FilePath);
+        using (new FileStream(FilePath + ".tmp", FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            Assert.ThrowsAny<IOException>(() => store.Save(ApprovedModules.Empty));
+        }
+
+        Assert.False(File.Exists(KeyPath));
+        Assert.Equal(listBefore, File.ReadAllBytes(FilePath));
+    }
+
+    [Fact]
+    public void Load_FolderMissing_IsEmptyNotTamperedNorUnreadable()
+    {
+        var load = NewStore(Path.Combine(_dir, "absent", "modules.json")).Load();
+
+        Assert.False(load.Tampered);
+        Assert.False(load.Unreadable);
+    }
+
+    [Fact]
     public void Save_Twice_ReusesKeyAndLeavesNoTemporaryFile()
     {
         var store = NewStore();
