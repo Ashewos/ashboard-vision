@@ -8,7 +8,15 @@ namespace Trofeo.Extensions.Protocol;
 /// <summary>
 /// Un message entre le service et l'hôte de module. Le contrat est documenté (d'autres langages pourront parler à un
 /// service) : le discriminant s'appelle <c>type</c>, les noms de message et de propriété sont en camelCase, les énumérations
-/// voyagent en texte et les permissions avec leur nom de manifeste (<c>reseau-local</c>, <c>internet</c>…).
+/// voyagent en texte (jamais en nombre) et les permissions avec leur nom de manifeste (<c>reseau-local</c>, <c>internet</c>…).
+/// <para>
+/// À la lecture, un message dont une chaîne, une liste, un objet ou un nombre obligatoire manque (ou est nul), dont une
+/// énumération est inconnue ou numérique, est refusé (<see cref="InvalidDataException"/> dans <see cref="MessageChannel"/>).
+/// Les champs facultatifs sont les paramètres suivis de <c>= null</c> et les types annotés <c>?</c>.
+/// <b>Limite :</b> un champ <see cref="JsonElement"/> obligatoire doit être présent, mais il peut valoir <c>null</c> en JSON
+/// (<see cref="JsonElement.ValueKind"/> = <see cref="JsonValueKind.Null"/>), y compris dans <see cref="LookupResult.Value"/> ;
+/// le consommateur vérifie le genre de ce qu'il lit.
+/// </para>
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(Hello), "hello")]
@@ -42,6 +50,19 @@ public abstract record HostMessage
     /// le numéro mineur n'augmente que pour ajouter des messages ou des propriétés optionnelles.
     /// </summary>
     public const string ProtocolVersion = "1.0";
+
+    /// <summary>
+    /// Vrai pour les messages que seul l'hôte envoie (de <see cref="Ready"/> à <see cref="Failure"/>). Le canal n'oppose pas
+    /// les deux sens : le service ne doit agir que sur ces messages-là et ignorer (ou refuser) les autres reçus de l'hôte
+    /// (<see cref="Hello"/>, <see cref="Open"/>, <see cref="LocalConnected"/>, <see cref="FrameDone"/>…), qu'un hôte
+    /// malveillant peut très bien écrire.
+    /// </summary>
+    public static bool IsFromHost(HostMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        return message is Ready or Frame or Status or Log or SecretGet or SecretSet or DataGet or LocalConnect
+            or LookupReply or ActionReply or Failure;
+    }
 }
 
 // --- Du service vers l'hôte ---------------------------------------------------------------------------------------------
@@ -78,10 +99,10 @@ public sealed record Lookup(int Id, string FieldKey, string Query) : HostMessage
 public sealed record RunAction(int Id, Guid InstanceId, string ActionKey, JsonElement Settings) : HostMessage;
 
 /// <summary>Réponse à <see cref="SecretGet"/> (absente : pas de secret) ou à <see cref="SecretSet"/> (<c>Value</c> vide).</summary>
-public sealed record SecretValue(int Id, string? Value) : HostMessage;
+public sealed record SecretValue(int Id, string? Value = null) : HostMessage;
 
 /// <summary>Réponse à <see cref="DataGet"/> : <c>Status</c> vaut <c>ok</c>, <c>denied</c> ou <c>unavailable</c>.</summary>
-public sealed record DataValue(int Id, string Status, JsonElement? Value) : HostMessage;
+public sealed record DataValue(int Id, string Status, JsonElement? Value = null) : HostMessage;
 
 /// <summary>Le service demande à l'hôte de s'arrêter.</summary>
 public sealed record Shutdown : HostMessage;
@@ -95,7 +116,7 @@ public sealed record Ready(string RequiredSdk) : HostMessage;
 public sealed record Frame(Guid InstanceId, int Buffer, bool Animating) : HostMessage;
 
 /// <summary>L'état d'une instance.</summary>
-public sealed record Status(Guid InstanceId, ModuleHealth Health, string? Message) : HostMessage;
+public sealed record Status(Guid InstanceId, ModuleHealth Health, string? Message = null) : HostMessage;
 
 /// <summary>Une ligne du journal du module (<c>Level</c> : debug, info, warn, error).</summary>
 public sealed record Log(string Level, string Message) : HostMessage;
@@ -104,7 +125,7 @@ public sealed record Log(string Level, string Message) : HostMessage;
 public sealed record SecretGet(int Id, string Key) : HostMessage;
 
 /// <summary>Écrit (ou, si <c>Value</c> est absente, efface) un secret du coffre du module.</summary>
-public sealed record SecretSet(int Id, string Key, string? Value) : HostMessage;
+public sealed record SecretSet(int Id, string Key, string? Value = null) : HostMessage;
 
 /// <summary>Demande des données au service : <c>Kind</c> vaut <c>sensors</c> ou <c>nowPlaying</c>.</summary>
 public sealed record DataGet(int Id, string Kind) : HostMessage;

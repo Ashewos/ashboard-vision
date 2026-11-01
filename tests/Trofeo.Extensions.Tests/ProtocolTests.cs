@@ -131,6 +131,7 @@ public sealed class ProtocolTests
         Assert.Equal(Instance, roundOpen.InstanceId);
         Assert.Equal(1.5f, roundOpen.TextScale);
         Assert.Equal(77, roundOpen.Buffer0);
+        Assert.Equal(0, roundOpen.Buffer1); // réservé dans le protocole 1.0
         Assert.Equal(8123, roundOpen.Settings.GetProperty("port").GetInt32());
         var roundStatus = Assert.IsType<Status>(read[2]);
         Assert.Equal(ModuleHealth.Offline, roundStatus.Health);
@@ -188,6 +189,79 @@ public sealed class ProtocolTests
     public async Task Read_NotJson_ThrowsInvalidData()
     {
         await Assert.ThrowsAsync<InvalidDataException>(() => ReadAll(FrameOf("pas du json")));
+    }
+
+    /// <summary>Des messages venant d'un hôte qu'on ne croit pas : champ absent, nul, du mauvais genre ou hors bornes.</summary>
+    [Theory]
+    [InlineData("""{"type":"log"}""")]
+    [InlineData("""{"type":"log","level":"info"}""")]
+    [InlineData("""{"type":"log","message":"m"}""")]
+    [InlineData("""{"type":"log","level":null,"message":"m"}""")]
+    [InlineData("""{"type":"log","level":"info","message":null}""")]
+    [InlineData("""{"type":"secretGet","id":1}""")]
+    [InlineData("""{"type":"secretGet","key":"k"}""")]
+    [InlineData("""{"type":"secretGet","id":1,"key":null}""")]
+    [InlineData("""{"type":"ready"}""")]
+    [InlineData("""{"type":"failure"}""")]
+    [InlineData("""{"type":"lookupReply","id":1}""")]
+    [InlineData("""{"type":"lookupReply","id":1,"results":null}""")]
+    [InlineData("""{"type":"lookupReply","id":1,"results":[null]}""")]
+    [InlineData("""{"type":"lookupReply","id":1,"results":[{"label":"x"}]}""")]
+    [InlineData("""{"type":"lookupReply","id":1,"results":[{"value":{}}]}""")]
+    [InlineData("""{"type":"actionReply","id":1}""")]
+    [InlineData("""{"type":"actionReply","id":1,"result":null}""")]
+    [InlineData("""{"type":"actionReply","id":1,"result":{"ok":true}}""")]
+    [InlineData("""{"type":"dataGet","id":1}""")]
+    [InlineData("""{"type":"localConnect","id":1,"port":80}""")]
+    [InlineData("""{"type":"status","instanceId":"3f2b8e0a-5c41-4f7e-9a63-1d0c7b2e4a55"}""")]
+    [InlineData("""{"type":"status","instanceId":"3f2b8e0a-5c41-4f7e-9a63-1d0c7b2e4a55","health":99}""")]
+    [InlineData("""{"type":"status","instanceId":"3f2b8e0a-5c41-4f7e-9a63-1d0c7b2e4a55","health":1}""")]
+    [InlineData("""{"type":"status","instanceId":"3f2b8e0a-5c41-4f7e-9a63-1d0c7b2e4a55","health":"1"}""")]
+    [InlineData("""{"type":"status","instanceId":"3f2b8e0a-5c41-4f7e-9a63-1d0c7b2e4a55","health":"bogus"}""")]
+    [InlineData("""{"type":"status","instanceId":"3f2b8e0a-5c41-4f7e-9a63-1d0c7b2e4a55","health":null}""")]
+    [InlineData("""{"type":"frame","instanceId":"3f2b8e0a-5c41-4f7e-9a63-1d0c7b2e4a55","buffer":0}""")]
+    [InlineData("""{"type":"hello","protocol":"1.0","moduleDirectory":"d","entry":"e","typeId":"a.b","granted":[],"dataDirectory":"x","maxFps":30}""")]
+    [InlineData("""{"type":"hello","protocol":"1.0","moduleDirectory":"d","entry":"e","typeId":"a.b","dataDirectory":"x","appearance":{},"maxFps":30}""")]
+    [InlineData("""{"type":"hello","protocol":"1.0","moduleDirectory":"d","entry":"e","typeId":"a.b","granted":[null],"dataDirectory":"x","appearance":{},"maxFps":30}""")]
+    [InlineData("""{"type":"hello","protocol":"1.0","moduleDirectory":"d","entry":"e","typeId":"a.b","granted":[3],"dataDirectory":"x","appearance":{},"maxFps":30}""")]
+    [InlineData("""{"type":"limits"}""")]
+    [InlineData("""{"type":"appearanceChanged"}""")]
+    [InlineData("""{}""")]
+    [InlineData("""[]""")]
+    [InlineData("""123""")]
+    [InlineData("""{"type":3}""")]
+    public async Task Read_MissingNullOrOutOfRangeField_ThrowsInvalidData(string json)
+    {
+        await Assert.ThrowsAsync<InvalidDataException>(() => ReadAll(FrameOf(json)));
+    }
+
+    [Fact]
+    public async Task Read_OptionalFieldsAbsentOrNull_AreAccepted()
+    {
+        var read = await ReadAll(FrameOf(
+            $$"""
+            {"type":"status","instanceId":"{{Instance}}","health":"online"}
+            """).Concat(FrameOf("""{"type":"secretSet","id":2,"key":"k","value":null}""")).Concat(FrameOf("""{"type":"secretValue","id":3}""")).Concat(FrameOf("""{"type":"dataValue","id":4,"status":"denied"}""")).ToArray());
+
+        Assert.Null(Assert.IsType<Status>(read[0]).Message);
+        Assert.Null(Assert.IsType<SecretSet>(read[1]).Value);
+        Assert.Null(Assert.IsType<SecretValue>(read[2]).Value);
+        Assert.Null(Assert.IsType<DataValue>(read[3]).Value);
+    }
+
+    [Fact]
+    public void IsFromHost_SeparatesTheTwoDirections()
+    {
+        var fromHost = new HashSet<string>
+        {
+            "ready", "frame", "status", "log", "secretGet", "secretSet", "dataGet", "localConnect", "lookupReply", "actionReply", "failure",
+        };
+
+        foreach (var data in EveryMessage())
+        {
+            var type = (string)data[0];
+            Assert.Equal(fromHost.Contains(type), HostMessage.IsFromHost((HostMessage)data[1]));
+        }
     }
 
     [Fact]
@@ -319,6 +393,44 @@ public sealed class ProtocolTests
             Assert.Equal("1.0", Assert.IsType<Ready>(message).RequiredSdk);
             break;
         }
+    }
+
+    [Fact]
+    public async Task Read_PendingOnAnonymousPipe_EndsCleanlyWhenTheWriterCloses()
+    {
+        // Une lecture en attente sur un tube anonyme ne se termine pas par DisposeAsync ni par l'annulation : elle se termine
+        // quand l'autre extrémité se ferme (et que le service a fermé sa copie de la poignée client).
+        using var fromHost = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.None);
+        using var self = Process.GetCurrentProcess();
+        Assert.True(Native.DuplicateHandle(Native.GetCurrentProcess(), fromHost.ClientSafePipeHandle, self.SafeHandle, out var duplicate,
+            0, false, Native.DuplicateSameAccess)); // la copie de l'hôte ; le service garde la sienne, comme en production
+        var hostOut = new AnonymousPipeClientStream(PipeDirection.Out, new Microsoft.Win32.SafeHandles.SafePipeHandle(duplicate, true));
+        await using var service = new MessageChannel(fromHost, new MemoryStream());
+
+        var reading = Task.Run(async () =>
+        {
+            var received = new List<HostMessage>();
+            await foreach (var message in service.ReadAllAsync(CancellationToken.None))
+            {
+                received.Add(message);
+            }
+
+            return received;
+        });
+
+        await using (var host = new MessageChannel(new MemoryStream(), hostOut))
+        {
+            await host.SendAsync(new Ready("1.0"), CancellationToken.None);
+        }
+
+        // Tant que l'écrivain est ouvert (ou que le service garde la poignée client), la lecture reste en attente.
+        Assert.NotSame(reading, await Task.WhenAny(reading, Task.Delay(TimeSpan.FromMilliseconds(300))));
+
+        fromHost.DisposeLocalCopyOfClientHandle();
+
+        var done = await Task.WhenAny(reading, Task.Delay(TimeSpan.FromSeconds(10)));
+        Assert.Same(reading, done);
+        Assert.IsType<Ready>(Assert.Single(await reading));
     }
 
     [Fact]
@@ -510,6 +622,23 @@ public sealed class ProtocolTests
     public void FrameBuffers_AbsurdSize_Throws(int width, int height)
     {
         Assert.ThrowsAny<ArgumentException>(() => new FrameBuffers(width, height));
+    }
+
+    [Theory]
+    [InlineData(0, 10)]
+    [InlineData(10, 0)]
+    [InlineData(-5, 10)]
+    [InlineData(100000, 100000)]
+    public void FrameView_Map_InvalidSize_ThrowsBeforeTouchingTheHandle(int width, int height)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => FrameView.Map(0x7FFF0, width, height));
+    }
+
+    [Fact]
+    public void FrameView_BufferBytes_IsWidthTimesHeightTimesFour()
+    {
+        Assert.Equal(1920 * 462 * 4, FrameView.BufferBytes(1920, 462));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FrameView.BufferBytes(0, 1));
     }
 
     [Fact]
