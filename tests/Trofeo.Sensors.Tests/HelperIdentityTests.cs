@@ -50,9 +50,13 @@ public class HelperIdentityTests
     }
 
     [Fact]
-    public async Task IsTrusted_PipeCreatedByCurrentUser_IsFalse()
+    public async Task IsTrusted_PipeCreatedByThisProcess_FollowsElevation()
     {
-        // Les tests ne sont pas lancés élevés : le propriétaire par défaut du tube est l'utilisateur courant.
+        // Sans élévation (le PC d'Alex), le propriétaire par défaut du tube est l'utilisateur courant : pas digne de confiance.
+        // Élevé (les machines de GitHub Actions), Windows le donne au groupe Administrateurs, que la règle accepte comme pour
+        // l'assistant des capteurs.
+        var current = WindowsIdentity.GetCurrent();
+        var elevated = new WindowsPrincipal(current).IsInRole(WindowsBuiltInRole.Administrator);
         var name = "trofeo-test-" + Guid.NewGuid().ToString("N");
         using var cts = new CancellationTokenSource();
         await using var server = new NamedPipeServerStream(name, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
@@ -61,8 +65,17 @@ public class HelperIdentityTests
         await client.ConnectAsync(2000, cts.Token);
         await connecting;
 
-        Assert.Equal(WindowsIdentity.GetCurrent().User, HelperIdentity.ReadOwner(client)); // la lecture du propriétaire fonctionne vraiment
-        Assert.False(HelperIdentity.IsTrusted(client));
+        var owner = HelperIdentity.ReadOwner(client); // la lecture du propriétaire fonctionne vraiment
+        if (elevated)
+        {
+            Assert.True(owner?.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid));
+            Assert.True(HelperIdentity.IsTrusted(client));
+        }
+        else
+        {
+            Assert.Equal(current.User, owner);
+            Assert.False(HelperIdentity.IsTrusted(client));
+        }
     }
 
     [Fact]
