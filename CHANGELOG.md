@@ -2,6 +2,14 @@
 
 Les versions sont numérotées selon [SemVer](https://semver.org/lang/fr/) : les bêtas s'écrivent `1.0.0-beta.N`, les stables `1.0.0`, `1.1.0`, etc. Le texte de chaque section sert de notes à la version GitHub du même numéro.
 
+## 1.0.0-beta.3
+
+- Après une mise à jour en un clic, le service repart avec tes droits normaux, et non plus en administrateur. C'est maintenant l'installateur qui demande l'autorisation à Windows.
+- Si tu refuses cette autorisation, Paramètres indique que la mise à jour est annulée.
+- Si l'installateur s'arrête sans rien installer, Paramètres l'indique comme un échec.
+
+Note : la mise à jour depuis la bêta 2 passe encore par l'ancienne méthode. Juste après, le service tourne donc en administrateur, jusqu'à sa prochaine relance (redémarrage de Windows, par exemple).
+
 ## 1.0.0-beta.2
 
 Deuxième bêta, surtout pour essayer la mise à jour depuis la bêta 1.
