@@ -25,7 +25,10 @@
 ## Décisions qui valent pour tout le plan
 
 - **Identifiant d'un module** : `^[a-z0-9]+(-[a-z0-9]+)*\.[a-z0-9]+(-[a-z0-9]+)*$`, 40 caractères au plus. Le point obligatoire le distingue des types d'origine (`clock`, `monitoring`…), qui n'en ont pas. Il sert de `TypeId` dans la disposition et de portée du coffre à secrets (`DpapiSecretVault.Scope(id)`).
-- **Permissions**, dans le manifeste : `reseau-local`, `internet`, `capteurs`, `musique` (enum `ModulePermission { LocalNetwork, Internet, Sensors, NowPlaying }`).
+- **Permissions**, dans le manifeste : `reseau-local`, `internet`, `ce-pc`, `capteurs`, `musique` (enum `ModulePermission { LocalNetwork, Internet, ThisComputer, Sensors, NowPlaying }`). `ce-pc` exige le champ `localPorts` (ports 1 à 65535, 8 au plus) ; le service relaie vers `127.0.0.1` seulement ces ports, 16 connexions simultanées au plus par module.
+- **Signature d'un `.avmod`** : fichier `signature.json` à la racine, `{"publicKey": "<SubjectPublicKeyInfo en base64>", "signature": "<base64>"}`, signature ECDSA P-256 / SHA-256 (format IEEE P1363) du texte UTF-8 `ashboard-vision.avmod.v1\n<id>\n<version>\n<empreinte du contenu>` ; l'empreinte du contenu (`ContentHash`) exclut `signature.json`. Empreinte courte d'une clé : 8 premiers caractères hexadécimaux majuscules du SHA-256 de la clé publique, en `XXXX-XXXX`. Clé du créateur : `%UserProfile%\.ashboard-module\cle-signature.pem` (PKCS#8, jamais dans un dépôt).
+- **Verrou d'exécution** : avant de lancer un hôte, le service ouvre chaque fichier du module avec `FileShare.Read` (ni écriture ni suppression), calcule l'empreinte sur ces fichiers ouverts et les garde ouverts jusqu'à la fin de l'hôte.
+- **SDK** : jamais sur nuget.org ; paquets `.nupkg` joints aux versions GitHub et embarqués par l'installateur (tâche 22).
 - **Version du SDK parlée par le logiciel** : `1.0` au départ ; versions majeures acceptées : `{1}`.
 - **AppContainer** : nom `ashboard-vision.mod.<id>` ; capacités `privateNetworkClientServer` (`reseau-local`) et `internetClient` (`internet`).
 - **Job object** : 512 Mio de mémoire par processus (`JOB_OBJECT_LIMIT_PROCESS_MEMORY`), 25 % du processeur en plafond dur (`CpuRate = 2500`, `HARD_CAP`), `ActiveProcessLimit = 1` (le module ne peut lancer aucun programme), `KILL_ON_JOB_CLOSE`, `DIE_ON_UNHANDLED_EXCEPTION`.
@@ -59,18 +62,18 @@ Les cinq cas que la conception implique sans qu'une tâche ne les vise d'elle-m�
 **Interfaces :**
 - Produit :
   - `public readonly record struct SdkVersion(int Major, int Minor) : IComparable<SdkVersion>` avec `static bool TryParse(string? text, out SdkVersion version)` (forme `M.m` seulement) et `ToString()` → `"1.0"`.
-  - Dans `AshboardVision.Sdk` (espace `AshboardVision.Sdk`) : `public enum ModulePermission { LocalNetwork, Internet, Sensors, NowPlaying }` et `public static class ModulePermissions { string ToManifest(ModulePermission p); bool TryParse(string text, out ModulePermission p); }`.
-  - Dans `Trofeo.Extensions` : `public static class PermissionTexts { string Label(ModulePermission p); string Explanation(ModulePermission p); }` — libellés : « Réseau local », « Internet », « Capteurs », « Musique en cours » ; explications reprises du tableau 5.2 de la conception.
-  - `public sealed record ModuleManifest(string Id, string Name, string Description, string Author, string Version, SdkVersion Sdk, string Entry, IReadOnlyList<ModulePermission> Permissions, string? Repository, GridSize MinSize, IReadOnlyDictionary<SizePreset, GridSize> Presets, SettingsSchema Settings, string? Icon)` et `ModuleDescriptor ToDescriptor()`.
+  - Dans `AshboardVision.Sdk` (espace `AshboardVision.Sdk`) : `public enum ModulePermission { LocalNetwork, Internet, ThisComputer, Sensors, NowPlaying }` et `public static class ModulePermissions { string ToManifest(ModulePermission p); bool TryParse(string text, out ModulePermission p); }`.
+  - Dans `Trofeo.Extensions` : `public static class PermissionTexts { string Label(ModulePermission p, IReadOnlyList<int> localPorts); string Explanation(ModulePermission p); }` — libellés : « Réseau local », « Internet », « Cet ordinateur : port 25565 » (ports séparés par des virgules), « Capteurs », « Musique en cours » ; explications reprises du tableau 5.2 de la conception.
+  - `public sealed record ModuleManifest(string Id, string Name, string Description, string Author, string Version, SdkVersion Sdk, string Entry, IReadOnlyList<ModulePermission> Permissions, IReadOnlyList<int> LocalPorts, string? Repository, GridSize MinSize, IReadOnlyDictionary<SizePreset, GridSize> Presets, SettingsSchema Settings, string? Icon)` et `ModuleDescriptor ToDescriptor()`.
   - `public static class ManifestReader { ManifestReadResult Read(string json); }` ; `public sealed record ManifestReadResult(ModuleManifest? Manifest, IReadOnlyList<string> Errors)`.
   - `public enum CompatibilityKind { Compatible, NeedsNewerApp, TooOld }` ; `public static class Compatibility { SdkVersion Current { get; } /* 1.0 */ IReadOnlySet<int> SupportedMajors { get; } /* {1} */ CompatibilityKind Check(SdkVersion required); string Message(CompatibilityKind kind); }`.
 
-Format JSON du manifeste (noms exacts) : `id`, `name`, `description`, `author`, `version` (SemVer, `AppVersion.TryParse` de `Trofeo.Distribution`), `sdk`, `entry` (nom d'une DLL à la racine, sans dossier), `permissions` (tableau), `repository` (facultatif, `propriétaire/dépôt`), `minSize` `{columns, rows}`, `presets` `{compact, ideal, large}` (chacun facultatif), `settings` (tableau de champs au format JSON de `SettingsSchema`, discriminant `kind`), `icon` (facultatif, PNG à la racine). Limites : `name` ≤ 40 caractères, `author` ≤ 40, `description` ≤ 300 ; tailles dans le damier (1 à 16 colonnes, 1 à 4 lignes).
+Format JSON du manifeste (noms exacts) : `id`, `name`, `description`, `author`, `version` (SemVer, `AppVersion.TryParse` de `Trofeo.Distribution`), `sdk`, `entry` (nom d'une DLL à la racine, sans dossier), `permissions` (tableau), `localPorts` (tableau d'entiers, obligatoire si et seulement si `ce-pc` est déclaré), `repository` (facultatif, `propriétaire/dépôt`), `minSize` `{columns, rows}`, `presets` `{compact, ideal, large}` (chacun facultatif), `settings` (tableau de champs au format JSON de `SettingsSchema`, discriminant `kind`), `icon` (facultatif, PNG à la racine). Limites : `name` ≤ 40 caractères, `author` ≤ 40, `description` ≤ 300 ; tailles dans le damier (1 à 16 colonnes, 1 à 4 lignes).
 
 - [ ] **Étape 1 : tests qui échouent** dans `ManifestReaderTests` et `CompatibilityTests` :
   - `Read_ValidManifest_ReturnsAllFields` (un manifeste complet → chaque champ relu, `Permissions == [LocalNetwork, Internet]`, `Settings.Fields.Count == 2`).
   - `Read_IdWithoutDot_IsRefused` (`"clock"` → erreur « L'identifiant doit avoir la forme auteur.module »), `Read_IdWithPathCharacters_IsRefused` (`"a..b"`, `"a/b.c"`, `"A.b"`), `Read_IdTooLong_IsRefused` (41 caractères).
-  - `Read_UnknownPermission_IsRefused` (`"fichiers"` → erreur qui la nomme), `Read_EntryWithFolder_IsRefused` (`"bin/x.dll"`), `Read_SizeOutsideGrid_IsRefused` (`minSize` 17×1), `Read_InvalidJson_ReturnsOneError` (pas d'exception).
+  - `Read_UnknownPermission_IsRefused` (`"fichiers"` → erreur qui la nomme), `Read_ThisComputerWithoutPorts_IsRefused`, `Read_PortsWithoutThisComputer_IsRefused`, `Read_PortOutOfRange_IsRefused` (`0`, `65536`), `Read_NinePorts_IsRefused`, `Read_EntryWithFolder_IsRefused` (`"bin/x.dll"`), `Read_SizeOutsideGrid_IsRefused` (`minSize` 17×1), `Read_InvalidJson_ReturnsOneError` (pas d'exception).
   - `Check_OlderMinorRequired_IsCompatible` (`1.0` alors que `Current` vaut `1.0`, et avec un `Current` simulé `1.5` via une surcharge `internal static CompatibilityKind Check(SdkVersion required, SdkVersion current, IReadOnlySet<int> majors)`) ; `Check_NewerMinorRequired_NeedsNewerApp` (`1.6` contre `1.5`) ; `Check_UnsupportedMajor_IsTooOld` (`0.9` contre majeures `{1}`) ; `Check_NewerMajor_NeedsNewerApp` (`2.0`).
   - `Message(NeedsNewerApp)` vaut exactement « Ce module demande une version plus récente d'Ashboard Vision : mets à jour le logiciel. »
 - [ ] **Étape 2 :** `dotnet test tests/Trofeo.Extensions.Tests` → échec à la compilation.
@@ -78,15 +81,19 @@ Format JSON du manifeste (noms exacts) : `id`, `name`, `description`, `author`, 
 - [ ] **Étape 4 :** les tests passent.
 - [ ] **Étape 5 :** commit `feat(extensions): manifeste des modules complémentaires, versions du SDK et compatibilité`.
 
-### Tâche 2 : le paquet `.avmod`
+### Tâche 2 : le paquet `.avmod` signé
 
-**Fichiers :** créer `src/Trofeo.Extensions/Packaging/AvmodPackage.cs`, `ContentHash.cs` ; test `tests/Trofeo.Extensions.Tests/AvmodPackageTests.cs`
+**Fichiers :** créer `src/Trofeo.Extensions/Packaging/AvmodPackage.cs`, `ContentHash.cs`, `AvmodSigner.cs`, `KeyFingerprint.cs` ; test `tests/Trofeo.Extensions.Tests/AvmodPackageTests.cs`, `AvmodSignatureTests.cs`
 
 **Interfaces :**
 - Consomme : `ManifestReader` (tâche 1).
 - Produit :
-  - `public static class AvmodPackage { AvmodInspection Inspect(string path); void ExtractTo(string path, string targetDirectory); }` ; `public sealed record AvmodInspection(ModuleManifest? Manifest, IReadOnlyList<string> Errors, long UncompressedBytes)`.
-  - `public static class ContentHash { string Compute(string directory); }` : SHA-256 hexadécimal minuscule, sur les lignes triées (ordinal) `chemin-relatif-en-minuscules-avec-/` + `\0` + SHA-256 du fichier.
+  - `public static class AvmodPackage { AvmodInspection Inspect(string path); void ExtractTo(string path, string targetDirectory); }` ; `public sealed record AvmodInspection(ModuleManifest? Manifest, IReadOnlyList<string> Errors, long UncompressedBytes, string? PublicKey, string? KeyFingerprint)`.
+  - `public static class ContentHash { string Compute(string directory); string Compute(IReadOnlyList<(string RelativePath, Stream Content)> files); }` : SHA-256 hexadécimal minuscule, sur les lignes triées (ordinal) `chemin-relatif-en-minuscules-avec-/` + `\0` + SHA-256 du fichier, `signature.json` exclu.
+  - `public static class AvmodSigner { void Pack(string moduleDirectory, ECDsa key, string outputPath); ECDsa CreateKey(); void SaveKey(ECDsa key, string pemPath); ECDsa LoadKey(string pemPath); }` (format de la section « Décisions »).
+  - `public static class KeyFingerprint { string Of(string publicKeyBase64); }` → `XXXX-XXXX`.
+
+`Inspect` vérifie la signature **hors ligne** sur le contenu de l'archive (sans l'extraire) : signature absente, illisible ou fausse → erreur « Ce module n'est pas signé, ou il a été modifié depuis sa signature : ne l'installe pas. ».
 
 Limites : 50 Mio décompressés au total, 2 000 entrées, `manifest.json` à la racine, l'`entry` du manifeste présente à la racine, aucun nom d'entrée absolu, avec lecteur, `..` ou `:`. `ExtractTo` écrit d'abord dans `<cible>.tmp-<guid>` puis renomme d'un bloc ; une cible existante est refusée.
 
@@ -95,10 +102,11 @@ Limites : 50 Mio décompressés au total, 2 000 entrées, `manifest.json` à la 
   - `Inspect_ZipSlipEntry_IsRefused` (entrées `..\evil.dll`, `C:\evil.dll`, `/evil.dll`) ; `Inspect_TooManyEntries_IsRefused` (2 001) ; `Inspect_TooLarge_IsRefused` (en-têtes annonçant 51 Mio).
   - `ExtractTo_RefusedPackage_WritesNothing` (le dossier parent reste vide) ; `ExtractTo_ExistingTarget_Throws`.
   - `Compute_SameContentDifferentOrder_SameHash` ; `Compute_OneByteChanged_DifferentHash` ; `Compute_RenamedFile_DifferentHash`.
+  - `Pack_ThenInspect_SignatureValidAndFingerprintShown` ; `Inspect_OneByteChangedAfterSigning_IsRefused` ; `Inspect_FileAddedAfterSigning_IsRefused` ; `Inspect_NoSignature_IsRefused` ; `Inspect_SignatureOfOtherVersion_IsRefused` (même contenu, `version` du manifeste changée) ; `KeyFingerprint_IsStable`.
 - [ ] **Étape 2 :** échec.
-- [ ] **Étape 3 :** `System.IO.Compression.ZipArchive` ; ne jamais faire confiance à `ExtractToDirectory`.
+- [ ] **Étape 3 :** `System.IO.Compression.ZipArchive` (ne jamais faire confiance à `ExtractToDirectory`) ; `ECDsa` de .NET (`ExportSubjectPublicKeyInfo`, `SignData` / `VerifyData` en `IeeeP1363FixedFieldConcatenation`).
 - [ ] **Étape 4 :** les tests passent.
-- [ ] **Étape 5 :** commit `feat(extensions): paquet .avmod vérifié avant extraction et empreinte du contenu`.
+- [ ] **Étape 5 :** commit `feat(extensions): paquet .avmod signé, vérifié hors ligne avant extraction`.
 
 ### Tâche 3 : la liste scellée des modules validés
 
@@ -106,7 +114,7 @@ Limites : 50 Mio décompressés au total, 2 000 entrées, `manifest.json` à la 
 
 **Interfaces :**
 - Produit :
-  - `public sealed record ApprovedModule(string Id, string Version, string Directory, string ContentHash, IReadOnlyList<ModulePermission> Granted, string? SetAsideReason)`.
+  - `public sealed record ApprovedModule(string Id, string Version, string Directory, string ContentHash, IReadOnlyList<ModulePermission> Granted, string? SetAsideReason, string PublicKey, string? Repository)` (`PublicKey` : la clé retenue à la première installation).
   - `public sealed record DevFolder(string Path, IReadOnlyList<ModulePermission> Granted)`.
   - `public sealed record ApprovedModules(string? ModulesRoot, bool DeveloperMode, IReadOnlyList<DevFolder> DevFolders, IReadOnlyList<ApprovedModule> Modules)` avec `static ApprovedModules Empty`.
   - `public sealed class ApprovedModulesStore(string filePath, string keyPath) { ApprovedLoad Load(); void Save(ApprovedModules modules); }` ; `public sealed record ApprovedLoad(ApprovedModules Modules, bool Tampered)`.
@@ -175,7 +183,8 @@ Règles : on parcourt `<racine>\<id>\<version>\manifest.json` ; pour un même `i
   - `public sealed class MessageChannel : IAsyncDisposable { MessageChannel(Stream input, Stream output); Task SendAsync(HostMessage message, CancellationToken ct); IAsyncEnumerable<HostMessage> ReadAllAsync(CancellationToken ct); }` : trames = longueur sur 4 octets petit-boutiste + JSON UTF-8, 1 Mio au plus (au-delà : `InvalidDataException` et fin de lecture).
   - `public abstract record HostMessage` avec discriminant `type` ; messages exacts :
     - service → hôte : `Hello(string Protocol, string ModuleDirectory, string Entry, string TypeId, IReadOnlyList<ModulePermission> Granted, string DataDirectory, JsonElement Appearance, int MaxFps)`, `Open(Guid InstanceId, JsonElement Settings, int Width, int Height, float TextScale, int Columns, int Rows, long Buffer0, long Buffer1)`, `Close(Guid InstanceId)`, `AppearanceChanged(JsonElement Appearance)`, `Limits(int MaxFps)`, `FrameDone(Guid InstanceId, int Buffer)`, `Lookup(int Id, string FieldKey, string Query)`, `RunAction(int Id, Guid InstanceId, string ActionKey, JsonElement Settings)`, `SecretValue(int Id, string? Value)`, `DataValue(int Id, string Status, JsonElement? Value)`, `Shutdown()`.
-    - hôte → service : `Ready(string RequiredSdk)`, `Frame(Guid InstanceId, int Buffer, bool Animating)`, `Status(Guid InstanceId, ModuleHealth Health, string? Message)`, `Log(string Level, string Message)`, `SecretGet(int Id, string Key)`, `SecretSet(int Id, string Key, string? Value)`, `DataGet(int Id, string Kind)` (`"sensors"` ou `"nowPlaying"`), `LookupReply(int Id, IReadOnlyList<LookupResult> Results)`, `ActionReply(int Id, ActionResult Result)`, `Failure(string Message)`.
+    - hôte → service : `Ready(string RequiredSdk)`, `Frame(Guid InstanceId, int Buffer, bool Animating)`, `Status(Guid InstanceId, ModuleHealth Health, string? Message)`, `Log(string Level, string Message)`, `SecretGet(int Id, string Key)`, `SecretSet(int Id, string Key, string? Value)`, `DataGet(int Id, string Kind)` (`"sensors"` ou `"nowPlaying"`), `LocalConnect(int Id, int Port)`, `LookupReply(int Id, IReadOnlyList<LookupResult> Results)`, `ActionReply(int Id, ActionResult Result)`, `Failure(string Message)`.
+    - réponses du service au relais : `LocalConnected(int Id, long ReadHandle, long WriteHandle)` (deux bouts de tubes anonymes dupliqués dans l'hôte), `LocalRefused(int Id, string Reason)`.
   - `public sealed class FrameBuffers : IDisposable` (côté service) : `FrameBuffers(int width, int height)` crée une section anonyme de `2 × width × height × 4` octets (BGRA, alpha prémultiplié, pas = `width × 4`) ; `SafeHandle Section { get; }` ; `void CopyTo(int buffer, SKBitmap destination)`.
   - `public static class FrameView` (côté hôte) : `IntPtr Map(long sectionHandle, int width, int height)` et `Unmap(IntPtr)`.
 - [ ] **Étape 1 : tests qui échouent** : `RoundTrip_EachMessageType` (chaque message, sérialisé puis relu, est égal) ; `Read_OversizedFrame_Throws` ; `Read_TruncatedStream_EndsCleanly` ; `FrameBuffers_WriteThroughMappedView_ReadsBack` (on écrit des pixels par `FrameView.Map` sur un handle dupliqué dans le même processus, `CopyTo` les retrouve).
@@ -195,7 +204,7 @@ Règles : on parcourt `<racine>\<id>\<version>\manifest.json` ; pour un même `i
 - Consomme : protocole (tâche 6), `AppearanceResolver.Resolve` de `Trofeo.Core` pour reconstruire le thème à partir de `Hello.Appearance`.
 - Produit (API publique, espace `AshboardVision.Sdk`) :
   - `public abstract class CommunityModule : IAsyncDisposable` : `protected ModuleServices Services { get; }` ; `public virtual Task StartAsync(CancellationToken ct)` ; `public abstract void Render(SKCanvas canvas, ModuleRenderContext ctx)` ; `protected void Invalidate()` ; `protected void SetStatus(ModuleHealth health, string? message = null)` ; `public virtual bool IsAnimating => false` ; `public virtual Task<IReadOnlyList<LookupResult>> LookupAsync(string fieldKey, string query, CancellationToken ct)` ; `public virtual Task<ActionResult> RunActionAsync(string actionKey, CancellationToken ct)` ; `public virtual ValueTask DisposeAsync()`.
-  - `public sealed class ModuleServices` : `JsonElement Settings`, `IModuleLog Log`, `ISecretStore Secrets`, `TimeProvider Time`, `string DataDirectory`, `bool Has(ModulePermission permission)`, `Task<DataResult<SensorReading>> GetSensorsAsync(CancellationToken ct)`, `Task<DataResult<NowPlayingInfo>> GetNowPlayingAsync(CancellationToken ct)`, `HttpClient CreateHttpClient(string? certificateKey = null)`.
+  - `public sealed class ModuleServices` : `JsonElement Settings`, `IModuleLog Log`, `ISecretStore Secrets`, `TimeProvider Time`, `string DataDirectory`, `bool Has(ModulePermission permission)`, `Task<DataResult<SensorReading>> GetSensorsAsync(CancellationToken ct)`, `Task<DataResult<NowPlayingInfo>> GetNowPlayingAsync(CancellationToken ct)`, `Task<DataResult<Stream>> ConnectLocalAsync(int port, CancellationToken ct)` (relais vers un service de ce PC), `HttpClient CreateHttpClient(string? certificateKey = null)` (son `SocketsHttpHandler.ConnectCallback` fait passer `localhost`, `127.0.0.1` et `::1` par `ConnectLocalAsync`, le reste par le réseau normal).
   - `public enum DataStatus { Ok, Denied, Unavailable }` ; `public sealed record DataResult<T>(DataStatus Status, T? Value)` ; `public sealed record SensorReading(string? CpuName, string? GpuName, IReadOnlyDictionary<string, double> Values)` ; `public sealed record NowPlayingInfo(string Title, string Artist, string AppName, TimeSpan Position, TimeSpan Duration, bool IsPlaying, byte[]? CoverPng)`.
   - Le projet `AshboardVision.Sdk` (créé à la tâche 1) gagne les références `Trofeo.ModuleKit` et SkiaSharp.
 - Produit (hôte) : `Trofeo.ModuleHost.exe --in <handle> --out <handle>`.
@@ -211,7 +220,7 @@ Règles de l'hôte :
 - Une exception non rattrapée d'une méthode du module → `Status(Offline, "Erreur du module")` pour l'instance, l'hôte continue ; les exceptions des fils du module font tomber l'hôte (c'est le rôle du superviseur).
 - Fin de l'hôte quand le tube d'entrée se ferme.
 
-- [ ] **Étape 1 : tests qui échouent** (l'hôte lancé **sans** enfermement, par tubes anonymes ordinaires, avec le module de test) : `Host_LoadsModuleAndSendsFirstFrame` (pixels attendus dans le tampon 0) ; `Host_NeverWritesBufferAwaitingFrameDone` (le module invalide 10 fois sans `FrameDone` : au plus deux `Frame`) ; `Host_RespectsMaxFps` (module animé, `MaxFps = 4`, 2 s → entre 7 et 9 images) ; `Host_SensorsWithoutPermission_ReturnsDenied` ; `Host_TwoModuleClasses_Fails` ; `Host_ModuleThrowsInRender_ReportsOfflineAndKeepsRunning` ; `Host_InputClosed_Exits`.
+- [ ] **Étape 1 : tests qui échouent** (l'hôte lancé **sans** enfermement, par tubes anonymes ordinaires, avec le module de test) : `Host_LoadsModuleAndSendsFirstFrame` (pixels attendus dans le tampon 0) ; `Host_NeverWritesBufferAwaitingFrameDone` (le module invalide 10 fois sans `FrameDone` : au plus deux `Frame`) ; `Host_RespectsMaxFps` (module animé, `MaxFps = 4`, 2 s → entre 7 et 9 images) ; `Host_SensorsWithoutPermission_ReturnsDenied` ; `Host_ConnectLocalWithoutPermission_ReturnsDenied` ; `HttpClient_Localhost_GoesThroughRelay` (le faux service répond `LocalConnected` avec un tube relié à un petit serveur HTTP de test) ; `Host_TwoModuleClasses_Fails` ; `Host_ModuleThrowsInRender_ReportsOfflineAndKeepsRunning` ; `Host_InputClosed_Exits`.
 - [ ] **Étape 2 :** échec.
 - [ ] **Étape 3 :** écrire le SDK et l'hôte.
 - [ ] **Étape 4 :** les tests passent ; `dotnet test tests/Trofeo.Modules.Network.Tests` reste vert après le déplacement de `CertificatePinning`.
@@ -219,7 +228,7 @@ Règles de l'hôte :
 
 ### Tâche 8 : le module distant dans le service
 
-**Fichiers :** créer `src/Trofeo.Extensions/Service/RemoteModuleFactory.cs`, `RemoteModule.cs`, `ModuleHostSupervisor.cs`, `PlaceholderModuleFactory.cs`, `IServiceDataBroker.cs` ; modifier `src/Trofeo.Service/ModuleRegistry.cs` ; test `tests/Trofeo.Extensions.Tests/RemoteModuleTests.cs`, `SupervisorTests.cs`, `tests/Trofeo.Service.Tests/ModuleRegistryTests.cs`
+**Fichiers :** créer `src/Trofeo.Extensions/Service/RemoteModuleFactory.cs`, `RemoteModule.cs`, `ModuleHostSupervisor.cs`, `PlaceholderModuleFactory.cs`, `IServiceDataBroker.cs`, `LocalRelay.cs`, `ModuleFileLock.cs` ; modifier `src/Trofeo.Service/ModuleRegistry.cs` ; test `tests/Trofeo.Extensions.Tests/RemoteModuleTests.cs`, `SupervisorTests.cs`, `tests/Trofeo.Service.Tests/ModuleRegistryTests.cs`
 
 **Interfaces :**
 - Consomme : tâches 4 à 7.
@@ -230,14 +239,17 @@ Règles de l'hôte :
   - `public sealed class RemoteModuleFactory : IConfigurableModuleFactory` (descripteur et schéma tirés du manifeste ; `LookupAsync` / `RunActionAsync` relayés à l'hôte, « Module arrêté. » s'il ne tourne pas).
   - `public sealed class PlaceholderModuleFactory : IModuleFactory` : pour un module présent mais pas `Ready` ; son module dessine le message de l'entrée (« À valider dans la fenêtre de réglage », « Mis de côté : … », etc.) en couleur `Warning`, état `NotConfigured`.
 
-`RemoteModule.Render` pose la dernière image copiée (aucune attente) ; avant la première image, rien ; au-delà de 10 s sans image après `Open`, « Le module ne répond pas ». À la réception de `Frame`, copie par `FrameBuffers.CopyTo`, puis `FrameDone`, puis `Invalidated`. Un hôte qui meurt : instances en `Offline` « Module arrêté, relance… », relance selon la section « Décisions » ; mise de côté au 3ᵉ arrêt en 10 min (`setAside(id, raison)`), la raison citant « 512 Mo dépassés » quand `MemoryLimitHit`. Le superviseur ne démarre un hôte qu'à la première `Open`, et l'arrête quand `ActiveInstances` retombe à 0. **Avant chaque lancement**, il recalcule `ContentHash.Compute` du dossier du module (sauf dossier de développement) : s'il diffère de l'empreinte validée, pas de lancement, les cases affichent « Fichiers du module modifiés : valide-le de nouveau ».
+`RemoteModule.Render` pose la dernière image copiée (aucune attente) ; avant la première image, rien ; au-delà de 10 s sans image après `Open`, « Le module ne répond pas ». À la réception de `Frame`, copie par `FrameBuffers.CopyTo`, puis `FrameDone`, puis `Invalidated`. Un hôte qui meurt : instances en `Offline` « Module arrêté, relance… », relance selon la section « Décisions » ; mise de côté au 3ᵉ arrêt en 10 min (`setAside(id, raison)`), la raison citant « 512 Mo dépassés » quand `MemoryLimitHit`. Le superviseur ne démarre un hôte qu'à la première `Open`, et l'arrête quand `ActiveInstances` retombe à 0. **Avant chaque lancement**, il prend le verrou d'exécution (`ModuleFileLock.Acquire(string directory) → ModuleFileLock`, qui expose `ContentHash` calculé sur les fichiers ouverts et se libère à `Dispose`, à la fin de l'hôte) ; sauf dossier de développement, une empreinte différente de celle validée empêche le lancement et les cases affichent « Fichiers du module modifiés : valide-le de nouveau ».
+
+`LocalRelay` : à `LocalConnect(id, port)`, refuse (`LocalRefused`, « Port non autorisé ») un port qui n'est pas dans `LocalPorts` ou une permission `ThisComputer` non accordée, ou au-delà de 16 connexions ouvertes ; sinon se connecte en TCP à `127.0.0.1:port` (délai 5 s), crée deux tubes anonymes, en duplique les bouts dans l'hôte (`SandboxedProcess.DuplicateInto`), répond `LocalConnected` et recopie les octets dans les deux sens jusqu'à la fermeture d'un côté.
 
 - [ ] **Étape 1 : tests qui échouent** (hôte réel non enfermé, module de test de la tâche 7, fabrique de processus injectable) :
   - `Render_BeforeFirstFrame_DrawsNothing` ; `Render_AfterFrame_DrawsItsPixels` ; `Render_NoFrameFor10Seconds_SaysNotResponding` (`FakeTimeProvider`).
   - `HostKilledMidFrame_RenderDoesNotThrowAndKeepsLastImage` (point de vigilance 2).
   - `ThreeCrashesInTenMinutes_SetsAside` ; `Crash_RestartsWithBackoff`.
   - `NoOpenInstance_NoProcessStarted` (coût nul) ; `LastInstanceClosed_StopsHost`.
-  - `Start_FilesChangedSinceScan_DoesNotLaunch`.
+  - `Start_FilesChangedSinceScan_DoesNotLaunch` ; `FilesLockedWhileHostRuns_WriteAndDeleteFail` ; `HostExited_FilesUnlocked`.
+  - `Relay_EchoServer_RoundTrip` (serveur d'écho sur `127.0.0.1`) ; `Relay_UndeclaredPort_IsRefused` ; `Relay_PermissionNotGranted_IsRefused` ; `Relay_SeventeenthConnection_IsRefused`.
   - `Registry_SetCommunityFactories_KeepsBuiltInsFirstAndRaisesTypesChanged`.
   - `Layout_WithUnapprovedCommunityType_ShowsPlaceholder` et `Layout_WithUninstalledType_IsIgnoredWithWarning` (point de vigilance 3, dans `tests/Trofeo.Service.Tests` avec `DisplayLoop`).
 - [ ] **Étape 2 :** échec.
@@ -254,13 +266,13 @@ Règles de l'hôte :
 - Produit : `public sealed class CommunityModules : IAsyncDisposable` avec :
   - `IReadOnlyList<CommunityEntry> Entries { get; }` ; `event EventHandler? Changed` ;
   - `PackageInspection Inspect(string avmodPath)` ; `public sealed record PackageInspection(ModuleManifest? Manifest, IReadOnlyList<string> Errors, string? Conflict, ApprovedModule? Installed)` (`Conflict` : « Un autre module porte déjà cet identifiant » quand l'`id` existe avec un autre `repository`) ;
-  - `Task<ActionResult> InstallAsync(string avmodPath, IReadOnlyList<ModulePermission> granted, CancellationToken ct)` (extraction dans `<racine>\<id>\<version>\`, `GrantRead`, hash, enregistrement, ancienne version supprimée après succès) ;
+  - `Task<ActionResult> InstallAsync(string avmodPath, IReadOnlyList<ModulePermission> granted, CancellationToken ct)` (signature vérifiée par `Inspect` ; à la première installation d'un identifiant, sa clé publique est retenue ; une version signée par une autre clé est refusée avec « Ce module n'est plus signé par la même clé que la version installée. » ; puis extraction dans `<racine>\<id>\<version>\`, `GrantRead`, hash, enregistrement, ancienne version supprimée après succès) ;
   - `ActionResult Approve(string id, IReadOnlyList<ModulePermission> granted)` ; `Task<ActionResult> SetPermissionsAsync(string id, IReadOnlyList<ModulePermission> granted)` (relance l'hôte : point de vigilance 4) ; `Task<ActionResult> UninstallAsync(string id)` (dossier, AppContainer, coffre `Scope(id)` vidé, entrée retirée) ; `Task<ActionResult> RelaunchAsync(string id)` (retire la mise de côté) ;
   - `ActionResult SetModulesRoot(string path)` ; `ActionResult SetDeveloperMode(bool on)` ; `ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted)` ; `ActionResult RemoveDevFolder(string path)` ; `Task<ActionResult> ReloadDevModuleAsync(string id)`.
 
 Une permission accordée qui n'est pas déclarée dans le manifeste est refusée (`ActionResult(false, …)`). Une permission nouvelle déclarée par une nouvelle version n'est pas accordée tant que l'utilisateur ne l'a pas cochée. Installer une nouvelle version retire la mise de côté. Après chaque changement : `Scan()`, `ModuleRegistry.SetCommunityFactories(...)`, `Changed`.
 
-- [ ] **Étape 1 : tests qui échouent** : `Install_ValidPackage_IsReadyAndRegistered` ; `Install_GrantingUndeclaredPermission_IsRefused` ; `Install_SameIdOtherRepository_IsConflict` ; `Install_NewVersionSameRepository_ReplacesOld` ; `Install_NewVersionWithNewPermission_NotGrantedUntilChecked` ; `Install_NewVersion_ClearsSetAside` ; `SetPermissions_RestartsHostWithNewCapabilities` ; `Uninstall_RemovesFolderSecretsAndProfile` ; `DroppedFolderNotApproved_NeverStartsAHost` ; `Relaunch_ClearsSetAside`.
+- [ ] **Étape 1 : tests qui échouent** : `Install_ValidPackage_IsReadyAndRegistered` ; `Install_GrantingUndeclaredPermission_IsRefused` ; `Install_SameIdOtherRepository_IsConflict` ; `Install_NewVersionSameRepository_ReplacesOld` ; `Install_NewVersionWithNewPermission_NotGrantedUntilChecked` ; `Install_NewVersion_ClearsSetAside` ; `Install_NewVersionOtherKey_IsRefused` ; `Install_UnsignedPackage_IsRefused` ; `SetPermissions_RestartsHostWithNewCapabilities` ; `Uninstall_RemovesFolderSecretsAndProfile` ; `DroppedFolderNotApproved_NeverStartsAHost` ; `Relaunch_ClearsSetAside`.
 - [ ] **Étape 2 :** échec.
 - [ ] **Étape 3 :** écrire la classe ; `Program.cs` la crée après le `ModuleRegistry`, lui passe `vault.Scope`, `sensorHub`, le chemin de `Trofeo.ModuleHost.exe` (`AppLocator`), et transmet `MaxFps` et l'apparence à chaque rechargement.
 - [ ] **Étape 4 :** les tests passent ; suite complète verte.
@@ -275,9 +287,9 @@ Une permission accordée qui n'est pas déclarée dans le manifeste est refusée
 - Produit :
   - `ModuleTypeInfo` gagne `CommunityTypeInfo? Community` ; `public sealed record CommunityTypeInfo(string Author, string Description, string Version, IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted)`.
   - `public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, TooOld, Invalid, Unavailable, SetAside }` (miroir de `CommunityState`).
-  - `public sealed record CommunityModuleInfo(string Id, string Name, string Author, string Description, string? Version, LinkCommunityState State, string? Message, IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted, bool FromDevFolder, string? UpdateVersion, string? UpdateNotes, IReadOnlyList<ModulePermission> UpdateNewPermissions)`.
+  - `public sealed record CommunityModuleInfo(string Id, string Name, string Author, string Description, string? Version, LinkCommunityState State, string? Message, IReadOnlyList<ModulePermission> Declared, IReadOnlyList<int> LocalPorts, IReadOnlyList<ModulePermission> Granted, string? KeyFingerprint, bool FromDevFolder, string? UpdateVersion, string? UpdateNotes, IReadOnlyList<ModulePermission> UpdateNewPermissions)`.
   - `public sealed record CommunityOverview(IReadOnlyList<CommunityModuleInfo> Modules, string ModulesRoot, bool DeveloperMode, IReadOnlyList<string> DevFolders, bool StoreTampered)`.
-  - `public sealed record PackageInfo(string? Id, string? Name, string? Author, string? Version, string? Description, IReadOnlyList<ModulePermission> Declared, IReadOnlyList<string> Errors, string? Conflict, string? InstalledVersion)` (copie de `PackageInspection`).
+  - `public sealed record PackageInfo(string? Id, string? Name, string? Author, string? Version, string? Description, IReadOnlyList<ModulePermission> Declared, IReadOnlyList<int> LocalPorts, string? KeyFingerprint, IReadOnlyList<string> Errors, string? Conflict, string? InstalledVersion)` (copie de `PackageInspection`).
   - `public sealed record ModuleConsumption(string Id, string DisplayName, bool IsCommunity, double CpuPercent, long MemoryBytes, bool High)` (produit par la tâche 11).
   - `IControlHandler` gagne : `IReadOnlyList<ModuleTypeInfo> GetTypes()`, `CommunityOverview GetCommunity()`, `PackageInfo InspectPackage(string path)`, `Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct)`, `ActionResult ApproveModule(string id, IReadOnlyList<ModulePermission> granted)`, `Task<ActionResult> SetModulePermissionsAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct)`, `Task<ActionResult> UninstallModuleAsync(string id, CancellationToken ct)`, `Task<ActionResult> RelaunchModuleAsync(string id, CancellationToken ct)`, `ActionResult SetModulesRoot(string path)`, `ActionResult SetDeveloperMode(bool on)`, `ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted)`, `ActionResult RemoveDevFolder(string path)`, `Task<ActionResult> ReloadDevModuleAsync(string id, CancellationToken ct)`, `Task CheckModuleUpdatesAsync(CancellationToken ct)`, `Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct)`, `IReadOnlyList<ModuleConsumption> GetConsumption()`.
   - `IServiceLink` reprend chaque méthode (asynchrone, `ControlException` en cas d'échec), plus `IReadOnlyList<ModuleTypeInfo>? Types` relu après chaque changement.
@@ -309,7 +321,7 @@ Une permission accordée qui n'est pas déclarée dans le manifeste est refusée
 **Fichiers :** créer `src/Trofeo.Settings/Views/InstallModuleDialogView.axaml(.cs)`, `src/Trofeo.Settings/ViewModels/InstallModuleDialogViewModel.cs`, `CommunitySectionViewModel.cs`, `src/Trofeo.Settings/Controls/CommunityBadge.cs` ; modifier `ModulesTabView/ViewModel`, `LayoutTabView/ViewModel`, `SettingsTabView/ViewModel`, `ModuleListItem.cs`, `GridOverlay.cs`, `Program.cs` (argument `.avmod`), `Resources/Strings.resx`, `Texts.cs` ; tests `tests/Trofeo.Settings.Tests/InstallModuleDialogTests.cs`, `CommunitySectionTests.cs`, `CommunityBadgeTests.cs`
 
 **Ce qu'on voit :**
-- **Dialogue d'installation** (bouton « Installer un module… » de la section « Modules complémentaires » des Paramètres, ou `Trofeo.Settings.exe <chemin.avmod>`) : point d'exclamation jaune et texte d'avertissement « Ce module a été créé par la communauté, pas par Ashboard Vision. Il peut contenir du code malveillant : installe seulement un module dont tu connais et fais confiance à l'auteur. » ; nom, auteur, version, description ; une case par permission **déclarée**, décochée par défaut, avec son libellé et son explication ; boutons « Installer » et « Annuler ». Erreurs et conflits affichés tels quels, sans bouton « Installer ».
+- **Dialogue d'installation** (bouton « Installer un module… » de la section « Modules complémentaires » des Paramètres, ou `Trofeo.Settings.exe <chemin.avmod>`) : point d'exclamation jaune et texte d'avertissement « Ce module a été créé par la communauté, pas par Ashboard Vision. Il peut contenir du code malveillant : installe seulement un module dont tu connais et fais confiance à l'auteur. » ; nom, auteur, version, description, « Signé par la clé XXXX-XXXX » (avec, lors d'une mise à jour, « même clé que la version installée ») ; une case par permission **déclarée**, décochée par défaut, avec son libellé (« Cet ordinateur : port 25565 ») et son explication ; boutons « Installer » et « Annuler ». Erreurs et conflits affichés tels quels, sans bouton « Installer ».
 - **Valider un module trouvé dans le dossier** (`NeedsApproval`, `Changed`) : le même dialogue, titre « Valider un module complémentaire ».
 - **Point d'exclamation jaune** (`CommunityBadge`, couleur `Warning` du thème de la fenêtre) : dans la liste des modules à ajouter (onglet Modules), dans l'en-tête des réglages d'un module complémentaire avec la mention « Module complémentaire : créé par la communauté, pas par Ashboard Vision » et ses permissions accordées, et **dans un angle** de sa case dans l'éditeur de disposition (rien d'autre sur la case).
 - **Section « Modules complémentaires »** (onglet Paramètres) : une ligne par module (nom, auteur, version, état en clair, mise à jour proposée), et pour chacun : « Permissions… » (mêmes cases), « Mettre à jour » (montre les notes et les permissions nouvelles), « Relancer » (mis de côté), « Désinstaller » (confirmation « Ses cases seront retirées de l'écran. » ; la fenêtre retire alors ses emplacements de la disposition puis recharge). Bandeau « La liste des modules validés a été modifiée hors du logiciel : valide de nouveau tes modules. » quand `StoreTampered`.
@@ -389,8 +401,10 @@ Une permission accordée qui n'est pas déclarée dans le manifeste est refusée
   6. arrêt propre en moins de 5 s.
 
   Sortie en français, une ligne par vérification (`✔` / `✖` / `!`), conclusion « Compatible avec Ashboard Vision (SDK 1.0). » ou « Pas compatible : … » ; code de sortie 0 ou 1.
-- `ashboard-module pack [dossier] [--out <dossier>]` : vérifie le manifeste, fabrique `<id>-<version>.avmod` et `.sha256` (format `sha256sum`).
-- [ ] **Étape 1 : tests qui échouent** (module de test de la tâche 7) : `Check_GoodModule_IsCompatibleAndWritesPngs` (9 images au moins) ; `Check_ModuleCrashingWithoutPermission_IsNotCompatible` ; `Check_InvalidManifest_ExitCode1` ; `Pack_ProducesInspectablePackageAndSha256` (le `.avmod` passe `AvmodPackage.Inspect`).
+- `ashboard-module keygen [--force]` : crée la clé de signature (section « Décisions ») si elle n'existe pas, affiche son empreinte courte et rappelle « Sauvegarde ce fichier : sans lui, tu ne pourras plus publier de mise à jour de tes modules. » ; refuse d'écraser une clé existante sans `--force`.
+- `ashboard-module pack [dossier] [--out <dossier>] [--key <fichier>]` : vérifie le manifeste, fabrique `<id>-<version>.avmod` **signé** (`AvmodSigner.Pack`) et `.sha256` (format `sha256sum`) ; sans clé, invite à lancer `keygen`.
+- Tout marche **hors ligne** : aucune commande n'appelle le réseau (sauf ce que fait le module lui-même pendant `check`).
+- [ ] **Étape 1 : tests qui échouent** (module de test de la tâche 7) : `Check_GoodModule_IsCompatibleAndWritesPngs` (9 images au moins) ; `Check_ModuleCrashingWithoutPermission_IsNotCompatible` ; `Check_InvalidManifest_ExitCode1` ; `Pack_ProducesSignedInspectablePackageAndSha256` (le `.avmod` passe `AvmodPackage.Inspect`, empreinte de clé affichée) ; `Pack_WithoutKey_AsksForKeygen` ; `Keygen_ExistingKey_RefusesWithoutForce`.
 - [ ] **Étape 2 :** échec. **Étape 3 :** écrire (`System.CommandLine`). **Étape 4 :** vert (Windows seulement).
 - [ ] **Étape 5 :** commit `feat(sdk): banc d'essai ashboard-module (check et pack)`.
 
@@ -408,9 +422,10 @@ Une permission accordée qui n'est pas déclarée dans le manifeste est refusée
 **Fichiers :** créer `docs/sdk/README.md` (sommaire), `demarrer.md`, `contrat.md`, `permissions.md`, `dessin.md`, `reglages.md`, `tests.md`, `publier.md`, `compatibilite.md`, `securite.md` ; modifier `README.md` (section « Modules complémentaires » : ce que c'est, avertissement, lien vers `docs/sdk`) et `docs/utilisation-avancee.md`
 
 Contenu imposé :
-- `permissions.md` : le tableau 5.2 de la conception, la limite `localhost` et l'exemption pour tester (`CheckNetIsolation LoopbackExempt -a -n=ashboard-vision.mod.<id>`, en administrateur, à retirer après l'essai avec `-d`).
-- `securite.md` : ce que l'enfermement empêche, ce qu'il n'empêche pas (données confiées envoyées sur Internet ; PC déjà infecté), pourquoi les mises à jour sont proposées et jamais silencieuses.
-- `publier.md` : `ashboard-module pack`, la version GitHub `v<version>` avec les deux fichiers nommés selon la section « Décisions », le champ `repository`.
+- `permissions.md` : le tableau 5.2 de la conception ; « Cet ordinateur » et `localPorts`, avec `ConnectLocalAsync` et le client HTTP du SDK qui passent par le relais du service.
+- `securite.md` : ce que l'enfermement empêche, ce qu'il n'empêche pas (données confiées envoyées sur Internet ; PC déjà infecté), la signature et la clé retenue à la première installation, le verrou d'exécution, pourquoi les mises à jour sont proposées et jamais silencieuses.
+- `publier.md` : `ashboard-module keygen` (et la sauvegarde de la clé), `ashboard-module pack`, la version GitHub `v<version>` avec les deux fichiers nommés selon la section « Décisions », le champ `repository`.
+- `demarrer.md` : installer le SDK en cochant « Outils pour créer des modules (SDK) » dans l'installateur d'Ashboard Vision (ou depuis les `.nupkg` d'une version GitHub, avec les commandes `dotnet nuget add source`, `dotnet new install` et `dotnet tool install -g`).
 - `compatibilite.md` : les règles de la conception 4.5, exemples à l'appui.
 - Chaque exemple de code de la documentation compile : les extraits viennent des modules d'exemple (tâches 20 et 21).
 - [ ] **Étape 1 :** écrire les pages.
@@ -429,34 +444,49 @@ Contenu imposé :
 
 ### Tâche 21 : module d'exemple « Serveur Minecraft »
 
-**Fichiers :** créer `examples/Minecraft/` (id `ashewos.minecraft`, permissions `reseau-local` et `internet`), `ServerListPing.cs`, `MinecraftModule.cs`, tests avec un faux serveur TCP
+**Fichiers :** créer `examples/Minecraft/` (id `ashewos.minecraft`, permissions `ce-pc` avec `localPorts: [25565]`, `reseau-local` et `internet`), `ServerListPing.cs`, `MinecraftModule.cs`, tests avec un faux serveur TCP
 
 **Interfaces :**
 - `public static class ServerListPing { Task<ServerStatus> QueryAsync(string host, int port, TimeSpan timeout, CancellationToken ct); }` ; `public sealed record ServerStatus(string Motd, string Version, int Online, int Max, IReadOnlyList<string> SamplePlayers, TimeSpan Latency, byte[]? FaviconPng)`.
 - Protocole « Server List Ping » de Minecraft Java : paquet de poignée de main (identifiant `0x00`, version de protocole `-1` en VarInt, adresse, port, état suivant `1`), demande d'état (`0x00`), réponse JSON (`version.name`, `players.online`, `players.max`, `players.sample[].name`, `description` texte ou objet de chat dont on garde le texte, `favicon` en `data:image/png;base64,…`), puis ping (`0x01` avec un long) pour la latence. Tous les entiers de longueur sont des VarInt.
-- Réglages : adresse (`hote` ou `hote:port`, port 25565 par défaut), rafraîchissement 30 s.
+- Réglages : adresse (`hote` ou `hote:port`, port 25565 par défaut), rafraîchissement 30 s. Une adresse `localhost`, `127.0.0.1` ou `::1` passe par `Services.ConnectLocalAsync` (permission « Cet ordinateur », port déclaré 25565 seulement) ; les autres par une connexion TCP normale. `QueryAsync` prend donc aussi une surcharge `QueryAsync(Stream connection, string host, int port, …)`.
 - Affichage : icône du serveur, nom (texte du message du jour, codes de couleur `§x` retirés), « 3 / 20 joueurs », jusqu'à trois pseudos, latence ; `Offline` « Serveur injoignable » ; un message clair quand la permission réseau manque.
-- [ ] **Étape 1 : tests qui échouent** : `Query_ParsesStatusFromFakeServer` ; `Query_DescriptionAsChatObject_ReturnsText` ; `Query_StripsColorCodes` ; `Query_Timeout_Throws` ; `Module_Unreachable_IsOffline` ; `Module_ShowsPlayersAndIcon`.
+- [ ] **Étape 1 : tests qui échouent** : `Query_ParsesStatusFromFakeServer` ; `Query_DescriptionAsChatObject_ReturnsText` ; `Query_StripsColorCodes` ; `Query_Timeout_Throws` ; `Module_Unreachable_IsOffline` ; `Module_ShowsPlayersAndIcon` ; `Module_LocalhostWithoutThisComputer_SaysPermissionMissing`.
 - [ ] **Étape 2 :** échec. **Étape 3 :** écrire. **Étape 4 :** vert ; `ashboard-module check` → compatible.
 - [ ] **Étape 5 :** commit `feat(exemples): module Serveur Minecraft`.
 
-### Tâche 22 (PC d'Alex) : publication, vérification, bilan
+### Tâche 22 : le SDK dans les versions GitHub et dans l'installateur
 
-Chaque action vers GitHub ou NuGet attend l'accord d'Alex, donné pour cette action-là.
+**Fichiers :** modifier `.github/workflows/release.yml`, `installer/build.ps1`, `installer/ashboard-vision.iss`, `installer/README.md`
+
+- `build.ps1` fabrique les quatre paquets du SDK (`AshboardVision.Sdk`, `AshboardVision.Sdk.Testing`, `AshboardVision.Sdk.Tool`, `AshboardVision.Sdk.Templates`), version = celle du SDK (`1.0.x`), dans `installer/publish/sdk/`, et les copie à côté de l'installateur.
+- `release.yml` joint ces `.nupkg` à la version GitHub, avec l'installateur (rien sur nuget.org).
+- `ashboard-vision.iss` :
+  - `[Tasks]` : `Name: sdk; Description: "Outils pour créer des modules (SDK)"; Flags: unchecked`. Inno Setup reprend par défaut les choix de l'installation précédente (`UsePreviousTasks`), y compris en mise à jour silencieuse : la case est donc cochée lors d'une mise à jour si le SDK était installé, décochée sinon.
+  - `[Files]` : les `.nupkg` dans `{app}\sdk`, `Tasks: sdk`.
+  - À la fin de l'installation, si la tâche `sdk` est choisie : `dotnet --list-sdks` lancé avec les droits de l'utilisateur (`ExecAsOriginalUser`) ; si un SDK .NET 10 est présent, ajouter la source `AshboardVision` vers `{app}\sdk` (`dotnet nuget add source`), `dotnet new install AshboardVision.Sdk.Templates` et `dotnet tool update -g AshboardVision.Sdk.Tool --add-source "{app}\sdk"`, chaque code de sortie journalisé ; sinon, page ou message « Installe le SDK .NET 10 pour créer des modules : https://dotnet.microsoft.com/download ». Tâche décochée lors d'une mise à jour alors qu'elle était cochée : mêmes retraits qu'à la désinstallation.
+  - Désinstallation : `dotnet tool uninstall -g AshboardVision.Sdk.Tool`, `dotnet new uninstall AshboardVision.Sdk.Templates`, `dotnet nuget remove source AshboardVision`, en ignorant les échecs (journalisés).
+- [ ] **Étape 1 :** écrire ; `pwsh installer/build.ps1 -Version 1.1.0-beta.1` construit sans avertissement d'ISCC et `installer/publish/sdk` contient les quatre paquets.
+- [ ] **Étape 2 :** essai à l'exécution dans le Bac à sable Windows, avec Alex (fichiers d'essai de `installer/bac-a-sable/`) : case décochée par défaut ; cochée sans SDK .NET → message ; cochée avec SDK .NET → `dotnet new ashboard-module` et `ashboard-module` disponibles ; mise à jour silencieuse → case reprise ; désinstallation → outil, modèle et source retirés.
+- [ ] **Étape 3 :** commit `feat(installateur): le SDK joint aux versions et proposé par l'installateur`.
+
+### Tâche 23 (PC d'Alex) : publication, vérification, bilan
+
+Chaque action vers GitHub attend l'accord d'Alex, donné pour cette action-là.
 
 - [ ] **Étape 1 : suite complète en Debug** sous Windows : verte.
-- [ ] **Étape 2 : décision d'Alex sur l'endroit où publier le SDK** (le paquet `AshboardVision.Sdk`, l'outil et le modèle) : nuget.org (compte NuGet d'Alex et clé d'API rangée dans les secrets du dépôt GitHub) ou fichiers `.nupkg` joints aux versions GitHub d'Ashboard Vision (sans compte, mais à ajouter comme source locale). Mettre à jour `.github/workflows/release.yml` et `docs/sdk/demarrer.md` selon son choix.
-- [ ] **Étape 3 : publier une bêta** `1.1.0-beta.1` (CHANGELOG, `Directory.Build.props`) avec l'accord d'Alex.
-- [ ] **Étape 4 : avec Alex et l'écran** :
+- [ ] **Étape 2 : publier une bêta** `1.1.0-beta.1` (CHANGELOG, `Directory.Build.props`) avec l'accord d'Alex ; la version GitHub porte l'installateur et les paquets du SDK.
+- [ ] **Étape 3 : avec Alex et l'écran** :
   - installer la bêta ; aucun module complémentaire → consommation identique au plan 6 (mesure comme au bilan 6) ;
-  - installer « Dépôt GitHub » depuis son `.avmod` : avertissement, case Internet, point d'exclamation dans la liste, les réglages et l'éditeur ; la case affiche le dépôt `Ashewos/ashboard-vision` ;
+  - installer « Dépôt GitHub » depuis son `.avmod` : avertissement, signature affichée, case Internet, point d'exclamation dans la liste, les réglages et l'éditeur ; la case affiche le dépôt `Ashewos/ashboard-vision` ;
+  - modifier un octet d'un `.avmod` signé : installation refusée, sans Internet ;
   - refuser Internet puis le réaccorder : message, puis retour ;
-  - « Serveur Minecraft » sur un serveur d'une autre machine (ou avec l'exemption `localhost`) ;
+  - « Serveur Minecraft » sur un serveur lancé sur le PC d'Alex, avec « Cet ordinateur : port 25565 » ;
   - « Démo » à 12 i/s : vue « Consommation des modules », repère orange si le seuil est dépassé ;
   - tuer `Trofeo.ModuleHost.exe` trois fois : relance, puis mise de côté ; « Relancer » ;
   - copier à la main un dossier de module dans le dossier des modules : il n'est pas lancé et demande à être validé ;
   - mode développeur avec le modèle `dotnet new ashboard-module` : bandeau, « Recharger » ;
   - désinstaller un module : ses cases disparaissent, son dossier et son AppContainer aussi ;
   - double-clic sur un `.avmod` : le dialogue s'ouvre.
-- [ ] **Étape 5 : mesurer la sobriété** : service sans module, puis avec « Dépôt GitHub », puis avec « Démo » (processeur et mémoire de chaque hôte).
-- [ ] **Étape 6 : écrire `docs/superpowers/plans/<date>-plan-7-bilan.md`** (état et commits, nombre de tests, vérifications, mesures, décisions, reste à faire) et mettre à jour `CLAUDE.md`. Commit `docs: bilan du plan 7`.
+- [ ] **Étape 4 : mesurer la sobriété** : service sans module, puis avec « Dépôt GitHub », puis avec « Démo » (processeur et mémoire de chaque hôte).
+- [ ] **Étape 5 : écrire `docs/superpowers/plans/<date>-plan-7-bilan.md`** (état et commits, nombre de tests, vérifications, mesures, décisions, reste à faire) et mettre à jour `CLAUDE.md`. Commit `docs: bilan du plan 7`.
