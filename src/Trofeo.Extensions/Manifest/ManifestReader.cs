@@ -84,7 +84,7 @@ public static partial class ManifestReader
             var author = ReadText(root, "author", errors, MaxAuthorLength);
 
             var version = ReadText(root, "version", errors, 64);
-            if (version is not null && (version.StartsWith('v') || !AppVersion.TryParse(version, out _)))
+            if (version is not null && (version.StartsWith('v') || !IsPlainVersionText(version) || !AppVersion.TryParse(version, out _)))
             {
                 errors.Add("\"version\" : doit être une version SemVer comme 1.2.3 ou 1.2.3-beta.1.");
             }
@@ -159,6 +159,13 @@ public static partial class ManifestReader
             return new ManifestReadResult(manifest, []);
         }
     }
+
+    /// <summary>
+    /// Seuls les caractères d'une version SemVer (chiffres, lettres, point, tiret, plus) : la version devient un nom de
+    /// dossier et une étiquette, et le motif d'<see cref="AppVersion"/> accepte un saut de ligne final.
+    /// </summary>
+    private static bool IsPlainVersionText(string version) =>
+        version.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '+');
 
     private static ManifestReadResult Refused(string error) => new(null, [error]);
 

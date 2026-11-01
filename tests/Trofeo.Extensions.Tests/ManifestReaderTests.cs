@@ -286,6 +286,13 @@ public class ManifestReaderTests
     [InlineData("v1.0.0")]
     [InlineData("1.0.0.0")]
     [InlineData("abc")]
+    [InlineData("1.2.3\n")]
+    [InlineData("1.2.3\r\n")]
+    [InlineData(" 1.2.3")]
+    [InlineData("1.2.3 ")]
+    [InlineData("1.2.3\t")]
+    [InlineData("1.2.3-beta\u0000")]
+    [InlineData("1.2.3\\..\\x")]
     public void Read_VersionNotSemVer_IsRefused(string version)
     {
         AssertRefused(ReadEdited(m => m["version"] = version), "version");
