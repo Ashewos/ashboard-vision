@@ -254,6 +254,9 @@ public sealed class SandboxedProcess : IDisposable
         return target;
     }
 
+    /// <summary>La mémoire privée du processus, en octets ; <c>null</c> après <see cref="Dispose"/> ou si elle ne se lit pas. Ne lève jamais.</summary>
+    public long? ReadPrivateBytes() => Volatile.Read(ref _disposed) != 0 ? null : ProcessMemory.PrivateBytes(Handle);
+
     /// <summary>Arrête le processus (sans effet s'il est déjà terminé). Lève <see cref="ObjectDisposedException"/> après <see cref="Dispose"/>.</summary>
     public void Kill()
     {

@@ -200,7 +200,88 @@ public sealed class SupervisorTests : IAsyncLifetime
         module.Dispose();
     }
 
+    [WindowsHostFact]
+    public async Task Measure_ReadsTheUsageAndThePrivateMemoryOfTheRunningHost()
+    {
+        var (rig, factory, _) = Fake();
+        Assert.Null(rig.Supervisor.Measure()); // pas d'hôte, pas de mesure
+        factory.Configure = process =>
+        {
+            process.Usage = new JobUsage(TimeSpan.FromSeconds(3), 42_000_000, false);
+            process.PrivateBytes = 55_000_000;
+        };
+        var module = OpenAndSize(rig);
+        await (await factory.WaitForStartAsync()).WaitAsync<Open>();
+
+        await TestWait.UntilAsync(() => rig.Supervisor.Measure() is not null);
+
+        var (usage, privateBytes) = rig.Supervisor.Measure()!.Value;
+        Assert.Equal(new JobUsage(TimeSpan.FromSeconds(3), 42_000_000, false), usage);
+        Assert.Equal(55_000_000, privateBytes);
+        module.Dispose();
+    }
+
+    [WindowsHostFact]
+    public async Task Measure_HostThatCannotBeMeasured_IsNull()
+    {
+        var (rig, factory, _) = Fake();
+        factory.Configure = process => process.Usage = new JobUsage(TimeSpan.FromSeconds(3), 42_000_000, false); // mémoire inconnue
+        var module = OpenAndSize(rig);
+        await (await factory.WaitForStartAsync()).WaitAsync<Open>();
+
+        Assert.True(await TestWait.StaysFalseAsync(() => rig.Supervisor.Measure() is not null, TimeSpan.FromMilliseconds(200)));
+        module.Dispose();
+    }
+
     // --- Pannes ------------------------------------------------------------------------------------------------------------------
+
+    [WindowsHostFact]
+    public async Task HostRunning_IsReportedWhenTheHostIsInstalled_AndWhenTheLastCaseClosesIt()
+    {
+        var (rig, factory, _) = Fake();
+        Assert.Empty(rig.HostRunning); // un superviseur sans case n'annonce rien
+        var module = OpenAndSize(rig);
+        await (await factory.WaitForStartAsync()).WaitAsync<Hello>();
+
+        await TestWait.UntilAsync(() => rig.HostRunning.Count == 1);
+        Assert.Equal([true], rig.HostRunning);
+
+        module.Dispose(); // la dernière case : l'hôte est arrêté
+
+        await TestWait.UntilAsync(() => rig.HostRunning.Count == 2);
+        Assert.Equal([true, false], rig.HostRunning);
+    }
+
+    [WindowsHostFact]
+    public async Task HostRunning_Crash_ReportsStopped_ThenRunningAgainWhenTheNewHostIsInstalled()
+    {
+        var (rig, factory, _) = Fake();
+        var module = OpenAndSize(rig);
+        var first = await factory.WaitForStartAsync();
+        await first.WaitAsync<Open>();
+
+        await CrashAsync(first, module);
+        Assert.Equal([true, false], rig.HostRunning);
+
+        rig.Time.Advance(TimeSpan.FromSeconds(1.1));
+        await (await factory.WaitForStartAsync(2)).WaitAsync<Open>();
+
+        await TestWait.UntilAsync(() => rig.HostRunning.Count == 3);
+        Assert.Equal([true, false, true], rig.HostRunning);
+    }
+
+    [WindowsHostFact]
+    public async Task HostRunning_Dispose_ReportsStopped()
+    {
+        var (rig, factory, _) = Fake();
+        OpenAndSize(rig);
+        await (await factory.WaitForStartAsync()).WaitAsync<Hello>();
+        await TestWait.UntilAsync(() => rig.HostRunning.Count == 1);
+
+        await rig.Supervisor.DisposeAsync();
+
+        Assert.Equal([true, false], rig.HostRunning);
+    }
 
     [Theory]
     [InlineData(1, 1)]

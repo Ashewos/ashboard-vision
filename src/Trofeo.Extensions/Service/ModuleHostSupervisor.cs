@@ -75,6 +75,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     private readonly Action<string, string> _setAside;
     private readonly IHostProcessFactory _launcher;
     private readonly IModuleLog _log;
+    private readonly Action<bool>? _hostRunning;
     private volatile Target _target;
 
     private readonly object _gate = new();
@@ -111,10 +112,14 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     /// <param name="setAside">Appelée avec l'identifiant du module et la raison quand il est mis de côté.</param>
     /// <param name="launcher">Lance les hôtes ; par défaut, dans l'AppContainer et le job du module (les tests en fournissent d'autres).</param>
     /// <param name="log">Le journal du module ; par défaut, la trace du service.</param>
+    /// <param name="hostRunning">
+    /// Appelée avec <c>true</c> quand un hôte est installé et avec <c>false</c> quand il n'y en a plus (arrêt voulu, panne, libération),
+    /// jamais deux fois de suite la même valeur. Appelée sous le verrou du superviseur : elle doit être brève et ne rappeler personne.
+    /// </param>
     public ModuleHostSupervisor(
         CommunityEntry entry, IReadOnlyList<ModulePermission> granted, string hostExecutable, ISecretStore secrets,
         IServiceDataBroker data, TimeProvider time, Action<string, string> setAside, IHostProcessFactory? launcher = null,
-        IModuleLog? log = null)
+        IModuleLog? log = null, Action<bool>? hostRunning = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(hostExecutable);
         _target = Target.Of(entry, granted);
@@ -125,6 +130,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         _setAside = setAside ?? throw new ArgumentNullException(nameof(setAside));
         _launcher = launcher ?? new SandboxedHostProcessFactory();
         _log = log ?? new TraceModuleLog(entry.Id, Guid.Empty, time);
+        _hostRunning = hostRunning;
     }
 
     /// <summary>Le nombre de cases ouvertes (qui font tourner l'hôte).</summary>
@@ -151,6 +157,51 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             }
 
             return session?.Process.ReadUsage();
+        }
+    }
+
+    /// <summary>
+    /// Ce que l'hôte en cours consomme : son job object (temps processeur cumulé) et sa mémoire privée. <c>null</c> s'il n'y a pas
+    /// d'hôte ou si l'un des deux ne se mesure pas. Ne lève jamais ; ne touche pas au verrou du superviseur plus qu'un instant.
+    /// </summary>
+    public (JobUsage Usage, long PrivateBytes)? Measure()
+    {
+        HostConnection? session;
+        lock (_gate)
+        {
+            session = _session;
+        }
+
+        if (session is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return session.Process.ReadUsage() is { } usage && session.Process.ReadPrivateBytes() is { } bytes ? (usage, bytes) : null;
+        }
+        catch (Exception ex) when (ex is Win32Exception or ObjectDisposedException)
+        {
+            return null; // l'hôte se ferme pendant la mesure
+        }
+    }
+
+    /// <summary>Change la connexion à l'hôte en cours et annonce, s'il y a lieu, qu'un hôte tourne ou ne tourne plus. À appeler sous le verrou.</summary>
+    private void SetSession(HostConnection? session)
+    {
+        var wasRunning = _session is not null;
+        _session = session;
+        if (wasRunning != (session is not null))
+        {
+            try
+            {
+                _hostRunning?.Invoke(session is not null);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _log.Warning($"Le suivi de la consommation a échoué : {ex.Message}");
+            }
         }
     }
 
@@ -245,7 +296,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             _launchGeneration++;
             _launching = false;
             old = _session;
-            _session = null;
+            SetSession(null);
             if (old is not null)
             {
                 old.ExpectedStop = true;
@@ -339,7 +390,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             _launchGeneration++;
             CancelRestartTimerLocked();
             session = _session;
-            _session = null;
+            SetSession(null);
             if (session is not null)
             {
                 session.ExpectedStop = true;
@@ -445,7 +496,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
                 CancelRestartTimerLocked();
                 if (_session is { } session)
                 {
-                    _session = null;
+                    SetSession(null);
                     StopGracefullyLocked(session);
                 }
             }
@@ -682,7 +733,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
                 return; // mort avant d'être installé : son arrêt est déjà compté
             }
 
-            _session = connection;
+            SetSession(connection);
             connection.StartedAt = _time.GetUtcNow();
             var installed = _target;
             connection.Relay = new LocalRelay(installed.PortFields, installed.Granted.Contains(ModulePermission.ThisComputer),
@@ -774,7 +825,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             connection.Ended = true;
             if (ReferenceEquals(_session, connection))
             {
-                _session = null;
+                SetSession(null);
             }
 
             if (connection.ExpectedStop || _disposed)

@@ -24,7 +24,7 @@ internal sealed class CommunityRig : IAsyncDisposable
     private IReadOnlyList<IModuleFactory> _published = [];
     private int _changes;
 
-    public CommunityRig(bool autoShutdown = true)
+    public CommunityRig(bool autoShutdown = true, HttpClient? updateHttp = null)
     {
         Directory.CreateDirectory(Root);
         Store = new ApprovedModulesStore(Path.Combine(_work, "settings", "modules.json"), Path.Combine(_work, "settings", "modules.key"), _ => { });
@@ -57,7 +57,8 @@ internal sealed class CommunityRig : IAsyncDisposable
             Time,
             Launcher,
             id => Profiles.Add(id),
-            (id, directory) => Grants.Add((id, directory)));
+            (id, directory) => Grants.Add((id, directory)),
+            updateHttp);
         Community.Changed += (_, _) => Interlocked.Increment(ref _changes);
     }
 

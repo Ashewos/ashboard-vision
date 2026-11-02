@@ -2,6 +2,7 @@ using AshboardVision.Sdk;
 using Trofeo.Control;
 using Trofeo.Core.Rendering;
 using Trofeo.Extensions;
+using Trofeo.Extensions.Updates;
 using Trofeo.ModuleKit;
 using static Trofeo.Display.Tests.FakeCommunityModules;
 using static Trofeo.Display.Tests.LoopRig;
@@ -108,7 +109,7 @@ public sealed partial class ServiceControlHandlerTests
     }
 
     [Fact]
-    public void GetCommunity_NoUpdateEngineYet_NothingIsProposed()
+    public void GetCommunity_NoUpdateOffered_NothingIsProposed()
     {
         using var rig = new Rig();
         rig.Community.Entries = [Entry("alex.demo")];
@@ -118,6 +119,34 @@ public sealed partial class ServiceControlHandlerTests
         Assert.Null(module.UpdateVersion);
         Assert.Null(module.UpdateNotes);
         Assert.Empty(module.UpdateNewPermissions);
+    }
+
+    [Fact]
+    public void GetCommunity_UpdateOffered_FillsTheVersionTheNotesAndTheNewPermissions()
+    {
+        using var rig = new Rig();
+        rig.Community.Entries = [Entry("alex.demo"), Entry("alex.autre")];
+        rig.Community.Offers["alex.demo"] = new ModuleUpdateOffer("1.3.0", "Ajoute une caméra.", [ModulePermission.Sensors, ModulePermission.NowPlaying]);
+
+        var modules = rig.Handler.GetCommunity().Modules;
+
+        var offered = modules.Single(m => m.Id == "alex.demo");
+        Assert.Equal(("1.3.0", "Ajoute une caméra."), (offered.UpdateVersion, offered.UpdateNotes));
+        Assert.Equal([ModulePermission.Sensors, ModulePermission.NowPlaying], offered.UpdateNewPermissions);
+        var other = modules.Single(m => m.Id == "alex.autre"); // l'offre d'un module n'est pas celle d'un autre
+        Assert.Null(other.UpdateVersion);
+        Assert.Empty(other.UpdateNewPermissions);
+    }
+
+    [Fact]
+    public void GetCommunity_UpdateOfferedForADevFolderModule_IsStillWhatTheCommunityReports()
+    {
+        // Le service ne décide pas qui a des mises à jour : il montre ce que ICommunityModules propose.
+        using var rig = new Rig();
+        rig.Community.Entries = [Entry("alex.dev", dev: true, folder: @"C:\dev\mon-module")];
+        rig.Community.Offers["alex.dev"] = new ModuleUpdateOffer("2.0.0", "", []);
+
+        Assert.Equal("2.0.0", Assert.Single(rig.Handler.GetCommunity().Modules).UpdateVersion);
     }
 
     [Fact]
@@ -216,19 +245,70 @@ public sealed partial class ServiceControlHandlerTests
             rig.Community.Calls);
     }
 
-    // ---- Ce qui arrive avec la tâche suivante (R19) ----
+    // ---- Mises à jour des modules et consommation ----
 
     [Fact]
-    public async Task CheckModuleUpdates_CompletesAndInstallModuleUpdate_ProposesNothingYet()
+    public async Task CheckModuleUpdates_AsksTheCommunityModulesToCheck()
     {
         using var rig = new Rig();
 
         await rig.Handler.CheckModuleUpdatesAsync(CancellationToken.None);
-        var install = await rig.Handler.InstallModuleUpdateAsync("alex.demo", Internet, CancellationToken.None);
 
-        Assert.Equal(new ActionResult(false, "Aucune mise à jour proposée pour ce module."), install);
-        Assert.Empty(rig.Handler.GetConsumption());
-        Assert.Empty(rig.Community.Calls); // les trois attendent le moteur de la tâche 11 : rien ne va à ICommunityModules
+        Assert.Equal(["checkUpdates"], rig.Community.Calls);
+    }
+
+    [Fact]
+    public async Task CheckModuleUpdates_CancelledByTheCaller_IsPassedOn()
+    {
+        using var rig = new Rig();
+        using var cts = new CancellationTokenSource();
+        rig.Community.CheckGate = new TaskCompletionSource();
+
+        var check = rig.Handler.CheckModuleUpdatesAsync(cts.Token);
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => check);
+    }
+
+    [Fact]
+    public async Task InstallModuleUpdate_PassesTheCheckedPermissionsAndTheAnswer()
+    {
+        using var rig = new Rig();
+        rig.Community.Result = new ActionResult(true, "« Démo » 1.3.0 est mis à jour.");
+
+        var result = await rig.Handler.InstallModuleUpdateAsync("alex.demo", Both, CancellationToken.None);
+
+        Assert.Equal(new ActionResult(true, "« Démo » 1.3.0 est mis à jour."), result);
+        Assert.Equal(["installUpdate alex.demo Internet,ThisComputer"], rig.Community.Calls);
+    }
+
+    [Fact]
+    public async Task InstallModuleUpdate_Refused_ReturnsTheRefusal()
+    {
+        using var rig = new Rig();
+        rig.Community.Result = new ActionResult(false, "Aucune mise à jour proposée pour ce module.");
+
+        var result = await rig.Handler.InstallModuleUpdateAsync("alex.demo", Internet, CancellationToken.None);
+
+        Assert.Equal(new ActionResult(false, "Aucune mise à jour proposée pour ce module."), result);
+    }
+
+    [Fact]
+    public void GetConsumption_GivesTheCommunityTheProcessOfTheService_AndReturnsItsRows()
+    {
+        using var rig = new Rig();
+        var rows = new[]
+        {
+            new ModuleConsumption("origine", "Modules d'origine (dans le service)", false, 0.5, 1234, false),
+            new ModuleConsumption("alex.demo", "Démo", true, 3.1, 90_000_000, true),
+        };
+        rig.Community.ConsumptionRows = rows;
+
+        var result = rig.Handler.GetConsumption();
+
+        Assert.Equal(rows, result);
+        Assert.Equal(["consumption"], rig.Community.Calls);
+        Assert.Equal(new ProcessInfo(1, 2, 0), rig.Community.LastServiceProcess); // la mesure du service, celle de l'état
     }
 
     // ---- Les hôtes suivent le plafond d'images et l'apparence ----

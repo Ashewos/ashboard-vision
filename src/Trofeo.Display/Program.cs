@@ -156,8 +156,15 @@ static class Program
             ],
             vault.Scope);
 
+        // Les mises à jour ont leur propre client : elles suivent les redirections (GitHub envoie les fichiers vers d'autres hôtes),
+        // ce que celui de la Freebox ne doit jamais faire. L'API de GitHub exige un User-Agent. Il sert au service des mises à jour du
+        // logiciel comme à celles des modules complémentaires : déclaré avant l'un et l'autre, libéré après eux.
+        using var updateHttp = new HttpClient(new SocketsHttpHandler()) { Timeout = UpdateHttpTimeout };
+        updateHttp.DefaultRequestHeaders.UserAgent.TryParseAdd($"{ProductIdentity.Id}/{ServiceControlHandler.InstalledVersion}");
+
         // Les modules complémentaires : un hôte enfermé par module validé, lancé seulement quand une case est posée (rien ne tourne
-        // sans module). Déclarés avant la boucle : arrêtés après elle, quand ses cases sont fermées.
+        // sans module). Déclarés avant la boucle : arrêtés après elle, quand ses cases sont fermées. Leurs mises à jour (GitHub) ne
+        // cherchent rien tant qu'aucun module ne porte de dépôt.
         using var dataBroker = new ServiceDataBroker(
             sensorHub, () => new SmtcMediaSource(new TraceModuleLog("modules-complementaires", Guid.Empty, TimeProvider.System)), TimeProvider.System);
         var community = new CommunityModules(
@@ -167,7 +174,8 @@ static class Program
             vault.RemoveScope,
             dataBroker,
             AppLocator.Find(ModuleHostExeName) ?? Path.Combine(AppContext.BaseDirectory, ModuleHostExeName),
-            TimeProvider.System);
+            TimeProvider.System,
+            updateHttp: updateHttp);
         using var communityScope = new AsyncDisposeScope(community);
         try
         {
@@ -212,11 +220,6 @@ static class Program
         using var cts = new CancellationTokenSource();
         loop.Start(cts.Token);
 
-        // Les mises à jour ont leur propre client : elles suivent les redirections (GitHub envoie les fichiers vers d'autres hôtes),
-        // ce que celui de la Freebox ne doit jamais faire. L'API de GitHub exige un User-Agent. Déclarés avant le service des mises à jour :
-        // libérés après lui.
-        using var updateHttp = new HttpClient(new SocketsHttpHandler()) { Timeout = UpdateHttpTimeout };
-        updateHttp.DefaultRequestHeaders.UserAgent.TryParseAdd($"{ProductIdentity.Id}/{ServiceControlHandler.InstalledVersion}");
         AppVersion? installed = AppVersion.TryParse(ServiceControlHandler.InstalledVersion, out var parsed) ? parsed : null;
         if (installed is null)
             Trace.TraceWarning($"Version « {ServiceControlHandler.InstalledVersion} » illisible : ni mises à jour ni préparation de l'utilisateur.");

@@ -1,5 +1,7 @@
 using AshboardVision.Sdk;
+using Trofeo.Control;
 using Trofeo.Core.Rendering;
+using Trofeo.Extensions.Updates;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Extensions;
@@ -80,4 +82,25 @@ public interface ICommunityModules
 
     /// <summary>Le plafond d'images par seconde et l'apparence, transmis à chaque hôte (et à ceux qui seront lancés plus tard).</summary>
     void SetDisplayOptions(int maxFps, AppearanceSettings appearance);
+
+    /// <summary>La mise à jour que GitHub propose pour ce module, ou <c>null</c> (aucune, ou module sans dépôt, ou vérification jamais faite).</summary>
+    ModuleUpdateOffer? UpdateFor(string id);
+
+    /// <summary>
+    /// Cherche les mises à jour des modules maintenant. Sans module portant un dépôt, ne fait aucune requête ; un échec réseau ne lève rien.
+    /// </summary>
+    Task CheckUpdatesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Installe la mise à jour proposée pour ce module, avec les seules permissions cochées : le paquet est téléchargé, vérifié
+    /// (empreinte, identifiant, dépôt), puis installé comme n'importe quel <c>.avmod</c>. Sans proposition, refuse.
+    /// </summary>
+    Task<ActionResult> InstallUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct);
+
+    /// <summary>
+    /// Ce que consomment les modules : la ligne des modules d'origine (le service, d'après <paramref name="service"/>) puis un module de
+    /// la communauté par hôte qui tourne. Lire la consommation fait passer les relevés à un toutes les 5 s pendant que la fenêtre
+    /// continue de la lire ; sans hôte, ne mesure rien.
+    /// </summary>
+    IReadOnlyList<ModuleConsumption> Consumption(ProcessInfo service);
 }

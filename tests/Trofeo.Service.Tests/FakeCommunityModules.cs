@@ -1,6 +1,8 @@
 using AshboardVision.Sdk;
+using Trofeo.Control;
 using Trofeo.Core.Rendering;
 using Trofeo.Extensions;
+using Trofeo.Extensions.Updates;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Display.Tests;
@@ -96,6 +98,36 @@ internal sealed class FakeCommunityModules : ICommunityModules
     {
         lock (_gate)
             _options.Add((maxFps, appearance));
+    }
+
+    /// <summary>Les mises à jour proposées, par identifiant.</summary>
+    public Dictionary<string, ModuleUpdateOffer> Offers { get; } = [];
+
+    /// <summary>Si elle est posée, la vérification des mises à jour attend qu'on la libère (ou qu'on l'annule).</summary>
+    public TaskCompletionSource? CheckGate { get; set; }
+
+    /// <summary>Ce que <see cref="Consumption"/> rend.</summary>
+    public IReadOnlyList<ModuleConsumption> ConsumptionRows { get; set; } = [];
+
+    /// <summary>Le processus du service tel que le handler l'a remis à <see cref="Consumption"/>.</summary>
+    public ProcessInfo? LastServiceProcess { get; private set; }
+
+    public ModuleUpdateOffer? UpdateFor(string id) => Offers.TryGetValue(id, out var offer) ? offer : null;
+
+    public Task CheckUpdatesAsync(CancellationToken ct)
+    {
+        Record("checkUpdates");
+        return CheckGate?.Task.WaitAsync(ct) ?? Task.CompletedTask;
+    }
+
+    public Task<ActionResult> InstallUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        Task.FromResult(Record($"installUpdate {id} {Join(granted)}"));
+
+    public IReadOnlyList<ModuleConsumption> Consumption(ProcessInfo service)
+    {
+        Record("consumption");
+        LastServiceProcess = service;
+        return ConsumptionRows;
     }
 
     /// <summary>Un manifeste valide pour les tests.</summary>

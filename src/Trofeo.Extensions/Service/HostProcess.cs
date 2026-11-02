@@ -25,6 +25,9 @@ public interface IHostProcess : IDisposable
 
     /// <summary>Ce que le processus a consommé depuis son lancement ; <c>null</c> s'il ne se mesure pas (ou plus).</summary>
     JobUsage? ReadUsage();
+
+    /// <summary>La mémoire privée du processus en octets ; <c>null</c> si elle ne se mesure pas (ou plus). Sans réponse par défaut : les faux processus des tests n'ont pas à la fournir.</summary>
+    long? ReadPrivateBytes() => null;
 }
 
 /// <summary>Ce qu'il faut pour lancer un hôte de module.</summary>
@@ -116,6 +119,8 @@ public sealed class SandboxedHostProcessFactory : IHostProcessFactory
                 return null;
             }
         }
+
+        public long? ReadPrivateBytes() => Volatile.Read(ref _disposed) != 0 ? null : process.ReadPrivateBytes();
 
         public void Dispose()
         {

@@ -146,6 +146,22 @@ internal static partial class Native
         public nint CompletionPort;
     }
 
+    /// <summary>PROCESS_MEMORY_COUNTERS_EX : seul PrivateUsage nous intéresse (la mémoire privée engagée, comme dans le Gestionnaire des tâches).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ProcessMemoryCountersEx
+    {
+        public uint Cb;
+        public uint PageFaultCount;
+        public nuint PeakWorkingSetSize;
+        public nuint WorkingSetSize;
+        public nuint QuotaPeakPagedPoolUsage;
+        public nuint QuotaPagedPoolUsage;
+        public nuint QuotaPeakNonPagedPoolUsage;
+        public nuint QuotaNonPagedPoolUsage;
+        public nuint PagefileUsage;
+        public nuint PeakPagefileUsage;
+        public nuint PrivateUsage;
+    }
     // --- userenv.dll : profils AppContainer ---------------------------------------------------------------------------
 
     [LibraryImport("userenv.dll", StringMarshalling = StringMarshalling.Utf16)]
@@ -260,4 +276,10 @@ internal static partial class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetQueuedCompletionStatus(SafeFileHandle port, out uint bytesTransferred, out nuint completionKey,
         out nint overlapped, uint milliseconds);
+
+    // --- kernel32.dll : mémoire d'un processus ------------------------------------------------------------------------
+
+    [LibraryImport("kernel32.dll", EntryPoint = "K32GetProcessMemoryInfo", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetProcessMemoryInfo(SafeProcessHandle process, ref ProcessMemoryCountersEx counters, uint size);
 }

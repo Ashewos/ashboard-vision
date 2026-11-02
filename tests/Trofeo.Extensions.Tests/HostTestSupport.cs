@@ -199,7 +199,23 @@ internal sealed class PlainHostProcess : IHostProcess
         }
     }
 
-    public JobUsage? ReadUsage() => Usage;
+    public long? PrivateBytes { get; set; }
+
+    /// <summary>Combien de fois la mémoire privée a été lue : seul le relevé de consommation la lit (la lecture du job sert aussi à l'arrêt de l'hôte).</summary>
+    public int PrivateReads => Volatile.Read(ref _privateReads);
+
+    private int _privateReads;
+
+    public JobUsage? ReadUsage()
+    {
+        return Usage;
+    }
+
+    public long? ReadPrivateBytes()
+    {
+        Interlocked.Increment(ref _privateReads);
+        return PrivateBytes;
+    }
 
     public void Dispose() => _process.Dispose();
 }
@@ -271,7 +287,23 @@ internal sealed class FakeHostProcess : IHostProcess
         Exit(1);
     }
 
-    public JobUsage? ReadUsage() => Usage;
+    public long? PrivateBytes { get; set; }
+
+    /// <summary>Combien de fois la mémoire privée a été lue : seul le relevé de consommation la lit (la lecture du job sert aussi à l'arrêt de l'hôte).</summary>
+    public int PrivateReads => Volatile.Read(ref _privateReads);
+
+    private int _privateReads;
+
+    public JobUsage? ReadUsage()
+    {
+        return Usage;
+    }
+
+    public long? ReadPrivateBytes()
+    {
+        Interlocked.Increment(ref _privateReads);
+        return PrivateBytes;
+    }
 
     /// <summary>L'hôte s'arrête : le tube vers le service se ferme, et le processus est fini.</summary>
     public void Exit(int code)
@@ -550,7 +582,27 @@ internal sealed class SupervisorRig : IAsyncDisposable
                     SetAsides.Add((id, reason));
                 }
             },
-            launcher, Log);
+            launcher, Log, running =>
+            {
+                lock (_hostRunning)
+                {
+                    _hostRunning.Add(running);
+                }
+            });
+    }
+
+    private readonly List<bool> _hostRunning = [];
+
+    /// <summary>Ce que le superviseur a annoncé : vrai quand un hôte est installé, faux quand il n'y en a plus.</summary>
+    public IReadOnlyList<bool> HostRunning
+    {
+        get
+        {
+            lock (_hostRunning)
+            {
+                return [.. _hostRunning];
+            }
+        }
     }
 
     public Microsoft.Extensions.Time.Testing.FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 11, 1, 12, 0, 0, TimeSpan.Zero));

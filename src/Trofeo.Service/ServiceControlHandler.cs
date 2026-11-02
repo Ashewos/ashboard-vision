@@ -294,15 +294,16 @@ public sealed class ServiceControlHandler(
         return new CommunityOverview(modules, store.ModulesRoot, store.DeveloperMode, store.DevFolders, store.Tampered);
     }
 
-    // Le moteur des mises à jour des modules arrive avec la tâche 11 : aucune mise à jour n'est proposée d'ici là.
+    // La mise à jour proposée (version, notes, permissions nouvelles) est celle que GitHub a annoncée et que le service a vérifiée.
     private CommunityModuleInfo ToModuleInfo(CommunityEntry entry)
     {
         var manifest = entry.Manifest;
+        var update = community.UpdateFor(entry.Id);
         return new CommunityModuleInfo(
             entry.Id, manifest?.Name ?? entry.Id, manifest?.Author ?? "", manifest?.Description ?? "",
             manifest?.Version ?? entry.Approval?.Version, Enum.Parse<LinkCommunityState>(entry.State.ToString()), entry.Message,
             manifest?.Permissions ?? [], community.GrantedTo(entry), entry.FromDevFolder,
-            UpdateVersion: null, UpdateNotes: null, UpdateNewPermissions: []);
+            UpdateVersion: update?.Version, UpdateNotes: update?.Notes, UpdateNewPermissions: update?.NewPermissions ?? []);
     }
 
     public PackageInfo InspectPackage(string path)
@@ -336,14 +337,13 @@ public sealed class ServiceControlHandler(
 
     public Task<ActionResult> ReloadDevModuleAsync(string id, CancellationToken ct) => community.ReloadDevModuleAsync(id);
 
-    // La recherche des mises à jour, leur installation et la consommation arrivent avec la tâche 11 (décision R19) : en attendant,
-    // le protocole est déjà complet et ces trois demandes répondent « rien ».
-    public Task CheckModuleUpdatesAsync(CancellationToken ct) => Task.CompletedTask;
+    public Task CheckModuleUpdatesAsync(CancellationToken ct) => community.CheckUpdatesAsync(ct);
 
     public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
-        Task.FromResult(new ActionResult(false, "Aucune mise à jour proposée pour ce module."));
+        community.InstallUpdateAsync(id, granted, ct);
 
-    public IReadOnlyList<ModuleConsumption> GetConsumption() => [];
+    // Lire la consommation fait passer les relevés des modules à un toutes les 5 s tant que la fenêtre continue de la lire.
+    public IReadOnlyList<ModuleConsumption> GetConsumption() => community.Consumption(meter.Read());
 
     /// <summary>L'arrêt du service annule l'installation en cours et arrête d'écouter les modules complémentaires.</summary>
     public void Dispose()

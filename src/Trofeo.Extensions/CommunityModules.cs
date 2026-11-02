@@ -2,9 +2,13 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using AshboardVision.Sdk;
+using Trofeo.Control;
 using Trofeo.Core.Rendering;
+using Trofeo.Distribution;
+using Trofeo.Extensions.Consumption;
 using Trofeo.Extensions.Protocol;
 using Trofeo.Extensions.Service;
+using Trofeo.Extensions.Updates;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Extensions;
@@ -46,6 +50,9 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
     private readonly IHostProcessFactory? _launcher;
     private readonly ModuleInstaller _installer;
     private readonly CommunityCatalog _catalog;
+    private readonly ConsumptionMeter _meter;
+    private readonly ConsumptionSampler _sampler;
+    private readonly ModuleUpdates? _updates;
 
     private readonly object _gate = new();
     private readonly SemaphoreSlim _operations = new(1, 1);
@@ -68,10 +75,15 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
     /// <param name="launcher">Lance les hôtes ; par défaut, dans l'AppContainer et le job du module (les tests en fournissent d'autres).</param>
     /// <param name="deleteProfile">Supprime l'AppContainer d'un module et ses données ; par défaut <see cref="Sandbox.AppContainerProfile.Delete"/>.</param>
     /// <param name="grantRead">Accorde à l'AppContainer d'un module la lecture de son dossier ; par défaut l'AppContainer du module.</param>
+    /// <param name="updateHttp">
+    /// Le client HTTP des mises à jour des modules (il suit les redirections de GitHub et a un délai d'attente) ; <c>null</c> : le service
+    /// ne cherche aucune mise à jour de module. Sans module portant un dépôt, il ne sert à rien : ni minuteur ni requête.
+    /// </param>
     public CommunityModules(
         ApprovedModulesStore store, Action<IReadOnlyList<IModuleFactory>> publishFactories, Func<string, ISecretStore> secretsFor,
         Action<string> clearSecrets, IServiceDataBroker data, string hostExecutable, TimeProvider time,
-        IHostProcessFactory? launcher = null, Action<string>? deleteProfile = null, Action<string, string>? grantRead = null)
+        IHostProcessFactory? launcher = null, Action<string>? deleteProfile = null, Action<string, string>? grantRead = null,
+        HttpClient? updateHttp = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _publish = publishFactories ?? throw new ArgumentNullException(nameof(publishFactories));
@@ -85,6 +97,12 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         _deleteProfile = deleteProfile ?? Sandbox.AppContainerProfile.Delete;
         _installer = new ModuleInstaller(grantRead);
         _catalog = new CommunityCatalog(() => _snapshot);
+        _meter = new ConsumptionMeter(time);
+        _sampler = new ConsumptionSampler(time, _meter, ReadHost);
+        if (updateHttp is not null)
+        {
+            _updates = new ModuleUpdates(this, new ModuleUpdateChecker(new UpdateChecker(updateHttp), time), updateHttp, time);
+        }
     }
 
     /// <inheritdoc />
@@ -229,8 +247,10 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             return; // mis de côté (ou tout juste redémarré) : une case posée dit pourquoi, sans lancer quoi que ce soit
         }
 
+        var id = entry.Id;
         var created = new ModuleHostSupervisor(
-            entry, granted, _hostExecutable, _secretsFor(entry.Id), _data, _time, OnSetAside, _launcher);
+            entry, granted, _hostExecutable, _secretsFor(id), _data, _time, OnSetAside, _launcher,
+            hostRunning: running => OnHostRunning(id, running));
         created.SetMaxFps(_maxFps);
         created.SetAppearance(_appearance);
         _running[entry.Id] = new Running(created, entry.FromDevFolder, Signature(entry, granted));
@@ -1008,6 +1028,60 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         }
     }
 
+    // --- Consommation, mises à jour -------------------------------------------------------------------------------------------------
+
+    /// <inheritdoc />
+    public IReadOnlyList<ModuleConsumption> Consumption(ProcessInfo service)
+    {
+        _sampler.Touch(); // la fenêtre lit : relevé tout de suite, puis toutes les 5 s tant qu'elle continue (rien sans hôte)
+        return _meter.Read(service);
+    }
+
+    /// <summary>Un superviseur annonce qu'un hôte tourne ou ne tourne plus : le seul moment où le suivi de sa consommation naît ou s'éteint.</summary>
+    private void OnHostRunning(string id, bool running)
+    {
+        if (running)
+        {
+            _sampler.HostStarted(id);
+        }
+        else
+        {
+            _sampler.HostStopped(id);
+        }
+    }
+
+    /// <summary>Mesure l'hôte d'un module pour le suivi de consommation ; <c>null</c> s'il est parti.</summary>
+    private HostReading? ReadHost(string id)
+    {
+        ModuleHostSupervisor supervisor;
+        lock (_gate)
+        {
+            if (!_running.TryGetValue(id, out var run))
+            {
+                return null;
+            }
+
+            supervisor = run.Supervisor;
+        }
+
+        if (supervisor.Measure() is not { } measure)
+        {
+            return null;
+        }
+
+        return new HostReading(measure.Usage, measure.PrivateBytes, _entries.FirstOrDefault(e => e.Id == id)?.Manifest?.Name);
+    }
+
+    /// <inheritdoc />
+    public ModuleUpdateOffer? UpdateFor(string id) => _updates?.OfferFor(id);
+
+    /// <inheritdoc />
+    public Task CheckUpdatesAsync(CancellationToken ct) => _updates?.CheckNowAsync(ct) ?? Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task<ActionResult> InstallUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        _updates?.InstallAsync(id, granted, ct) ?? Task.FromResult(new ActionResult(false, ModuleUpdates.NoUpdateMessage));
+
     /// <summary>Arrête tous les hôtes (chacun a quelques secondes pour finir) et libère les fichiers des modules.</summary>
     public async ValueTask DisposeAsync()
     {
@@ -1024,6 +1098,8 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             _running.Clear();
         }
 
+        _updates?.Dispose();
         await Task.WhenAll(running.Select(run => RunQuietlyAsync(() => run.Supervisor.DisposeAsync().AsTask()))).ConfigureAwait(false);
+        _sampler.Dispose();
     }
 }
