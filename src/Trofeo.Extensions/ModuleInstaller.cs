@@ -96,7 +96,8 @@ internal sealed class ModuleInstaller
             return (written, ContentHash.Compute(directory), null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception
-                                       or System.Runtime.InteropServices.COMException or ArgumentException)
+                                       or System.Runtime.InteropServices.COMException or ArgumentException or InvalidOperationException
+                                       or PlatformNotSupportedException)
         {
             return Fail(directory, $"Le module n'a pas pu être préparé : {ex.Message}");
         }

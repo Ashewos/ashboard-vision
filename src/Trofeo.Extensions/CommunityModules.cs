@@ -188,9 +188,23 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
                 var signature = Signature(entry, granted);
                 if (_forced.Contains(entry.Id) || signature != run.Signature)
                 {
+                    // Notée tout de suite (un examen qui arrive pendant la relance ne la programme pas une seconde fois), et reprise si
+                    // la relance échoue : le prochain examen réessaiera.
+                    var previous = run.Signature;
                     run.Signature = signature;
                     var supervisor = run.Supervisor;
-                    follow.Add(() => supervisor.ApplyEntryAsync(entry, granted));
+                    follow.Add(async () =>
+                    {
+                        try
+                        {
+                            await supervisor.ApplyEntryAsync(entry, granted).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            run.Signature = previous;
+                            throw;
+                        }
+                    });
                 }
             }
 
@@ -325,7 +339,10 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
     // --- Transactions sur la liste scellée --------------------------------------------------------------------------------------------
 
     /// <summary>Ce qu'un changement veut écrire (<c>null</c> : rien) et ce qu'il répond.</summary>
-    private readonly record struct Outcome(ApprovedModules? Next, ActionResult Result);
+    /// <param name="Next">La liste à écrire, ou <c>null</c>.</param>
+    /// <param name="Result">La réponse.</param>
+    /// <param name="Force">Un module dont l'hôte doit repartir au prochain examen ; pris en compte seulement si l'écriture réussit.</param>
+    private readonly record struct Outcome(ApprovedModules? Next, ActionResult Result, string? Force = null);
 
     private static Outcome Refuse(string message) => new(null, new ActionResult(false, message));
 
@@ -364,6 +381,11 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
                 return (new ActionResult(false, $"La liste des modules validés n'a pas pu être enregistrée : {ex.Message}"), null);
             }
 
+            if (outcome.Force is { } forced)
+            {
+                _forced.Add(forced);
+            }
+
             return (outcome.Result, RefreshLocked());
         }
     }
@@ -390,6 +412,13 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
 
         return store with { Modules = modules };
     }
+
+    /// <summary>
+    /// L'entrée installée d'un identifiant. Plusieurs entrées peuvent le porter (le reste d'une extraction interrompue donne une entrée
+    /// invalide du même nom) : celle qui a un manifeste lisible passe d'abord.
+    /// </summary>
+    private static CommunityEntry? FindInstalled(IReadOnlyList<CommunityEntry> entries, string id) =>
+        entries.Where(e => !e.FromDevFolder && e.Id == id).OrderBy(e => e.Manifest is null).FirstOrDefault();
 
     private static ApprovedModules WithoutModule(ApprovedModules store, string id) =>
         store with { Modules = [.. store.Modules.Where(m => m.Id != id)] };
@@ -570,7 +599,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         using var _ = Enter();
         var (result, pending) = Transact(current =>
         {
-            var entry = _catalog.Scan().FirstOrDefault(e => !e.FromDevFolder && e.Id == id);
+            var entry = FindInstalled(_catalog.Scan(), id);
             if (entry is null)
             {
                 return Refuse(NotInstalledMessage);
@@ -677,11 +706,11 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
                     return Refuse(NotApprovedMessage);
                 }
 
-                _forced.Add(id); // même sans mise de côté enregistrée, le superviseur repart de zéro
+                // Même sans mise de côté enregistrée, le superviseur repart de zéro (une fois la liste écrite : un échec ne laisse rien en attente).
                 var done = new ActionResult(true, "Le module est relancé.");
                 return approval is { SetAsideReason: not null }
-                    ? new Outcome(WithModule(current, approval with { SetAsideReason = null }), done)
-                    : new Outcome(current, done);
+                    ? new Outcome(WithModule(current, approval with { SetAsideReason = null }), done, id)
+                    : new Outcome(current, done, id);
             });
 
             if (pending is not null)
@@ -710,7 +739,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             var (result, pending) = Transact(current =>
             {
                 var entries = _catalog.Scan();
-                var installed = entries.FirstOrDefault(e => !e.FromDevFolder && e.Id == id);
+                var installed = FindInstalled(entries, id);
                 if (installed is null && !current.Modules.Any(m => m.Id == id))
                 {
                     return Refuse(entries.Any(e => e.FromDevFolder && e.Id == id)
@@ -738,8 +767,14 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
                 }
             }
 
-            Try(() => _deleteProfile(id), "son conteneur n'a pas pu être supprimé", problems);
-            Try(() => _clearSecrets(id), "ses secrets n'ont pas pu être effacés", problems);
+            // Le conteneur et le coffre ne portent que des identifiants de modules de la communauté : un dossier déposé qui porte le nom d'un
+            // type d'origine (« network ») n'a ni l'un ni l'autre, et son coffre est celui du module d'origine.
+            if (ManifestReader.IsValidId(id))
+            {
+                Try(() => _deleteProfile(id), "son conteneur n'a pas pu être supprimé", problems);
+                Try(() => _clearSecrets(id), "ses secrets n'ont pas pu être effacés", problems);
+            }
+
             Refresh(); // le dossier est parti : le module quitte la liste
 
             return problems.Count == 0

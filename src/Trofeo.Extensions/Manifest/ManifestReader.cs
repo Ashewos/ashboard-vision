@@ -40,6 +40,9 @@ public static partial class ManifestReader
     [GeneratedRegex(@"^[a-z0-9]+(-[a-z0-9]+)*\.[a-z0-9]+(-[a-z0-9]+)*\z", RegexOptions.CultureInvariant)]
     private static partial Regex IdPattern();
 
+    /// <summary>Vrai si <paramref name="id"/> a la forme d'un identifiant de module de la communauté (<c>auteur.module</c>, 40 caractères au plus). Les types d'origine (<c>network</c>, <c>clock</c>…) n'ont pas de point et n'y répondent jamais.</summary>
+    public static bool IsValidId(string? id) => id is { Length: > 0 and <= MaxIdLength } && IdPattern().IsMatch(id);
+
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex RepositoryPattern();
 

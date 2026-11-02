@@ -407,6 +407,24 @@ public sealed class CommunityModulesTests : IAsyncLifetime
         Assert.False(Directory.Exists(Path.GetDirectoryName(target)));
     }
 
+    [WindowsHostTheory]
+    [InlineData(typeof(InvalidOperationException))]
+    [InlineData(typeof(PlatformNotSupportedException))]
+    public void Extract_WhenPreparingTheContainerFails_LeavesNoUnvalidatedFolder(Type failure)
+    {
+        var rig = NewRig();
+        var package = rig.Package();
+        var expected = AvmodPackage.Inspect(package).Manifest!;
+        var target = Path.Combine(rig.Root, "alex.demo", "1.0.0");
+
+        var extracted = new ModuleInstaller((_, _) => throw (Exception)Activator.CreateInstance(failure, "refus")!).Extract(package, target, expected);
+
+        Assert.NotNull(extracted.Error);
+        Assert.Null(extracted.Manifest);
+        Assert.False(Directory.Exists(target));
+        Assert.False(Directory.Exists(Path.GetDirectoryName(target)));
+    }
+
     private static void Write(ZipArchive zip, string name, string content)
     {
         using var writer = new StreamWriter(zip.CreateEntry(name).Open());
@@ -670,6 +688,63 @@ public sealed class CommunityModulesTests : IAsyncLifetime
         Assert.True(result.Ok, result.Message);
         Assert.False(Directory.Exists(Path.Combine(rig.Root, "alex.demo")));
         Assert.Empty(rig.Community.Entries);
+    }
+
+    [WindowsHostFact]
+    public async Task Uninstall_FolderNamedLikeABuiltInType_NeverTouchesItsSecretsOrProfile()
+    {
+        // Un dossier « network » n'est pas un module de la communauté (pas de point) : le catalogue en fait une entrée invalide,
+        // mais le coffre « network » est celui du module Réseau d'origine.
+        var rig = NewRig();
+        var folder = Path.Combine(rig.Root, "network", "1.0.0");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "fichier.txt"), "x");
+        rig.Vault.Scope("network").Set("freebox", "jeton-freebox");
+        rig.Community.Refresh();
+
+        var result = await rig.Community.UninstallAsync("network");
+
+        Assert.True(result.Ok, result.Message);
+        Assert.False(Directory.Exists(Path.Combine(rig.Root, "network")), "le dossier déposé disparaît");
+        Assert.Equal("jeton-freebox", rig.Vault.Get("network", "freebox"));
+        Assert.Empty(rig.Profiles);
+    }
+
+    [WindowsHostFact]
+    public async Task Approve_AndUninstall_WithAStrayTempFolderBesideTheModule_StillFindTheRightEntry()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package());
+        var module = Path.Combine(rig.Root, "alex.demo");
+        Directory.CreateDirectory(Path.Combine(module, "1.0.0.tmp-0123456789abcdef")); // le reste d'une extraction interrompue
+        File.WriteAllText(Path.Combine(module, "1.0.0", "Mod.dll"), "code remplacé");
+        rig.Community.Refresh();
+        Assert.Equal(CommunityState.Invalid, rig.Community.Entries.First(e => e.Id == "alex.demo").State); // l'entrée parasite passe la première
+
+        var approved = rig.Community.Approve("alex.demo", Internet);
+        var removed = await rig.Community.UninstallAsync("alex.demo");
+
+        Assert.True(approved.Ok, approved.Message);
+        Assert.True(removed.Ok, removed.Message);
+        Assert.Equal(["alex.demo"], rig.Profiles);
+    }
+
+    [WindowsHostFact]
+    public async Task Relaunch_WhenTheListCannotBeWritten_DoesNotRestartTheHostLater()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package());
+        rig.Open("alex.demo");
+        await (await rig.Launcher.WaitForStartAsync()).WaitAsync<Hello>();
+        var blocker = Path.Combine(rig.Root, "..", "settings", "modules.json.tmp");
+        Directory.CreateDirectory(blocker); // l'écriture du fichier temporaire de la liste échoue
+
+        var failed = await rig.Community.RelaunchAsync("alex.demo");
+        Directory.Delete(blocker);
+        rig.Community.Refresh();
+
+        Assert.False(failed.Ok);
+        Assert.True(await TestWait.StaysFalseAsync(() => rig.Launcher.Count > 1, TimeSpan.FromMilliseconds(500)), "l'échec ne laisse pas de relance en attente");
     }
 
     // --- Dossier des modules, mode développeur --------------------------------------------------------------------------------------

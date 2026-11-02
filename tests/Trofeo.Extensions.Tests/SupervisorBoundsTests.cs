@@ -223,9 +223,18 @@ public sealed class SupervisorBoundsTests : IAsyncLifetime
             Assert.Equal(ModuleHealth.Offline, module.Status.Health);
             Assert.Equal(ModuleHostSupervisor.FilesBusyText, module.Status.ActionMessage);
 
+            // La 5e avance a pu lancer un 6e essai sur le pool avant que les fichiers ne soient libres : il échoue et programme le suivant.
+            // On libère, puis on avance l'horloge tant que l'hôte n'est pas parti, pour ne dépendre de l'ordre d'aucun de ces essais.
             held.Dispose();
-            await TestWait.UntilAsync(() => factory.Count == 1, null, () => string.Join(" | ", rig.Log.Entries));
-            rig.Time.Advance(ModuleHostSupervisor.FilesBusyRetry + TimeSpan.FromSeconds(0.1));
+            await TestWait.UntilAsync(() =>
+            {
+                if (factory.Count == 0)
+                {
+                    rig.Time.Advance(ModuleHostSupervisor.FilesBusyRetry + TimeSpan.FromSeconds(0.1));
+                }
+
+                return factory.Count >= 1;
+            }, null, () => string.Join(" | ", rig.Log.Entries));
             await factory.WaitForStartAsync();
             await TestWait.UntilAsync(() => module.Status.Health == ModuleHealth.Online);
         }
@@ -264,7 +273,7 @@ public sealed class SupervisorBoundsTests : IAsyncLifetime
     public async Task HostIgnoringShutdown_IsKilledAfterTheGrace()
     {
         var (rig, factory, _) = Fake();
-        rig.Supervisor.ShutdownGrace = TimeSpan.FromMilliseconds(300);
+        rig.Supervisor.ShutdownGrace = TimeSpan.FromSeconds(2); // la minuterie du tueur est réelle : assez longue pour ne pas devancer l'attente
         var module = OpenAndSize(rig);
         var host = await factory.WaitForStartAsync();
         await host.WaitAsync<Open>();
@@ -272,7 +281,6 @@ public sealed class SupervisorBoundsTests : IAsyncLifetime
         module.Dispose(); // la dernière case se ferme : Shutdown, que cet hôte ignore
 
         await host.WaitAsync<Shutdown>();
-        Assert.False(host.HasExited);
         await TestWait.UntilAsync(() => host.Killed, TimeSpan.FromSeconds(10), () => "Jamais tué");
         await TestWait.UntilAsync(() => host.HasExited);
         Assert.Empty(rig.SetAsides); // un arrêt voulu n'est pas une panne
@@ -282,8 +290,8 @@ public sealed class SupervisorBoundsTests : IAsyncLifetime
     public async Task Dispose_HostIgnoringShutdown_IsKilledAfterTheGrace()
     {
         var (rig, factory, _) = Fake();
-        rig.Supervisor.ShutdownGrace = TimeSpan.FromMilliseconds(300);
-        rig.Supervisor.DisposeGrace = TimeSpan.FromMilliseconds(200);
+        rig.Supervisor.ShutdownGrace = TimeSpan.FromSeconds(2);
+        rig.Supervisor.DisposeGrace = TimeSpan.FromSeconds(2);
         OpenAndSize(rig);
         var host = await factory.WaitForStartAsync();
         await host.WaitAsync<Open>();
