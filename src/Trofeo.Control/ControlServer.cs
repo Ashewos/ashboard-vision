@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Text.Json;
+using AshboardVision.Sdk;
 
 namespace Trofeo.Control;
 
@@ -208,9 +209,84 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
                     {
                         Action = await _handler.InstallUpdateAsync(Required(request.ConfirmDowngrade, "confirmDowngrade"), ct).ConfigureAwait(false),
                     };
+                case MessageTypes.Types:
+                    return new Response(request.Id, request.Type) { Types = _handler.GetTypes() };
+                case MessageTypes.Community:
+                    return new Response(request.Id, request.Type) { Community = _handler.GetCommunity() };
+                case MessageTypes.InspectPackage:
+                    return new Response(request.Id, request.Type) { Package = _handler.InspectPackage(Required(request.Path, "path")) };
+                case MessageTypes.InstallPackage:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Action = await _handler.InstallPackageAsync(Required(request.Path, "path"), Permissions(request), ct).ConfigureAwait(false),
+                    };
+                case MessageTypes.ApproveModule:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Action = _handler.ApproveModule(Required(request.ModuleId, "moduleId"), Permissions(request)),
+                    };
+                case MessageTypes.SetModulePermissions:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Action = await _handler.SetModulePermissionsAsync(Required(request.ModuleId, "moduleId"), Permissions(request), ct)
+                            .ConfigureAwait(false),
+                    };
+                case MessageTypes.UninstallModule:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Action = await _handler.UninstallModuleAsync(Required(request.ModuleId, "moduleId"), ct).ConfigureAwait(false),
+                    };
+                case MessageTypes.RelaunchModule:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Action = await _handler.RelaunchModuleAsync(Required(request.ModuleId, "moduleId"), ct).ConfigureAwait(false),
+                    };
+                case MessageTypes.SetModulesRoot:
+                    return new Response(request.Id, request.Type) { Action = _handler.SetModulesRoot(Required(request.Path, "path")) };
+                case MessageTypes.SetDeveloperMode:
+                    return new Response(request.Id, request.Type) { Action = _handler.SetDeveloperMode(Required(request.On, "on")) };
+                case MessageTypes.AddDevFolder:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Action = _handler.AddDevFolder(Required(request.Path, "path"), Permissions(request)),
+                    };
+                case MessageTypes.RemoveDevFolder:
+                    return new Response(request.Id, request.Type) { Action = _handler.RemoveDevFolder(Required(request.Path, "path")) };
+                case MessageTypes.ReloadDevModule:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Action = await _handler.ReloadDevModuleAsync(Required(request.ModuleId, "moduleId"), ct).ConfigureAwait(false),
+                    };
+                case MessageTypes.CheckModuleUpdates:
+                    await _handler.CheckModuleUpdatesAsync(ct).ConfigureAwait(false);
+                    return new Response(request.Id, request.Type);
+                case MessageTypes.InstallModuleUpdate:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Action = await _handler.InstallModuleUpdateAsync(Required(request.ModuleId, "moduleId"), Permissions(request), ct)
+                            .ConfigureAwait(false),
+                    };
+                case MessageTypes.Consumption:
+                    return new Response(request.Id, request.Type) { Consumption = _handler.GetConsumption() };
                 default:
                     throw new InvalidOperationException($"Requête inconnue : « {request.Type} ».");
             }
+        }
+
+        /// <summary>
+        /// Les permissions de la requête. Un nom inconnu est déjà refusé à la lecture du JSON (la connexion se referme) ; un nombre qui
+        /// n'est celui d'aucune permission est refusé ici, par une erreur.
+        /// </summary>
+        private static IReadOnlyList<ModulePermission> Permissions(Request request)
+        {
+            var granted = request.Granted ?? throw new InvalidOperationException("Paramètre manquant : granted.");
+            foreach (var permission in granted)
+            {
+                if (!Enum.IsDefined(permission))
+                    throw new InvalidOperationException($"Permission inconnue : {(int)permission}.");
+            }
+
+            return granted;
         }
 
         private Response HandlePreview(Request request)

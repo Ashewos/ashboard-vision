@@ -218,6 +218,7 @@ public sealed class CommunityModulesTests : IAsyncLifetime
         Assert.Equal(("alex.demo", "1.0.0", directory), (approved.Id, approved.Version, approved.Directory));
         Assert.Equal(ContentHash.Compute(directory), approved.ContentHash); // l'empreinte du dossier tel qu'il est maintenant
         Assert.Equal(Internet, approved.Granted);
+        Assert.Equal(Internet, rig.Community.GrantedTo(rig.Entry("alex.demo")));
         Assert.Null(approved.SetAsideReason);
         Assert.Equal("alex/demo", approved.Repository);
         Assert.Equal(CommunityState.Ready, rig.Entry("alex.demo").State);
@@ -787,6 +788,7 @@ public sealed class CommunityModulesTests : IAsyncLifetime
         Assert.Equal(CommunityState.Ready, entry.State);
         Assert.True(rig.Community.StoreInfo.DeveloperMode);
         Assert.Equal([dev], rig.Community.StoreInfo.DevFolders);
+        Assert.Equal(Internet, rig.Community.GrantedTo(entry)); // celles du dossier, pas celles du manifeste
         rig.Open("alex.dev");
         var host = await rig.Launcher.WaitForStartAsync();
         Assert.Equal(Internet, host.Start.Granted); // jamais les permissions du manifeste

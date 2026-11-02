@@ -1,12 +1,23 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AshboardVision.Sdk;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Control;
 
-/// <summary>Un type de module tel que la fenêtre de réglage le connaît : de quoi construire son formulaire.</summary>
+/// <summary>
+/// Ce que la fenêtre sait d'un type de module qui vient de la communauté : qui l'a écrit, ce qu'il demande
+/// (<paramref name="Declared"/>, dans son manifeste) et ce que l'utilisateur lui a accordé (<paramref name="Granted"/>).
+/// </summary>
+public sealed record CommunityTypeInfo(
+    string Author, string Description, string Version, IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted);
+
+/// <summary>
+/// Un type de module tel que la fenêtre de réglage le connaît : de quoi construire son formulaire.
+/// <paramref name="Community"/> n'est renseigné que pour un module complémentaire.
+/// </summary>
 public sealed record ModuleTypeInfo(string TypeId, string DisplayName, GridSize MinSize,
-    IReadOnlyDictionary<SizePreset, GridSize> Presets, bool AcceptsCommands, SettingsSchema Schema);
+    IReadOnlyDictionary<SizePreset, GridSize> Presets, bool AcceptsCommands, SettingsSchema Schema, CommunityTypeInfo? Community = null);
 
 /// <summary>Réponse à la poignée de main : version du service et types de modules disponibles.</summary>
 public sealed record Welcome(string ServiceVersion, int ProtocolVersion, IReadOnlyList<ModuleTypeInfo> Types);
@@ -46,6 +57,41 @@ public enum LinkUpdateChannel { Stable, Beta }
 public sealed record UpdateInfo(
     LinkUpdateState State, string? Version, bool IsDowngrade, int? Percent, string? Message, LinkUpdateChannel Channel, bool WaitForNextStable);
 
+/// <summary>Où en est un module complémentaire, tel que la fenêtre de réglage le connaît (miroir de l'état du service).</summary>
+public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, TooOld, Invalid, Unavailable, SetAside }
+
+/// <summary>
+/// Un module complémentaire vu par la fenêtre. <paramref name="Message"/> est écrit pour être lu tel quel ; <paramref name="Declared"/>
+/// est ce que le manifeste demande, <paramref name="Granted"/> ce que l'utilisateur a accordé. Les trois dernières valeurs décrivent une
+/// mise à jour trouvée sur GitHub (<c>null</c> et liste vide : aucune).
+/// </summary>
+public sealed record CommunityModuleInfo(
+    string Id, string Name, string Author, string Description, string? Version, LinkCommunityState State, string? Message,
+    IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted, bool FromDevFolder,
+    string? UpdateVersion, string? UpdateNotes, IReadOnlyList<ModulePermission> UpdateNewPermissions);
+
+/// <summary>
+/// Les modules complémentaires et leurs réglages généraux : le dossier des modules, le mode développeur et ses dossiers, et
+/// <paramref name="StoreTampered"/> quand la liste des modules validés a été trouvée altérée (rien n'est alors validé).
+/// </summary>
+public sealed record CommunityOverview(
+    IReadOnlyList<CommunityModuleInfo> Modules, string ModulesRoot, bool DeveloperMode, IReadOnlyList<string> DevFolders, bool StoreTampered);
+
+/// <summary>
+/// Ce que le service a vu dans un paquet <c>.avmod</c> avant d'y écrire quoi que ce soit. <paramref name="Errors"/> dit, en français,
+/// ce qui empêche l'installation (vide : elle est possible) ; <paramref name="Conflict"/> signale un identifiant déjà pris par un autre
+/// dépôt ; <paramref name="InstalledVersion"/> est la version déjà installée de ce module (une mise à jour, donc).
+/// </summary>
+public sealed record PackageInfo(
+    string? Id, string? Name, string? Author, string? Version, string? Description, IReadOnlyList<ModulePermission> Declared,
+    IReadOnlyList<string> Errors, string? Conflict, string? InstalledVersion);
+
+/// <summary>
+/// Ce que consomme un module : le service lui-même, un module d'origine ou un module complémentaire (<paramref name="IsCommunity"/>).
+/// <paramref name="High"/> signale une consommation durablement élevée.
+/// </summary>
+public sealed record ModuleConsumption(string Id, string DisplayName, bool IsCommunity, double CpuPercent, long MemoryBytes, bool High);
+
 /// <summary>Ce que le service sait faire pour la fenêtre de réglage. Implémenté côté service.</summary>
 public interface IControlHandler
 {
@@ -76,6 +122,56 @@ public interface IControlHandler
     /// Le tableau d'octets d'une image n'est plus modifié après l'appel (il est écrit plus tard, sur un autre fil).
     /// </summary>
     IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame);
+
+    // ---- Modules complémentaires ----
+
+    /// <summary>Les types de modules connus maintenant (la liste de la poignée de main change quand un module s'installe ou se valide).</summary>
+    IReadOnlyList<ModuleTypeInfo> GetTypes();
+
+    /// <summary>Les modules complémentaires trouvés, le dossier des modules et le mode développeur.</summary>
+    CommunityOverview GetCommunity();
+
+    /// <summary>Ce qu'il y a dans un <c>.avmod</c>, sans rien écrire sur le disque.</summary>
+    PackageInfo InspectPackage(string path);
+
+    /// <summary>Installe un <c>.avmod</c> avec les permissions cochées par l'utilisateur.</summary>
+    Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct);
+
+    /// <summary>Valide un module trouvé dans le dossier des modules, avec les permissions cochées.</summary>
+    ActionResult ApproveModule(string id, IReadOnlyList<ModulePermission> granted);
+
+    /// <summary>Change les permissions d'un module ; son hôte est relancé avec les nouvelles.</summary>
+    Task<ActionResult> SetModulePermissionsAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct);
+
+    /// <summary>Retire un module : dossier, secrets, validation.</summary>
+    Task<ActionResult> UninstallModuleAsync(string id, CancellationToken ct);
+
+    /// <summary>Remet en route un module mis de côté.</summary>
+    Task<ActionResult> RelaunchModuleAsync(string id, CancellationToken ct);
+
+    /// <summary>Choisit le dossier des modules.</summary>
+    ActionResult SetModulesRoot(string path);
+
+    /// <summary>Allume ou éteint le mode développeur.</summary>
+    ActionResult SetDeveloperMode(bool on);
+
+    /// <summary>Ajoute un dossier de développement avec les permissions accordées.</summary>
+    ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted);
+
+    /// <summary>Retire un dossier de développement (le dossier lui-même n'est pas touché).</summary>
+    ActionResult RemoveDevFolder(string path);
+
+    /// <summary>Recharge un module du mode développeur avec les fichiers de son dossier.</summary>
+    Task<ActionResult> ReloadDevModuleAsync(string id, CancellationToken ct);
+
+    /// <summary>Cherche les mises à jour des modules complémentaires ; le résultat se lit ensuite avec <see cref="GetCommunity"/>.</summary>
+    Task CheckModuleUpdatesAsync(CancellationToken ct);
+
+    /// <summary>Installe la mise à jour proposée pour un module, avec les permissions cochées (les nouvelles comprises).</summary>
+    Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct);
+
+    /// <summary>Ce que consomment le service et chaque module.</summary>
+    IReadOnlyList<ModuleConsumption> GetConsumption();
 }
 
 /// <summary>Erreur renvoyée par le service, ou connexion perdue ; le message est affichable.</summary>
@@ -98,6 +194,22 @@ internal static class MessageTypes
     public const string CheckUpdates = "checkUpdates";
     public const string SetUpdatePreferences = "setUpdatePreferences";
     public const string InstallUpdate = "installUpdate";
+    public const string Types = "types";
+    public const string Community = "community";
+    public const string InspectPackage = "inspectPackage";
+    public const string InstallPackage = "installPackage";
+    public const string ApproveModule = "approveModule";
+    public const string SetModulePermissions = "setModulePermissions";
+    public const string UninstallModule = "uninstallModule";
+    public const string RelaunchModule = "relaunchModule";
+    public const string SetModulesRoot = "setModulesRoot";
+    public const string SetDeveloperMode = "setDeveloperMode";
+    public const string AddDevFolder = "addDevFolder";
+    public const string RemoveDevFolder = "removeDevFolder";
+    public const string ReloadDevModule = "reloadDevModule";
+    public const string CheckModuleUpdates = "checkModuleUpdates";
+    public const string InstallModuleUpdate = "installModuleUpdate";
+    public const string Consumption = "consumption";
     public const string Error = "error";
 }
 
@@ -113,6 +225,10 @@ internal sealed record Request(int Id, string Type)
     public LinkUpdateChannel? Channel { get; init; }
     public bool? WaitForNextStable { get; init; }
     public bool? ConfirmDowngrade { get; init; }
+    public string? ModuleId { get; init; }
+    public string? Path { get; init; }
+    public IReadOnlyList<ModulePermission>? Granted { get; init; }
+    public bool? On { get; init; }
 }
 
 /// <summary>Réponse JSON : <see cref="ReplyTo"/> reprend l'identifiant de la requête ; type « error » pour un échec.</summary>
@@ -126,6 +242,10 @@ internal sealed record Response(int ReplyTo, string Type)
     public IReadOnlyList<LookupResult>? Results { get; init; }
     public ActionResult? Action { get; init; }
     public UpdateInfo? Update { get; init; }
+    public IReadOnlyList<ModuleTypeInfo>? Types { get; init; }
+    public CommunityOverview? Community { get; init; }
+    public PackageInfo? Package { get; init; }
+    public IReadOnlyList<ModuleConsumption>? Consumption { get; init; }
 }
 
 internal static class ControlJson

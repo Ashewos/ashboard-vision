@@ -1,3 +1,4 @@
+using AshboardVision.Sdk;
 using Trofeo.Control;
 using Trofeo.ModuleKit;
 using Trofeo.Settings.Services;
@@ -121,6 +122,86 @@ public sealed class FakeServiceLink : IServiceLink
     {
         UpdateInstalls.Add(confirmDowngrade);
         return OnInstallUpdate(confirmDowngrade);
+    }
+
+    // ---- Modules complémentaires ----
+
+    public IReadOnlyList<ModuleTypeInfo>? Types { get; set; }
+
+    /// <summary>Change les types connus et prévient les abonnés.</summary>
+    public void SetTypes(IReadOnlyList<ModuleTypeInfo>? types)
+    {
+        Types = types;
+        Changed?.Invoke();
+    }
+
+    /// <summary>Ce que le service dit des modules complémentaires.</summary>
+    public CommunityOverview Community { get; set; } = new([], @"C:\Modules", false, [], false);
+
+    /// <summary>Ce que le service voit dans un paquet.</summary>
+    public PackageInfo Package { get; set; } = new(null, null, null, null, null, [], ["Archive illisible."], null, null);
+
+    /// <summary>Ce que le service répond à une demande qui change les modules.</summary>
+    public ActionResult ModuleResult { get; set; } = new(true, "");
+
+    public List<ModuleConsumption> Consumption { get; } = [];
+
+    /// <summary>Les demandes sur les modules complémentaires, dans l'ordre : « nom argument… ».</summary>
+    public List<string> ModuleCalls { get; } = [];
+
+    private static string Join(IReadOnlyList<ModulePermission> granted) => string.Join(",", granted);
+
+    private Task<ActionResult> Module(string call)
+    {
+        ModuleCalls.Add(call);
+        return Task.FromResult(ModuleResult);
+    }
+
+    public Task<CommunityOverview> GetCommunityAsync()
+    {
+        ModuleCalls.Add("community");
+        return Task.FromResult(Community);
+    }
+
+    public Task<PackageInfo> InspectPackageAsync(string path)
+    {
+        ModuleCalls.Add($"inspect {path}");
+        return Task.FromResult(Package);
+    }
+
+    public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted) => Module($"install {path} {Join(granted)}");
+
+    public Task<ActionResult> ApproveModuleAsync(string id, IReadOnlyList<ModulePermission> granted) => Module($"approve {id} {Join(granted)}");
+
+    public Task<ActionResult> SetModulePermissionsAsync(string id, IReadOnlyList<ModulePermission> granted) =>
+        Module($"permissions {id} {Join(granted)}");
+
+    public Task<ActionResult> UninstallModuleAsync(string id) => Module($"uninstall {id}");
+
+    public Task<ActionResult> RelaunchModuleAsync(string id) => Module($"relaunch {id}");
+
+    public Task<ActionResult> SetModulesRootAsync(string path) => Module($"root {path}");
+
+    public Task<ActionResult> SetDeveloperModeAsync(bool on) => Module($"dev {on}");
+
+    public Task<ActionResult> AddDevFolderAsync(string path, IReadOnlyList<ModulePermission> granted) => Module($"addDev {path} {Join(granted)}");
+
+    public Task<ActionResult> RemoveDevFolderAsync(string path) => Module($"removeDev {path}");
+
+    public Task<ActionResult> ReloadDevModuleAsync(string id) => Module($"reloadDev {id}");
+
+    public Task CheckModuleUpdatesAsync()
+    {
+        ModuleCalls.Add("checkModuleUpdates");
+        return Task.CompletedTask;
+    }
+
+    public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted) => Module($"update {id} {Join(granted)}");
+
+    public Task<IReadOnlyList<ModuleConsumption>> GetConsumptionAsync()
+    {
+        ModuleCalls.Add("consumption");
+        return Task.FromResult<IReadOnlyList<ModuleConsumption>>([.. Consumption]);
     }
 
     public Task<bool> StartServiceAsync()

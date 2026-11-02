@@ -1,3 +1,4 @@
+using AshboardVision.Sdk;
 using Trofeo.Control;
 using Trofeo.ModuleKit;
 
@@ -31,6 +32,7 @@ public sealed class ServiceLink : IServiceLink
     private int _failures;
     private int _disposed;
     private long _updatesGeneration;
+    private long _typesGeneration;
 
     /// <param name="pipeName">Le tube du service.</param>
     /// <param name="retryDelay">Délai entre deux tentatives de connexion (2 s).</param>
@@ -58,6 +60,7 @@ public sealed class ServiceLink : IServiceLink
     public Welcome? Welcome { get; private set; }
     public ServiceStatus? Status { get; private set; }
     public UpdateInfo? Updates { get; private set; }
+    public IReadOnlyList<ModuleTypeInfo>? Types { get; private set; }
 
     public event Action? Changed;
     public event Action<PreviewFrame>? FrameReceived;
@@ -145,6 +148,79 @@ public sealed class ServiceLink : IServiceLink
         }
     }
 
+    // ---- Modules complémentaires ----
+
+    public Task<CommunityOverview> GetCommunityAsync() => RequestAsync((client, ct) => client.GetCommunityAsync(ct));
+
+    public Task<PackageInfo> InspectPackageAsync(string path) => RequestAsync((client, ct) => client.InspectPackageAsync(path, ct));
+
+    public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted) =>
+        ChangeModulesAsync((client, ct) => client.InstallPackageAsync(path, granted, ct));
+
+    public Task<ActionResult> ApproveModuleAsync(string id, IReadOnlyList<ModulePermission> granted) =>
+        ChangeModulesAsync((client, ct) => client.ApproveModuleAsync(id, granted, ct));
+
+    public Task<ActionResult> SetModulePermissionsAsync(string id, IReadOnlyList<ModulePermission> granted) =>
+        ChangeModulesAsync((client, ct) => client.SetModulePermissionsAsync(id, granted, ct));
+
+    public Task<ActionResult> UninstallModuleAsync(string id) =>
+        ChangeModulesAsync((client, ct) => client.UninstallModuleAsync(id, ct));
+
+    public Task<ActionResult> RelaunchModuleAsync(string id) =>
+        ChangeModulesAsync((client, ct) => client.RelaunchModuleAsync(id, ct));
+
+    public Task<ActionResult> SetModulesRootAsync(string path) =>
+        ChangeModulesAsync((client, ct) => client.SetModulesRootAsync(path, ct));
+
+    public Task<ActionResult> SetDeveloperModeAsync(bool on) =>
+        ChangeModulesAsync((client, ct) => client.SetDeveloperModeAsync(on, ct));
+
+    public Task<ActionResult> AddDevFolderAsync(string path, IReadOnlyList<ModulePermission> granted) =>
+        ChangeModulesAsync((client, ct) => client.AddDevFolderAsync(path, granted, ct));
+
+    public Task<ActionResult> RemoveDevFolderAsync(string path) =>
+        ChangeModulesAsync((client, ct) => client.RemoveDevFolderAsync(path, ct));
+
+    public Task<ActionResult> ReloadDevModuleAsync(string id) =>
+        ChangeModulesAsync((client, ct) => client.ReloadDevModuleAsync(id, ct));
+
+    public Task CheckModuleUpdatesAsync() => RequestAsync(async (client, ct) =>
+    {
+        await client.CheckModuleUpdatesAsync(ct).ConfigureAwait(false);
+        return true;
+    });
+
+    public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted) =>
+        ChangeModulesAsync((client, ct) => client.InstallModuleUpdateAsync(id, granted, ct));
+
+    public Task<IReadOnlyList<ModuleConsumption>> GetConsumptionAsync() => RequestAsync((client, ct) => client.GetConsumptionAsync(ct));
+
+    /// <summary>Une demande qui change les modules complémentaires : au retour, les types sont relus et publiés (qu'elle ait réussi ou non).</summary>
+    private Task<ActionResult> ChangeModulesAsync(Func<ControlClient, CancellationToken, Task<ActionResult>> request) =>
+        RequestAsync(async (client, ct) =>
+        {
+            var result = await request(client, ct).ConfigureAwait(false);
+            await RefreshTypesAsync(client, ct).ConfigureAwait(false);
+            return result;
+        });
+
+    /// <summary>
+    /// Relit les types de modules et les publie tout de suite. Le compteur change avant la lecture : une lecture plus ancienne qui arrive
+    /// après une plus récente est écartée, comme pour les mises à jour.
+    /// </summary>
+    private async Task RefreshTypesAsync(ControlClient client, CancellationToken ct)
+    {
+        var generation = Interlocked.Increment(ref _typesGeneration);
+        IReadOnlyList<ModuleTypeInfo> types;
+        try { types = await client.GetTypesAsync(ct).ConfigureAwait(false); }
+        catch (ControlException) { return; } // un service qui refuse la lecture ne coupe pas la liaison : on garde ce qu'on avait
+        Update(() =>
+        {
+            if (generation == Volatile.Read(ref _typesGeneration) && State == LinkState.Connected)
+                Types = types;
+        });
+    }
+
     public Task<bool> StartServiceAsync()
     {
         var started = _starter.TryStart();
@@ -188,14 +264,14 @@ public sealed class ServiceLink : IServiceLink
                 // Le service tourne mais parle une autre version : ce n'est pas un service arrêté. On continue d'essayer (il sera peut-être
                 // mis à jour entre-temps), sans compter ces essais comme des échecs de connexion.
                 Volatile.Write(ref _failures, 0);
-                Update(() => { State = LinkState.VersionMismatch; Welcome = null; Status = null; Updates = null; }, onlyIf: () => State != LinkState.VersionMismatch);
+                Update(() => { State = LinkState.VersionMismatch; Welcome = null; Status = null; Updates = null; Types = null; }, onlyIf: () => State != LinkState.VersionMismatch);
             }
             catch (Exception)
             {
                 // Pas de service, version de protocole différente, tube qui se ferme, erreur inattendue du système : un échec
                 // de plus. Aucune exception ne remonte vers l'interface.
                 if (client is null && Interlocked.Increment(ref _failures) >= FailuresBeforeStopped)
-                    Update(() => { State = LinkState.ServiceStopped; Welcome = null; Status = null; Updates = null; }, onlyIf: () => State != LinkState.ServiceStopped);
+                    Update(() => { State = LinkState.ServiceStopped; Welcome = null; Status = null; Updates = null; Types = null; }, onlyIf: () => State != LinkState.ServiceStopped);
             }
             finally
             {
@@ -209,7 +285,7 @@ public sealed class ServiceLink : IServiceLink
 
             // Connectée puis coupée : on repart à « Connecting » ; ServiceStopped ne se déclare qu'après trois échecs de connexion.
             if (client is not null && !ct.IsCancellationRequested)
-                Update(() => { State = LinkState.Connecting; Welcome = null; Status = null; Updates = null; });
+                Update(() => { State = LinkState.Connecting; Welcome = null; Status = null; Updates = null; Types = null; });
 
             var wait = _retryDelay - (DateTime.UtcNow - attemptStarted);
             if (wait > TimeSpan.Zero)
@@ -238,7 +314,7 @@ public sealed class ServiceLink : IServiceLink
         var status = await client.GetStatusAsync(ct).ConfigureAwait(false);
         var generation = Volatile.Read(ref _updatesGeneration);
         var updates = await TryGetUpdateAsync(client, ct).ConfigureAwait(false);
-        Update(() => { ApplyUpdates(updates, generation); State = LinkState.Connected; Welcome = client.Welcome; Status = status; });
+        Update(() => { ApplyUpdates(updates, generation); State = LinkState.Connected; Welcome = client.Welcome; Types = client.Welcome.Types; Status = status; });
 
         while (true)
         {

@@ -33,6 +33,12 @@ public interface ICommunityModules
     /// <summary>La liste scellée, vue au dernier examen.</summary>
     CommunityStoreInfo StoreInfo { get; }
 
+    /// <summary>
+    /// Les permissions que l'utilisateur a accordées à ce module : celles de sa validation, ou celles de son dossier de développement
+    /// (jamais celles de son manifeste). Vide si rien n'est accordé, si la liste scellée est altérée ou si le module n'est pas validé.
+    /// </summary>
+    IReadOnlyList<ModulePermission> GrantedTo(CommunityEntry entry);
+
     /// <summary>Levé après chaque changement (installation, validation, panne, mise de côté…), depuis un fil du pool.</summary>
     event EventHandler? Changed;
 

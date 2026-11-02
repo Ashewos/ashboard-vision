@@ -96,6 +96,19 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
     /// <inheritdoc />
     public CommunityStoreInfo StoreInfo => _storeInfo;
 
+    /// <inheritdoc />
+    public IReadOnlyList<ModulePermission> GrantedTo(CommunityEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ApprovedLoad loaded;
+        lock (_gate)
+        {
+            loaded = _snapshot;
+        }
+
+        return GrantedFor(entry, loaded.Tampered ? ApprovedModules.Empty : loaded.Modules);
+    }
+
     // --- Examen, publication --------------------------------------------------------------------------------------------------------
 
     /// <inheritdoc />

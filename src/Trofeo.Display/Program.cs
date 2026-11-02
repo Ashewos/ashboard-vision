@@ -31,8 +31,6 @@ static class Program
     // Les mises à jour interrogent GitHub : 30 s pour répondre, et pas plus (le téléchargement lit son flux après les en-têtes).
     private static readonly TimeSpan UpdateHttpTimeout = TimeSpan.FromSeconds(30);
 
-    // Le plafond d'images de la boucle (DisplayLoop) : un hôte de module n'a aucune raison d'en écrire davantage.
-    private const int HostMaxFpsCap = 12;
     private const string ModuleHostExeName = "Trofeo.ModuleHost.exe";
 
     [STAThread]
@@ -196,15 +194,13 @@ static class Program
             Warn(message);
             buildWarnings.Warn(message);
         };
-        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current)
-        {
-            var built = LoopConfigFactory.Build(
+        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current) =>
+            LoopConfigFactory.Build(
                 next, new SkiaSystemFonts(), path => MediaFoundationBackground.TryOpen(path, warnAndCollect), warnAndCollect, current);
-            // Les hôtes des modules complémentaires suivent le plafond d'images et l'apparence de la disposition.
-            community.SetDisplayOptions(Math.Clamp(next.MaxFps ?? HostMaxFpsCap, 1, HostMaxFpsCap), next.Appearance ?? AppearanceSettings.Default);
-            return built;
-        }
 
+        // Les hôtes des modules complémentaires suivent le plafond d'images et l'apparence de la disposition : au démarrage ici, puis
+        // à chaque rechargement par le handler (BuildConfig ne tourne que si l'apparence change).
+        ServiceControlHandler.ApplyHostOptions(community, layout);
         var config = BuildConfig(layout, null);
         var theme = config.Theme;
         Trace.TraceInformation(
@@ -249,7 +245,7 @@ static class Program
             var meter = new ProcessMeter(SampleProcess, TimeProvider.System, Environment.ProcessorCount);
             using var handler = new ServiceControlHandler(
                 store, loop, registry, () => ServiceControlHandler.ToScreenInfo(screen.Status), () => ReadSensors(sensorPipe),
-                meter, BuildConfig, hotkeys?.Host, buildWarnings, config, updates);
+                meter, BuildConfig, hotkeys?.Host, community, buildWarnings, config, updates);
             using var control = StartControl(handler);
 
             if (installed is { } current) StartUserSetup(current, cts.Token);

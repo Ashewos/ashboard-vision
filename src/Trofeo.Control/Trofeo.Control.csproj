@@ -5,7 +5,9 @@
     <InternalsVisibleTo Include="Trofeo.Control.Tests" />
   </ItemGroup>
 
+  <!-- Le SDK : seulement pour ModulePermission, que la fenêtre et le service échangent. Le canal ne connaît pas Trofeo.Extensions. -->
   <ItemGroup>
+    <ProjectReference Include="..\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
     <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
   </ItemGroup>
 
