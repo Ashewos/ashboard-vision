@@ -296,7 +296,7 @@ public sealed partial class ModuleHostSupervisor
 
     private DataValue Answer<T>(int id, ModulePermission needed, Func<DataResult<T>> read, Func<T, JsonElement> toJson)
     {
-        if (!_granted.Contains(needed))
+        if (!_target.Granted.Contains(needed))
         {
             return new DataValue(id, "denied");
         }

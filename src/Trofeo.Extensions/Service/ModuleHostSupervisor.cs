@@ -50,9 +50,24 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     /// <summary>Le délai entre deux essais quand les fichiers du module sont occupés : plus long qu'une relance, et sans compter comme un arrêt.</summary>
     public static readonly TimeSpan FilesBusyRetry = TimeSpan.FromSeconds(15);
 
-    private readonly CommunityEntry _entry;
-    private readonly ModuleManifest _manifest;
-    private readonly IReadOnlyList<ModulePermission> _granted;
+    /// <summary>
+    /// Ce que le superviseur lance : le module tel que le catalogue le voit, son manifeste, les permissions accordées (celles que le
+    /// manifeste déclare) et les champs « port » de son schéma. Remplacé d'un bloc par <see cref="ApplyEntryAsync"/> ; chaque lecture
+    /// prend l'instantané une seule fois.
+    /// </summary>
+    private sealed record Target(
+        CommunityEntry Entry, ModuleManifest Manifest, IReadOnlyList<ModulePermission> Granted, IReadOnlyList<PortField> PortFields)
+    {
+        public static Target Of(CommunityEntry entry, IReadOnlyList<ModulePermission> granted)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+            ArgumentNullException.ThrowIfNull(granted);
+            var manifest = entry.Manifest ?? throw new ArgumentException("Le module n'a pas de manifeste lisible.", nameof(entry));
+            return new Target(
+                entry, manifest, [.. granted.Distinct().Where(manifest.Permissions.Contains)], [.. manifest.Settings.Fields.OfType<PortField>()]);
+        }
+    }
+
     private readonly string _hostExecutable;
     private readonly ISecretStore _secrets;
     private readonly IServiceDataBroker _data;
@@ -60,7 +75,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     private readonly Action<string, string> _setAside;
     private readonly IHostProcessFactory _launcher;
     private readonly IModuleLog _log;
-    private readonly IReadOnlyList<PortField> _portFields;
+    private volatile Target _target;
 
     private readonly object _gate = new();
     private readonly List<RemoteModule> _instances = [];
@@ -101,12 +116,8 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         IServiceDataBroker data, TimeProvider time, Action<string, string> setAside, IHostProcessFactory? launcher = null,
         IModuleLog? log = null)
     {
-        ArgumentNullException.ThrowIfNull(entry);
-        ArgumentNullException.ThrowIfNull(granted);
         ArgumentException.ThrowIfNullOrWhiteSpace(hostExecutable);
-        _entry = entry;
-        _manifest = entry.Manifest ?? throw new ArgumentException("Le module n'a pas de manifeste lisible.", nameof(entry));
-        _granted = [.. granted.Distinct().Where(_manifest.Permissions.Contains)];
+        _target = Target.Of(entry, granted);
         _hostExecutable = hostExecutable;
         _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
         _data = data ?? throw new ArgumentNullException(nameof(data));
@@ -114,7 +125,6 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         _setAside = setAside ?? throw new ArgumentNullException(nameof(setAside));
         _launcher = launcher ?? new SandboxedHostProcessFactory();
         _log = log ?? new TraceModuleLog(entry.Id, Guid.Empty, time);
-        _portFields = [.. _manifest.Settings.Fields.OfType<PortField>()];
     }
 
     /// <summary>Le nombre de cases ouvertes (qui font tourner l'hôte).</summary>
@@ -163,7 +173,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     public RemoteModule Open(ModuleContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var module = new RemoteModule(this, _manifest.ToDescriptor(), context, _time);
+        var module = new RemoteModule(this, _target.Manifest.ToDescriptor(), context, _time);
         string? message;
         long version = 0;
         lock (_gate)
@@ -194,12 +204,39 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     /// Arrête l'hôte (même mis de côté) et le relance tout de suite avec l'état courant : nouvelles permissions, fichiers
     /// rechargés. Remet à zéro les arrêts comptés et lève la mise de côté. Rend la main une fois le nouvel hôte lancé.
     /// </summary>
-    public async Task RestartAsync()
+    public Task RestartAsync() => RestartCoreAsync(null);
+
+    /// <summary>
+    /// Remplace le module que ce superviseur lance (nouvelle version, nouveau dossier, permissions changées) puis fait comme
+    /// <see cref="RestartAsync"/> : l'hôte en cours est arrêté et un neuf est lancé avec ce qui est accordé maintenant (les
+    /// capacités d'un AppContainer sont fixées au lancement). Les cases ouvertes restent ouvertes ; elles gardent le descripteur
+    /// qu'elles ont reçu à leur création. Sans case ouverte, rien n'est lancé. Lève <see cref="ArgumentException"/> si l'identifiant
+    /// n'est pas celui du module supervisé.
+    /// </summary>
+    /// <param name="entry">Le module tel que le catalogue le voit maintenant (son manifeste est obligatoire).</param>
+    /// <param name="granted">Les permissions accordées (celles que le manifeste ne déclare pas sont ignorées).</param>
+    public Task ApplyEntryAsync(CommunityEntry entry, IReadOnlyList<ModulePermission> granted)
+    {
+        var replacement = Target.Of(entry, granted);
+        if (!string.Equals(replacement.Entry.Id, _target.Entry.Id, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Un superviseur ne change pas de module.", nameof(entry));
+        }
+
+        return RestartCoreAsync(replacement);
+    }
+
+    private async Task RestartCoreAsync(Target? replacement)
     {
         HostConnection? old;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (replacement is not null)
+            {
+                _target = replacement; // dans le même verrou que le changement de génération : aucun lancement ne mélange l'ancien et le neuf
+            }
+
             _setAsideReason = null;
             _permanentFailure = null;
             _stops.Clear();
@@ -426,9 +463,9 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         _launchTask = Task.Run(() => Launch(generation));
     }
 
-    private string? LaunchRefusal()
+    private static string? LaunchRefusal(CommunityEntry entry)
     {
-        if (_entry.State != CommunityState.Ready || (!_entry.FromDevFolder && _entry.Approval is null))
+        if (entry.State != CommunityState.Ready || (!entry.FromDevFolder && entry.Approval is null))
         {
             return "À valider dans la fenêtre de réglage";
         }
@@ -443,21 +480,23 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         AnonymousPipeServerStream? fromHost = null;
         IHostProcess? process = null;
         HostConnection connection;
+        var target = _target; // un seul instantané : un remplacement en cours de lancement abandonne ce lancement (génération)
+        var entry = target.Entry;
         try
         {
-            if (LaunchRefusal() is { } refusal)
+            if (LaunchRefusal(entry) is { } refusal)
             {
                 EndLaunchWithFailure(generation, refusal);
                 return;
             }
 
-            if (!_entry.FromDevFolder)
+            if (!entry.FromDevFolder)
             {
                 // Les fichiers sont verrouillés d'abord, puis l'empreinte est calculée sur ces fichiers ouverts : ce qu'on vérifie
                 // est exactement ce que l'hôte va charger.
                 try
                 {
-                    fileLock = ModuleFileLock.Acquire(_entry.Directory);
+                    fileLock = ModuleFileLock.Acquire(entry.Directory);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -470,7 +509,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
                     return;
                 }
 
-                if (!string.Equals(fileLock.ContentHash, _entry.Approval!.ContentHash, StringComparison.Ordinal))
+                if (!string.Equals(fileLock.ContentHash, entry.Approval!.ContentHash, StringComparison.Ordinal))
                 {
                     fileLock.Dispose();
                     fileLock = null;
@@ -492,7 +531,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             }
 
             process = _launcher.Start(new HostStart(
-                _hostExecutable, arguments, [toHost.ClientSafePipeHandle, fromHost.ClientSafePipeHandle], _entry.Id, _entry.Directory, _granted));
+                _hostExecutable, arguments, [toHost.ClientSafePipeHandle, fromHost.ClientSafePipeHandle], entry.Id, entry.Directory, target.Granted));
 
             // Le service n'a plus besoin de ses copies des bouts « client » : si l'hôte meurt, la lecture se termine enfin.
             toHost.DisposeLocalCopyOfClientHandle();
@@ -645,10 +684,11 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
 
             _session = connection;
             connection.StartedAt = _time.GetUtcNow();
-            connection.Relay = new LocalRelay(_portFields, _granted.Contains(ModulePermission.ThisComputer),
+            var installed = _target;
+            connection.Relay = new LocalRelay(installed.PortFields, installed.Granted.Contains(ModulePermission.ThisComputer),
                 handle => connection.Process.DuplicateInto(handle), message => connection.Post(message));
             connection.Post(new Hello(
-                HostMessage.ProtocolVersion, _entry.Directory, _manifest.Entry, _entry.Id, _granted, connection.Process.DataDirectory,
+                HostMessage.ProtocolVersion, installed.Entry.Directory, installed.Manifest.Entry, installed.Entry.Id, installed.Granted, connection.Process.DataDirectory,
                 _appearance, _maxFps));
             foreach (var module in _instances)
             {
@@ -825,7 +865,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         _log.Error(asideReason);
         try
         {
-            _setAside(_entry.Id, asideReason);
+            _setAside(_target.Entry.Id, asideReason);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

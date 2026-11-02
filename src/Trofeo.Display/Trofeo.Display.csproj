@@ -33,6 +33,7 @@
     <ProjectReference Include="..\Trofeo.Core\Trofeo.Core.csproj" />
     <ProjectReference Include="..\Trofeo.Device\Trofeo.Device.csproj" />
     <ProjectReference Include="..\Trofeo.Distribution\Trofeo.Distribution.csproj" />
+    <ProjectReference Include="..\Trofeo.Extensions\Trofeo.Extensions.csproj" />
     <ProjectReference Include="..\Trofeo.Modules.Agents\Trofeo.Modules.Agents.csproj" />
     <ProjectReference Include="..\Trofeo.Modules.Clock\Trofeo.Modules.Clock.csproj" />
     <ProjectReference Include="..\Trofeo.Modules.Monitoring\Trofeo.Modules.Monitoring.csproj" />
@@ -40,6 +41,9 @@
     <ProjectReference Include="..\Trofeo.Modules.NowPlaying\Trofeo.Modules.NowPlaying.csproj" />
     <ProjectReference Include="..\Trofeo.Sensors\Trofeo.Sensors.csproj" />
     <ProjectReference Include="..\Trofeo.Service\Trofeo.Service.csproj" />
+    <!-- L'hôte des modules complémentaires : lancé par le service, jamais chargé par lui. Construit avec lui pour que AppLocator le trouve
+         à côté de l'installation, ou dans les sorties du dépôt. -->
+    <ProjectReference Include="..\Trofeo.ModuleHost\Trofeo.ModuleHost.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

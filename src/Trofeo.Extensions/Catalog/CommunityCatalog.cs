@@ -259,9 +259,10 @@ public sealed class CommunityCatalog(Func<ApprovedLoad> load)
         _ => CommunityState.Ready,
     };
 
-    private readonly record struct ManifestOutcome(ModuleManifest? Manifest, CommunityState State, string? Message);
+    internal readonly record struct ManifestOutcome(ModuleManifest? Manifest, CommunityState State, string? Message);
 
-    private static ManifestOutcome ReadManifest(string directory)
+    /// <summary>Lit le <c>manifest.json</c> d'un dossier de module (taille bornée) ; jamais d'exception pour un fichier absent ou illisible.</summary>
+    internal static ManifestOutcome ReadManifest(string directory)
     {
         var path = Path.Combine(directory, "manifest.json");
         string json;

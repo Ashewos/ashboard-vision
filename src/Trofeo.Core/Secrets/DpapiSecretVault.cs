@@ -57,6 +57,19 @@ public sealed class DpapiSecretVault
         Write(data);
     }
 
+    /// <summary>
+    /// Efface toute la portée (tous les secrets d'un type de module, par exemple à la désinstallation d'un module de la communauté).
+    /// Sans effet si la portée n'existe pas. Lève, comme <see cref="Set"/>, si le fichier est verrouillé ou ne peut pas être écrit.
+    /// </summary>
+    public void RemoveScope(string scope)
+    {
+        using var _ = Lock();
+        var data = Read(failOnLockedFile: true);
+        if (!data.Remove(scope)) return;
+
+        Write(data);
+    }
+
     /// <summary>Une vue du coffre limitée à une portée (un type de module).</summary>
     public ISecretStore Scope(string scope) => new ScopedStore(this, scope);
 

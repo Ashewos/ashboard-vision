@@ -49,6 +49,22 @@ public sealed class DpapiSecretVaultTests : IDisposable
     }
 
     [Fact]
+    public void Vault_RemoveScope_ErasesOnlyThatScope()
+    {
+        var vault = new DpapiSecretVault(FilePath);
+        vault.Scope("alex.demo").Set("token", "a");
+        vault.Scope("alex.demo").Set("autre", "b");
+        vault.Scope("network").Set("token", "c");
+
+        vault.RemoveScope("alex.demo");
+        vault.RemoveScope("inconnu"); // sans effet
+
+        Assert.Null(vault.Get("alex.demo", "token"));
+        Assert.Null(vault.Get("alex.demo", "autre"));
+        Assert.Equal("c", vault.Get("network", "token"));
+    }
+
+    [Fact]
     public void Vault_Scopes_AreIsolated()
     {
         var vault = new DpapiSecretVault(FilePath);

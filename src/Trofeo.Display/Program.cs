@@ -10,6 +10,7 @@ using Trofeo.Core.Shortcuts;
 using Trofeo.Device;
 using Trofeo.Display.Video;
 using Trofeo.Distribution;
+using Trofeo.Extensions;
 using Trofeo.Modules.Agents;
 using Trofeo.Modules.Clock;
 using Trofeo.Modules.Monitoring;
@@ -29,6 +30,10 @@ static class Program
 
     // Les mises à jour interrogent GitHub : 30 s pour répondre, et pas plus (le téléchargement lit son flux après les en-têtes).
     private static readonly TimeSpan UpdateHttpTimeout = TimeSpan.FromSeconds(30);
+
+    // Le plafond d'images de la boucle (DisplayLoop) : un hôte de module n'a aucune raison d'en écrire davantage.
+    private const int HostMaxFpsCap = 12;
+    private const string ModuleHostExeName = "Trofeo.ModuleHost.exe";
 
     [STAThread]
     static int Main(string[] args)
@@ -152,6 +157,29 @@ static class Program
                 CodexFactory.CreateProduction(),
             ],
             vault.Scope);
+
+        // Les modules complémentaires : un hôte enfermé par module validé, lancé seulement quand une case est posée (rien ne tourne
+        // sans module). Déclarés avant la boucle : arrêtés après elle, quand ses cases sont fermées.
+        using var dataBroker = new ServiceDataBroker(
+            sensorHub, () => new SmtcMediaSource(new TraceModuleLog("modules-complementaires", Guid.Empty, TimeProvider.System)), TimeProvider.System);
+        var community = new CommunityModules(
+            new ApprovedModulesStore(Path.Combine(AppPaths.SettingsDir, "modules.json"), Path.Combine(AppPaths.SettingsDir, "modules.key"), Warn),
+            registry.SetCommunityFactories,
+            vault.Scope,
+            vault.RemoveScope,
+            dataBroker,
+            AppLocator.Find(ModuleHostExeName) ?? Path.Combine(AppContext.BaseDirectory, ModuleHostExeName),
+            TimeProvider.System);
+        using var communityScope = new AsyncDisposeScope(community);
+        try
+        {
+            community.Refresh(); // avant la boucle : la disposition retrouve les types des modules complémentaires
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceError($"Modules complémentaires : l'examen du dossier a échoué, le service tourne sans : {ex}");
+        }
+
         var screen = new ScreenDevice(new WinUsbTransportFactory(), TimeProvider.System);
         screen.StateChanged += (_, _) =>
         {
@@ -168,8 +196,14 @@ static class Program
             Warn(message);
             buildWarnings.Warn(message);
         };
-        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current) => LoopConfigFactory.Build(
-            next, new SkiaSystemFonts(), path => MediaFoundationBackground.TryOpen(path, warnAndCollect), warnAndCollect, current);
+        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current)
+        {
+            var built = LoopConfigFactory.Build(
+                next, new SkiaSystemFonts(), path => MediaFoundationBackground.TryOpen(path, warnAndCollect), warnAndCollect, current);
+            // Les hôtes des modules complémentaires suivent le plafond d'images et l'apparence de la disposition.
+            community.SetDisplayOptions(Math.Clamp(next.MaxFps ?? HostMaxFpsCap, 1, HostMaxFpsCap), next.Appearance ?? AppearanceSettings.Default);
+            return built;
+        }
 
         var config = BuildConfig(layout, null);
         var theme = config.Theme;
@@ -241,6 +275,22 @@ static class Program
         }
 
         return 0;
+    }
+
+    /// <summary>Libère un objet asynchrone à la sortie d'un bloc <c>using</c> (le service s'arrête de façon synchrone).</summary>
+    private sealed class AsyncDisposeScope(IAsyncDisposable inner) : IDisposable
+    {
+        public void Dispose()
+        {
+            try
+            {
+                inner.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Arrêt des modules complémentaires : {ex}");
+            }
+        }
     }
 
     /// <summary>
