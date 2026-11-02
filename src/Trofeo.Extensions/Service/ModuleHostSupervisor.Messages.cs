@@ -14,6 +14,7 @@ public sealed partial class ModuleHostSupervisor
     public const string HostNotRunningText = "Module arrêté.";
 
     private const int MaxLogLinesPerSecond = 50;
+    private const int MaxLogLineLength = 500;
     private const int MaxLookupResults = 100;
     private const int MaxSecretKeyLength = 200;
     private const int MaxSecretValueLength = 64 * 1024;
@@ -21,8 +22,6 @@ public sealed partial class ModuleHostSupervisor
     private static readonly TimeSpan LookupTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ActionTimeout = TimeSpan.FromSeconds(30);
 
-    private readonly object _secretsGate = new();
-    private Task _secretWork = Task.CompletedTask;
     private readonly object _logGate = new();
     private long _logWindowStart;
     private int _logLines;
@@ -61,6 +60,10 @@ public sealed partial class ModuleHostSupervisor
         {
             // le tube s'est fermé avec l'hôte
         }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _log.Error("La lecture de ce que l'hôte écrit a échoué : " + ex.Message);
+        }
 
         connection.KillQuietly(); // un hôte dont le flux est fini ou illisible ne sert plus à rien
     }
@@ -76,7 +79,7 @@ public sealed partial class ModuleHostSupervisor
                 if (_slots.TryGetValue(status.InstanceId, out var statusSlot))
                 {
                     var text = HostText.Clean(status.Message, 200);
-                    statusSlot.Owner.SetHostStatus(status.Health, text.Length > 0 ? text : null);
+                    statusSlot.Owner.SetHostStatus(status.Health, text.Length > 0 ? text : null); // sans trace : une case limite elle-même ses changements
                 }
 
                 break;
@@ -84,13 +87,25 @@ public sealed partial class ModuleHostSupervisor
                 OnLog(log);
                 break;
             case SecretGet get:
-                EnqueueSecret(() => AnswerSecret(connection, get.Id, get.Key, write: false, value: null));
+                if (!connection.SecretWorker.TryEnqueue(() => AnswerSecret(connection, get.Id, get.Key, write: false, value: null)))
+                {
+                    connection.Post(new SecretValue(get.Id)); // trop de demandes en attente : refusée
+                }
+
                 break;
             case SecretSet set:
-                EnqueueSecret(() => AnswerSecret(connection, set.Id, set.Key, write: true, set.Value));
+                if (!connection.SecretWorker.TryEnqueue(() => AnswerSecret(connection, set.Id, set.Key, write: true, set.Value)))
+                {
+                    connection.Post(new SecretValue(set.Id)); // refusée : l'hôte est servi quand même
+                }
+
                 break;
             case DataGet data:
-                _ = Task.Run(() => AnswerData(connection, data));
+                if (!connection.DataWorker.TryEnqueue(() => AnswerData(connection, data)))
+                {
+                    connection.Post(new DataValue(data.Id, "unavailable"));
+                }
+
                 break;
             case LocalConnect connect:
                 OnLocalConnect(connection, connect);
@@ -141,6 +156,15 @@ public sealed partial class ModuleHostSupervisor
             }
         }
 
+        // Un hôte honnête écrit au plus MaxFps images par seconde, chacune attendant son accusé. Au-delà du double (avec une petite réserve
+        // pour la gigue de lecture), l'image n'est pas copiée, mais elle est acquittée : l'hôte ne reste pas bloqué, le service ne s'épuise pas.
+        if (!slot.TryTakeCopy(2.0 * Volatile.Read(ref _maxFps)))
+        {
+            connection.Post(new FrameDone(frame.InstanceId, frame.Buffer));
+            slot.Owner.NoteAnimating(frame.Animating);
+            return;
+        }
+
         SKBitmap? image;
         try
         {
@@ -177,7 +201,7 @@ public sealed partial class ModuleHostSupervisor
             }
         }
 
-        var text = HostText.Clean(log.Message, 2000);
+        var text = HostText.Clean(log.Message, MaxLogLineLength);
         switch (log.Level)
         {
             case "error":
@@ -221,15 +245,6 @@ public sealed partial class ModuleHostSupervisor
         }
 
         relay.Connect(request, settings.Value);
-    }
-
-    /// <summary>Les demandes de secrets se font dans l'ordre où l'hôte les a écrites (une écriture suivie d'une lecture se relit), sur un fil du pool, jamais sur la lecture.</summary>
-    private void EnqueueSecret(Action work)
-    {
-        lock (_secretsGate)
-        {
-            _secretWork = _secretWork.ContinueWith(_ => work(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
-        }
     }
 
     private void AnswerSecret(HostConnection connection, int id, string key, bool write, string? value)

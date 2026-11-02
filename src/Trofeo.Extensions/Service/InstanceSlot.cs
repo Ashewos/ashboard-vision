@@ -18,9 +18,14 @@ internal readonly record struct FrameGeometry(int Width, int Height, int Columns
 /// </summary>
 internal sealed class InstanceSlot : IDisposable
 {
+    /// <summary>Combien d'images peuvent arriver d'un coup avant que le débit permis ne compte (une gigue de lecture, pas un déluge).</summary>
+    private const double BurstFrames = 4;
+
     private readonly object _gate = new();
     private SKBitmap? _scratch;
     private bool _disposed;
+    private double _tokens = BurstFrames;
+    private long _lastRefill = System.Diagnostics.Stopwatch.GetTimestamp();
 
     public InstanceSlot(RemoteModule owner, FrameGeometry geometry)
     {
@@ -63,6 +68,29 @@ internal sealed class InstanceSlot : IDisposable
             }
 
             return target;
+        }
+    }
+
+    /// <summary>
+    /// Dit si une image de plus peut être copiée : un petit seau qui se remplit de <paramref name="framesPerSecond"/> images par seconde
+    /// (le double du plafond de l'hôte) et en tient quelques-unes d'avance. Un hôte honnête n'atteint jamais cette limite ; un hôte qui
+    /// inonde le service de <see cref="Protocol.Frame"/> y est ramené, ses images en trop sont acquittées sans être copiées.
+    /// </summary>
+    public bool TryTakeCopy(double framesPerSecond)
+    {
+        lock (_gate)
+        {
+            var now = System.Diagnostics.Stopwatch.GetTimestamp();
+            var elapsed = (double)(now - _lastRefill) / System.Diagnostics.Stopwatch.Frequency;
+            _lastRefill = now;
+            _tokens = Math.Min(BurstFrames, _tokens + elapsed * framesPerSecond);
+            if (_tokens < 1)
+            {
+                return false;
+            }
+
+            _tokens -= 1;
+            return true;
         }
     }
 

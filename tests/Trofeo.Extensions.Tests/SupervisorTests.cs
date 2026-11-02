@@ -120,10 +120,10 @@ public sealed class SupervisorTests : IAsyncLifetime
         var (rig, factory, folder) = Fake(declared: SensorsAndInternet, granted: [ModulePermission.Internet, ModulePermission.ThisComputer]);
         rig.Supervisor.SetMaxFps(25);
 
-        var first = OpenAndSize(rig);
-        var second = OpenAndSize(rig);
+        OpenAndSize(rig);
+        OpenAndSize(rig);
         var host = await factory.WaitForStartAsync();
-        await host.WaitAsync<Open>(open => true);
+        await host.WaitAsync<Open>();
         await TestWait.UntilAsync(() => host.Of<Open>().Count() == 2);
 
         Assert.Equal(1, factory.Count);
@@ -136,8 +136,9 @@ public sealed class SupervisorTests : IAsyncLifetime
         Assert.Equal("test.sample", host.Start.ModuleId);
         Assert.Equal(folder, host.Start.ModuleDirectory);
         Assert.Equal(2, host.Of<Open>().Select(open => open.InstanceId).Distinct().Count());
-        Assert.NotNull(first);
-        Assert.NotNull(second);
+        Assert.IsType<Open>(host.Received[1]); // Hello d'abord, puis une ouverture par case
+        Assert.IsType<Open>(host.Received[2]);
+        Assert.All(host.Of<Open>(), open => Assert.Equal((96, 48, 2, 1), (open.Width, open.Height, open.Columns, open.Rows)));
     }
 
     [WindowsHostFact]
@@ -388,10 +389,11 @@ public sealed class SupervisorTests : IAsyncLifetime
 
         module.Dispose(); // la case se ferme avant la fin du lancement
 
-        var host = await factory.WaitForStartAsync();
-        await TestWait.UntilAsync(() => host.Killed);
+        // Soit la case est refermée avant que le lancement atteigne la fabrique (aucun processus), soit le processus déjà parti est tué
+        // sans avoir reçu Hello.
+        await Task.Delay(800);
+        Assert.True(factory.Count == 0 || (factory.Last.Killed && factory.Last.Received.Count == 0), "Aucun hôte ne doit rester");
         Assert.Equal(0, rig.Supervisor.ActiveInstances);
-        Assert.Empty(host.Received); // il n'a même pas reçu Hello
         await TestWait.UntilAsync(() =>
         {
             try

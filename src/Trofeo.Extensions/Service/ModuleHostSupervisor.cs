@@ -44,8 +44,11 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
 
     internal static readonly JsonElement EmptySettings = JsonDocument.Parse("{}").RootElement.Clone();
 
-    private static readonly TimeSpan ShutdownGrace = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan DisposeGrace = TimeSpan.FromSeconds(3);
+    /// <summary>Ce que montrent les cases quand les fichiers du module ne s'ouvrent pas pour le moment (antivirus, OneDrive…).</summary>
+    public const string FilesBusyText = "Fichiers du module indisponibles (OneDrive ?), nouvel essai…";
+
+    /// <summary>Le délai entre deux essais quand les fichiers du module sont occupés : plus long qu'une relance, et sans compter comme un arrêt.</summary>
+    public static readonly TimeSpan FilesBusyRetry = TimeSpan.FromSeconds(15);
 
     private readonly CommunityEntry _entry;
     private readonly ModuleManifest _manifest;
@@ -72,8 +75,16 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     private int _consecutiveStops;
     private string? _setAsideReason;
     private string? _permanentFailure;
+    private string? _waitMessage;
+    private long _messageVersion;
     private bool _disposed;
     private int _maxFps = 12;
+
+    /// <summary>Le temps laissé à un hôte pour finir après <see cref="Shutdown"/> avant qu'on le tue (réglable pour les tests).</summary>
+    internal TimeSpan ShutdownGrace { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>Le temps que <see cref="DisposeAsync"/> attend un hôte avant de le tuer (réglable pour les tests).</summary>
+    internal TimeSpan DisposeGrace { get; set; } = TimeSpan.FromSeconds(3);
     private JsonElement _appearance = HostPayloads.AppearanceToJson(AppearanceSettings.Default);
 
     /// <param name="entry">Le module trouvé par le catalogue (son manifeste est obligatoire).</param>
@@ -154,20 +165,26 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(context);
         var module = new RemoteModule(this, _manifest.ToDescriptor(), context, _time);
         string? message;
+        long version = 0;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             _instances.Add(module);
-            message = _setAsideReason ?? _permanentFailure ?? (_restartTimer is not null ? HostStoppedText : null);
+            message = _setAsideReason ?? _permanentFailure ?? (_restartTimer is not null ? _waitMessage ?? HostStoppedText : null);
             if (message is null && _session is null && !_launching)
             {
                 StartLaunchLocked();
+            }
+
+            if (message is not null)
+            {
+                version = ++_messageVersion;
             }
         }
 
         if (message is not null)
         {
-            module.SetSupervisorMessage(message);
+            module.SetSupervisorMessage(message, version);
         }
 
         return module;
@@ -205,6 +222,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         }
 
         Task launch;
+        Broadcast stopped;
         lock (_gate)
         {
             if (_disposed || _instances.Count == 0)
@@ -212,7 +230,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
                 return;
             }
 
-            SetMessageLocked(HostStoppedText);
+            stopped = DecideLocked(HostStoppedText);
             if (_session is null && !_launching)
             {
                 StartLaunchLocked();
@@ -221,6 +239,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             launch = _launchTask;
         }
 
+        stopped.Apply();
         await launch.ConfigureAwait(false);
     }
 
@@ -246,20 +265,22 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     /// </summary>
     public void SetAppearance(JsonElement appearance)
     {
-        RemoteModule[] waiting = [];
         lock (_gate)
         {
             _appearance = appearance.ValueKind == JsonValueKind.Undefined ? HostPayloads.AppearanceToJson(AppearanceSettings.Default) : appearance.Clone();
             if (_session is { } session)
             {
-                session.Post(new AppearanceChanged(_appearance));
-                waiting = [.. _instances.Where(module => module.Slot is not null)];
-            }
-        }
+                // On arme l'attente avant d'écrire : l'image qui répond ne peut pas arriver avant.
+                foreach (var module in _instances)
+                {
+                    if (module.Slot is not null)
+                    {
+                        module.BeginAwaitingFrame();
+                    }
+                }
 
-        foreach (var module in waiting)
-        {
-            module.BeginAwaitingFrame();
+                session.Post(new AppearanceChanged(_appearance));
+            }
         }
     }
 
@@ -339,6 +360,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
                     _slots.TryRemove(old.Id, out _);
                 }
 
+                module.BeginAwaitingFrame(); // avant d'écrire : l'image qui répond ne peut pas arriver avant
                 if (_session is { } session)
                 {
                     if (old is not null)
@@ -358,7 +380,6 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         }
 
         old?.Dispose();
-        module.BeginAwaitingFrame();
     }
 
     /// <summary>Une case se ferme : son instance est refermée dans l'hôte, et l'hôte lui-même s'arrête avec la dernière.</summary>
@@ -434,7 +455,21 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             {
                 // Les fichiers sont verrouillés d'abord, puis l'empreinte est calculée sur ces fichiers ouverts : ce qu'on vérifie
                 // est exactement ce que l'hôte va charger.
-                fileLock = ModuleFileLock.Acquire(_entry.Directory);
+                try
+                {
+                    fileLock = ModuleFileLock.Acquire(_entry.Directory);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    FilesBusy(generation, ex); // pas une panne du module : on réessaie plus tard, sans compter d'arrêt
+                    return;
+                }
+                catch (ArgumentException)
+                {
+                    EndLaunchWithFailure(generation, "Le dossier du module contient deux fichiers dont les noms ne diffèrent que par la casse.");
+                    return;
+                }
+
                 if (!string.Equals(fileLock.ContentHash, _entry.Approval!.ContentHash, StringComparison.Ordinal))
                 {
                     fileLock.Dispose();
@@ -447,13 +482,22 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             toHost = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.None);
             fromHost = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.None);
             var arguments = $"--in {toHost.GetClientHandleAsString()} --out {fromHost.GetClientHandleAsString()}";
+            if (!StillWanted(generation))
+            {
+                // La dernière case s'est refermée (ou le service s'arrête) pendant la préparation : on ne lance rien.
+                toHost.Dispose();
+                fromHost.Dispose();
+                fileLock?.Dispose();
+                return;
+            }
+
             process = _launcher.Start(new HostStart(
                 _hostExecutable, arguments, [toHost.ClientSafePipeHandle, fromHost.ClientSafePipeHandle], _entry.Id, _entry.Directory, _granted));
 
             // Le service n'a plus besoin de ses copies des bouts « client » : si l'hôte meurt, la lecture se termine enfin.
             toHost.DisposeLocalCopyOfClientHandle();
             fromHost.DisposeLocalCopyOfClientHandle();
-            connection = new HostConnection(process, fileLock, new MessageChannel(fromHost, toHost), _time.GetUtcNow());
+            connection = new HostConnection(process, fileLock, new MessageChannel(fromHost, toHost), _time.GetUtcNow()) { Warn = _log.Warning };
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -481,7 +525,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     /// <summary>Le lancement ne se refera pas tout seul (fichiers modifiés, module non validé) : les cases le disent.</summary>
     private void EndLaunchWithFailure(int generation, string message)
     {
-        RemoteModule[] modules;
+        Broadcast failure;
         lock (_gate)
         {
             if (generation == _launchGeneration)
@@ -495,14 +539,59 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             }
 
             _permanentFailure = message;
-            modules = [.. _instances];
+            failure = DecideLocked(message);
         }
 
         _log.Warning("Le module n'est pas lancé : " + message);
-        foreach (var module in modules)
+        failure.Apply();
+    }
+
+    /// <summary>Le lancement est-il encore voulu ? Faux si une autre génération l'a remplacé (dernière case fermée, redémarrage) ou si le superviseur est libéré.</summary>
+    private bool StillWanted(int generation)
+    {
+        lock (_gate)
         {
-            module.SetSupervisorMessage(message);
+            if (_disposed || generation != _launchGeneration)
+            {
+                if (generation == _launchGeneration)
+                {
+                    _launching = false;
+                }
+
+                return false;
+            }
+
+            return true;
         }
+    }
+
+    /// <summary>
+    /// Les fichiers du module ne s'ouvrent pas pour le moment (un antivirus, OneDrive…) : ce n'est pas une panne du module. Nouvel essai
+    /// dans <see cref="FilesBusyRetry"/>, sans compter d'arrêt (jamais de mise de côté pour ça).
+    /// </summary>
+    private void FilesBusy(int generation, Exception exception)
+    {
+        _log.Warning("Fichiers du module indisponibles : " + exception.Message);
+        Broadcast waiting;
+        lock (_gate)
+        {
+            if (generation == _launchGeneration)
+            {
+                _launching = false;
+            }
+
+            if (_disposed || generation != _launchGeneration)
+            {
+                return;
+            }
+
+            CancelRestartTimerLocked();
+            _waitMessage = FilesBusyText;
+            _restartTimer = _time.CreateTimer(_ => OnRestartTimer(), null, FilesBusyRetry, Timeout.InfiniteTimeSpan);
+            waiting = DecideLocked(FilesBusyText);
+        }
+
+        waiting.Apply();
     }
 
     /// <summary>Le lancement a échoué (fichiers verrouillés, processus refusé) : compté comme un arrêt, avec relance ou mise de côté.</summary>
@@ -510,6 +599,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     {
         _log.Error("Impossible de lancer le module : " + exception.Message);
         string? asideReason;
+        Broadcast stopped;
         lock (_gate)
         {
             if (generation == _launchGeneration)
@@ -523,16 +613,17 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             }
 
             asideReason = RegisterStopLocked(_time.GetUtcNow(), _time.GetUtcNow(), memory: false, detail: exception.Message);
-            SetMessageLocked(asideReason ?? HostStoppedText);
+            stopped = DecideLocked(asideReason ?? HostStoppedText);
         }
 
+        stopped.Apply();
         ReportAside(asideReason);
     }
 
     /// <summary>L'hôte est lancé : on lui dit bonjour, on lui ouvre les cases déjà dimensionnées, et on se met à l'écouter.</summary>
     private void Install(HostConnection connection, int generation)
     {
-        RemoteModule[] modules;
+        Broadcast running;
         lock (_gate)
         {
             if (generation == _launchGeneration)
@@ -559,28 +650,23 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             connection.Post(new Hello(
                 HostMessage.ProtocolVersion, _entry.Directory, _manifest.Entry, _entry.Id, _granted, connection.Process.DataDirectory,
                 _appearance, _maxFps));
-            modules = [.. _instances];
-            foreach (var module in modules)
+            foreach (var module in _instances)
             {
                 if (module.Slot is { } slot)
                 {
+                    // L'attente est armée avant que l'écriture ne parte : l'image qui répond ne peut pas arriver avant.
+                    module.BeginAwaitingFrame();
                     SendOpen(connection, module, slot);
                 }
             }
 
-            SetMessageLocked(null); // l'hôte est là : fini « Module arrêté, relance… »
-
+            _waitMessage = null;
+            running = DecideLocked(null); // l'hôte est là : fini « Module arrêté, relance… »
             _ = Task.Run(connection.WriteLoopAsync);
             _ = Task.Run(() => ReadLoopAsync(connection));
         }
 
-        foreach (var module in modules)
-        {
-            if (module.Slot is not null)
-            {
-                module.BeginAwaitingFrame();
-            }
-        }
+        running.Apply();
     }
 
     /// <summary>Ouvre l'instance d'une case dans l'hôte. À appeler sous le verrou.</summary>
@@ -642,6 +728,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         }
 
         string? asideReason;
+        Broadcast stopped;
         lock (_gate)
         {
             connection.Ended = true;
@@ -658,10 +745,16 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             var now = _time.GetUtcNow();
             var memory = usage is { MemoryLimitHit: true };
             _log.Warning($"L'hôte du module s'est arrêté (code {exitCode:X8}){(memory ? ", mémoire dépassée" : "")}.");
+            if (connection.Overflowed)
+            {
+                _log.Error("L'hôte du module ne lit plus ce que le service lui envoie : il a été arrêté.");
+            }
+
             asideReason = RegisterStopLocked(now, connection.StartedAt, memory, connection.FailureText);
-            SetMessageLocked(asideReason ?? HostStoppedText);
+            stopped = DecideLocked(asideReason ?? HostStoppedText);
         }
 
+        stopped.Apply();
         ReportAside(asideReason);
     }
 
@@ -696,20 +789,31 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         if (_instances.Count > 0 && !_disposed)
         {
             CancelRestartTimerLocked();
+            _waitMessage = HostStoppedText;
             _restartTimer = _time.CreateTimer(_ => OnRestartTimer(), null, BackoffFor(_consecutiveStops), Timeout.InfiniteTimeSpan);
         }
 
         return null;
     }
 
-    /// <summary>Pose le même message sur toutes les cases. Sous le verrou : l'ordre avec le lancement d'un nouvel hôte (qui l'efface) est celui du verrou.</summary>
-    private void SetMessageLocked(string? message)
+    /// <summary>Une décision du superviseur sur le message de toutes les cases, numérotée sous le verrou et appliquée hors du verrou.</summary>
+    private readonly record struct Broadcast(RemoteModule[] Targets, string? Message, long Version)
     {
-        foreach (var module in _instances.ToArray())
+        /// <summary>L'applique aux cases (hors du verrou : les événements de case sont levés ici). Une décision plus récente l'emporte, quel que soit l'ordre d'arrivée.</summary>
+        public void Apply()
         {
-            module.SetSupervisorMessage(message);
+            foreach (var module in Targets ?? [])
+            {
+                module.SetSupervisorMessage(Message, Version);
+            }
         }
     }
+
+    /// <summary>
+    /// Décide du message de toutes les cases (<c>null</c> : plus de message). À appeler sous le verrou ; le numéro de version prend l'ordre
+    /// du verrou, de sorte qu'un message de panne et l'effacement par un nouvel hôte ne s'inversent jamais.
+    /// </summary>
+    private Broadcast DecideLocked(string? message) => new([.. _instances], message, ++_messageVersion);
 
     private void ReportAside(string? asideReason)
     {

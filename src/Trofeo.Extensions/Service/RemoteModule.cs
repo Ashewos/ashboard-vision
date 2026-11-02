@@ -23,6 +23,11 @@ public sealed class RemoteModule : IModule
     /// <summary>Le délai sans image, après l'ouverture (ou une demande de dessin), au-delà duquel la case l'affiche.</summary>
     public static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(10);
 
+    /// <summary>Combien de changements d'état annoncés par l'hôte sont pris par fenêtre de <see cref="StatusWindow"/> ; les suivants attendent la fin de la fenêtre (le dernier gagne).</summary>
+    internal const int MaxStatusChangesPerWindow = 4;
+
+    internal static readonly TimeSpan StatusWindow = TimeSpan.FromSeconds(1);
+
     private readonly ModuleHostSupervisor _owner;
     private readonly TimeProvider _time;
     private readonly object _gate = new();
@@ -37,6 +42,11 @@ public sealed class RemoteModule : IModule
     private FrameGeometry? _geometry;
     private ModuleStatus _status = new(ModuleHealth.Online);
     private bool _disposed;
+    private long _messageVersion = -1;
+    private DateTimeOffset _statusWindowStart;
+    private int _statusChanges;
+    private ModuleStatus? _pendingHostStatus;
+    private ITimer? _statusTimer;
 
     internal RemoteModule(ModuleHostSupervisor owner, ModuleDescriptor descriptor, ModuleContext context, TimeProvider time)
     {
@@ -159,6 +169,8 @@ public sealed class RemoteModule : IModule
             _disposed = true;
             _awaitTimer?.Dispose();
             _awaitTimer = null;
+            _statusTimer?.Dispose();
+            _statusTimer = null;
             _front?.Dispose();
             _front = null;
         }
@@ -199,7 +211,22 @@ public sealed class RemoteModule : IModule
         return true;
     }
 
-    /// <summary>L'état que l'hôte annonce pour la case.</summary>
+    /// <summary>Une image n'a pas été copiée (débit dépassé), mais l'hôte dit toujours si le module est animé.</summary>
+    internal void NoteAnimating(bool animating)
+    {
+        lock (_gate)
+        {
+            if (!_disposed)
+            {
+                _animating = animating;
+            }
+        }
+    }
+
+    /// <summary>
+    /// L'état que l'hôte annonce pour la case. Un hôte qui change d'état sans cesse n'agite pas la boucle d'affichage : au plus
+    /// <see cref="MaxStatusChangesPerWindow"/> changements par <see cref="StatusWindow"/>, le dernier état en attente est pris à la fin de la fenêtre.
+    /// </summary>
     internal void SetHostStatus(ModuleHealth health, string? message)
     {
         bool statusChanged;
@@ -210,7 +237,51 @@ public sealed class RemoteModule : IModule
                 return;
             }
 
-            _hostStatus = new ModuleStatus(health, message);
+            var next = new ModuleStatus(health, message);
+            if (next == _hostStatus && _pendingHostStatus is null)
+            {
+                return;
+            }
+
+            var now = _time.GetUtcNow();
+            if (now - _statusWindowStart >= StatusWindow)
+            {
+                _statusWindowStart = now;
+                _statusChanges = 0;
+            }
+
+            if (_statusChanges >= MaxStatusChangesPerWindow)
+            {
+                _pendingHostStatus = next;
+                _statusTimer ??= _time.CreateTimer(_ => ApplyPendingStatus(), null, _statusWindowStart + StatusWindow - now, Timeout.InfiniteTimeSpan);
+                return;
+            }
+
+            _statusChanges++;
+            _pendingHostStatus = null;
+            _hostStatus = next;
+            statusChanged = Recompute();
+        }
+
+        Raise(statusChanged);
+    }
+
+    private void ApplyPendingStatus()
+    {
+        bool statusChanged;
+        lock (_gate)
+        {
+            _statusTimer?.Dispose();
+            _statusTimer = null;
+            if (_disposed || _pendingHostStatus is not { } pending)
+            {
+                return;
+            }
+
+            _pendingHostStatus = null;
+            _statusWindowStart = _time.GetUtcNow();
+            _statusChanges = 1;
+            _hostStatus = pending;
             statusChanged = Recompute();
         }
 
@@ -219,16 +290,22 @@ public sealed class RemoteModule : IModule
 
     /// <summary>
     /// Le message du superviseur (hôte arrêté, mis de côté, fichiers modifiés…) ; <c>null</c> le retire. Il l'emporte sur l'état de
-    /// l'hôte et fait passer la case en <see cref="ModuleHealth.Offline"/>.
+    /// l'hôte et fait passer la case en <see cref="ModuleHealth.Offline"/>. <paramref name="version"/> numérote les décisions du superviseur (prise sous
+    /// son verrou) : une décision périmée, arrivée en retard, est ignorée.
     /// </summary>
-    internal void SetSupervisorMessage(string? message)
+    internal void SetSupervisorMessage(string? message, long version = -1)
     {
         bool statusChanged;
         lock (_gate)
         {
-            if (_disposed)
+            if (_disposed || (version >= 0 && version < _messageVersion))
             {
-                return;
+                return; // une décision plus récente du superviseur est déjà passée (les décisions s'appliquent hors de son verrou)
+            }
+
+            if (version >= 0)
+            {
+                _messageVersion = version;
             }
 
             _supervisorMessage = message;

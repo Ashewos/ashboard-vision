@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace Trofeo.Extensions.Service;
@@ -6,8 +7,9 @@ namespace Trofeo.Extensions.Service;
 internal static class HostText
 {
     /// <summary>
-    /// Le texte sur une seule ligne, sans caractère de contrôle ni de changement de sens d'écriture (qui permettraient de maquiller
-    /// un message), coupé à <paramref name="maxLength"/> caractères.
+    /// Le texte sur une seule ligne, sans caractère de contrôle, de format (marques de sens d'écriture, espaces de largeur nulle…),
+    /// sans séparateur de ligne ou de paragraphe Unicode (qui permettraient de maquiller un message), sans demi-paire de substitution,
+    /// coupé à <paramref name="maxLength"/> caractères sans jamais séparer une paire de substitution.
     /// </summary>
     public static string Clean(string? text, int maxLength)
     {
@@ -17,22 +19,31 @@ internal static class HostText
         }
 
         var clean = new StringBuilder(Math.Min(text.Length, maxLength));
-        foreach (var c in text)
+        foreach (var rune in text.EnumerateRunes())
         {
-            if (clean.Length >= maxLength)
+            if (clean.Length + rune.Utf16SequenceLength > maxLength)
             {
                 break;
             }
 
-            if (c is '\r' or '\n' or '\t')
+            if (rune.Value is '\r' or '\n' or '\t')
             {
                 clean.Append(' ');
+                continue;
             }
-            else if (!char.IsControl(c) && c is not (>= '\u202A' and <= '\u202E') and not (>= '\u2066' and <= '\u2069')
-                     and not ('\u200E' or '\u200F' or '\u061C'))
+
+            if (rune == Rune.ReplacementChar)
             {
-                clean.Append(c);
+                continue; // une demi-paire de substitution devient ce caractère : on ne le garde pas
             }
+
+            if (Rune.GetUnicodeCategory(rune) is UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.LineSeparator
+                or UnicodeCategory.ParagraphSeparator or UnicodeCategory.Surrogate)
+            {
+                continue;
+            }
+
+            clean.Append(rune.ToString());
         }
 
         return clean.ToString().Trim();

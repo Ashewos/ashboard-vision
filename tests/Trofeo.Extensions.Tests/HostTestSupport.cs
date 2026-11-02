@@ -27,11 +27,21 @@ internal sealed class FakeDataBroker : IServiceDataBroker
 
     public DataResult<NowPlayingInfo> NowPlayingResult { get; set; } = new(DataStatus.Unavailable, null);
 
-    public int SensorCalls { get; private set; }
+    /// <summary>Une lecture lente (le service ne doit pas s'y empiler).</summary>
+    public TimeSpan Delay { get; set; }
+
+    public int SensorCalls => Volatile.Read(ref _sensorCalls);
+
+    private int _sensorCalls;
 
     public DataResult<SensorReading> Sensors()
     {
-        SensorCalls++;
+        Interlocked.Increment(ref _sensorCalls);
+        if (Delay > TimeSpan.Zero)
+        {
+            Thread.Sleep(Delay);
+        }
+
         return SensorsResult;
     }
 
@@ -207,13 +217,18 @@ internal sealed class FakeHostProcess : IHostProcess
     private readonly Dictionary<Guid, (IntPtr View, int Width, int Height)> _views = [];
     private readonly Task _reader;
 
-    public FakeHostProcess(HostStart start)
+    private readonly bool _readInput;
+    private readonly Action<FakeHostProcess, HostMessage>? _onMessage;
+
+    public FakeHostProcess(HostStart start, bool readInput = true, Action<FakeHostProcess, HostMessage>? onMessage = null)
     {
         Start = start;
+        _readInput = readInput;
+        _onMessage = onMessage;
         _in = new AnonymousPipeClientStream(PipeDirection.In, new SafePipeHandle(Win32.DuplicateInto(start.InheritedHandles[0]), true));
         _out = new AnonymousPipeClientStream(PipeDirection.Out, new SafePipeHandle(Win32.DuplicateInto(start.InheritedHandles[1]), true));
         HostSide = new MessageChannel(_in, _out);
-        _reader = Task.Run(ReadAsync);
+        _reader = readInput ? Task.Run(ReadAsync) : Task.CompletedTask;
     }
 
     public HostStart Start { get; }
@@ -264,6 +279,10 @@ internal sealed class FakeHostProcess : IHostProcess
         try
         {
             _out.Dispose();
+            if (!_readInput)
+            {
+                _in.Dispose(); // personne n'y lit : le service qui écrit encore doit voir le tube cassé
+            }
         }
         catch (IOException)
         {
@@ -340,6 +359,8 @@ internal sealed class FakeHostProcess : IHostProcess
                 {
                     _received.Add(message);
                 }
+
+                _onMessage?.Invoke(this, message);
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidDataException)
@@ -357,6 +378,12 @@ internal sealed class FakeHostFactory : IHostProcessFactory
 
     /// <summary>Appelé sur le faux processus neuf (pour lui fixer par exemple une consommation).</summary>
     public Action<FakeHostProcess>? Configure { get; set; }
+
+    /// <summary>Faux : l'hôte ne lit jamais ce que le service lui écrit.</summary>
+    public bool ReadInput { get; set; } = true;
+
+    /// <summary>Appelé pour chaque message que le faux hôte reçoit (sur son fil de lecture).</summary>
+    public Action<FakeHostProcess, HostMessage>? OnMessage { get; set; }
 
     public IReadOnlyList<FakeHostProcess> Started
     {
@@ -376,7 +403,7 @@ internal sealed class FakeHostFactory : IHostProcessFactory
     public IHostProcess Start(HostStart start)
     {
         OnStart?.Invoke(start);
-        var process = new FakeHostProcess(start);
+        var process = new FakeHostProcess(start, ReadInput, OnMessage);
         Configure?.Invoke(process);
         lock (_started)
         {
@@ -508,9 +535,12 @@ internal sealed class ModuleSandbox : IDisposable
 /// <summary>Un superviseur avec tout ce qu'il faut autour : temps figé, données et coffre factices, mises de côté enregistrées.</summary>
 internal sealed class SupervisorRig : IAsyncDisposable
 {
-    public SupervisorRig(CommunityEntry entry, IHostProcessFactory launcher, IReadOnlyList<ModulePermission>? granted = null, string? hostExecutable = null)
+    public SupervisorRig(
+        CommunityEntry entry, IHostProcessFactory launcher, IReadOnlyList<ModulePermission>? granted = null, string? hostExecutable = null,
+        ISecretStore? secrets = null)
     {
         Launcher = launcher;
+        Secrets = secrets ?? new Trofeo.TestDoubles.FakeSecretStore();
         Supervisor = new ModuleHostSupervisor(
             entry, granted ?? entry.Approval?.Granted ?? [], hostExecutable ?? PlainHostProcessFactory.HostExecutable, Secrets, Data, Time,
             (id, reason) =>
@@ -527,7 +557,7 @@ internal sealed class SupervisorRig : IAsyncDisposable
 
     public FakeDataBroker Data { get; } = new();
 
-    public Trofeo.TestDoubles.FakeSecretStore Secrets { get; } = new();
+    public ISecretStore Secrets { get; }
 
     public Trofeo.TestDoubles.FakeModuleLog Log { get; } = new();
 
@@ -589,5 +619,26 @@ public sealed class WindowsHostTheoryAttribute : TheoryAttribute
         {
             Skip = "L'hôte de module n'existe que sous Windows.";
         }
+    }
+}
+
+/// <summary>Un coffre à secrets lent, qui compte ses appels.</summary>
+internal sealed class SlowSecretStore : ISecretStore
+{
+    private int _calls;
+
+    public int Calls => Volatile.Read(ref _calls);
+
+    public string? Get(string key)
+    {
+        Interlocked.Increment(ref _calls);
+        Thread.Sleep(30);
+        return null;
+    }
+
+    public void Set(string key, string? value)
+    {
+        Interlocked.Increment(ref _calls);
+        Thread.Sleep(30);
     }
 }

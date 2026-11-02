@@ -17,6 +17,11 @@ internal sealed class HostConnection
     private readonly ConcurrentDictionary<int, TaskCompletionSource<HostMessage?>> _pending = new();
     private int _nextRequest;
     private volatile bool _closed;
+    private int _queued;
+    private volatile bool _overflowed;
+
+    /// <summary>Le plus de messages qu'on laisse attendre dans la file d'envoi : au-delà, l'hôte ne lit plus (ou inonde) et il est arrêté.</summary>
+    public const int MaxQueuedMessages = 4000;
 
     public HostConnection(IHostProcess process, ModuleFileLock? fileLock, MessageChannel link, DateTimeOffset startedAt)
     {
@@ -27,6 +32,18 @@ internal sealed class HostConnection
     }
 
     public IHostProcess Process { get; }
+
+    /// <summary>Les lectures de capteurs et de musique demandées par l'hôte : un travailleur, huit demandes en attente au plus.</summary>
+    public BoundedWorker DataWorker { get; } = new(8);
+
+    /// <summary>Les demandes de secrets de l'hôte, dans l'ordre : un travailleur, soixante-quatre demandes en attente au plus.</summary>
+    public BoundedWorker SecretWorker { get; } = new(64);
+
+    /// <summary>Appelée avec ce qu'il faut journaliser quand l'écriture vers l'hôte a un souci.</summary>
+    public Action<string>? Warn { get; set; }
+
+    /// <summary>Vrai si l'hôte a été arrêté parce que la file d'envoi dépassait <see cref="MaxQueuedMessages"/>.</summary>
+    public bool Overflowed => _overflowed;
 
     /// <summary>Le verrou sur les fichiers du module ; <c>null</c> pour un dossier de développement. Libéré à la fin du processus.</summary>
     public ModuleFileLock? FileLock { get; }
@@ -55,7 +72,25 @@ internal sealed class HostConnection
     public ITimer? KillTimer { get; set; }
 
     /// <summary>Met un message dans la file d'envoi. Sans effet une fois la file fermée.</summary>
-    public void Post(HostMessage message, HostMessage? fallback = null) => _outbox.Writer.TryWrite((message, fallback));
+    public void Post(HostMessage message, HostMessage? fallback = null)
+    {
+        if (Interlocked.Increment(ref _queued) > MaxQueuedMessages)
+        {
+            Interlocked.Decrement(ref _queued);
+            if (!_overflowed)
+            {
+                _overflowed = true;
+                KillQuietly(); // un hôte qui ne lit plus ce qu'on lui envoie ne sert plus à rien, et la file ne doit pas grossir
+            }
+
+            return;
+        }
+
+        if (!_outbox.Writer.TryWrite((message, fallback)))
+        {
+            Interlocked.Decrement(ref _queued);
+        }
+    }
 
     /// <summary>
     /// Vide la file vers l'hôte, un message après l'autre. Un message trop gros pour une trame est remplacé par son message de
@@ -67,23 +102,32 @@ internal sealed class HostConnection
         {
             await foreach (var (message, fallback) in _outbox.Reader.ReadAllAsync().ConfigureAwait(false))
             {
+                Interlocked.Decrement(ref _queued);
                 try
                 {
                     await Link.SendAsync(message, CancellationToken.None).ConfigureAwait(false);
                 }
-                catch (ArgumentException) when (fallback is not null)
+                catch (Exception ex) when (ex is not (IOException or ObjectDisposedException or OutOfMemoryException))
                 {
-                    await Link.SendAsync(fallback, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (ArgumentException)
-                {
-                    // un message qui ne peut pas s'écrire est perdu ; les suivants partent
+                    // Un message qui ne peut pas s'écrire (trop gros, JSON invalide) est perdu, sauf son message de remplacement ; les
+                    // suivants partent.
+                    Warn?.Invoke($"Un message pour l'hôte n'a pas pu être écrit : {ex.Message}");
+                    if (fallback is not null)
+                    {
+                        await Link.SendAsync(fallback, CancellationToken.None).ConfigureAwait(false);
+                    }
                 }
             }
         }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            KillQuietly(); // un hôte qui ne reçoit plus rien ne sert à rien
+            // Tube coupé, ou tout autre échec d'écriture : un hôte qui ne reçoit plus rien ne sert à rien, il est arrêté.
+            if (ex is not (IOException or ObjectDisposedException))
+            {
+                Warn?.Invoke($"L'écriture vers l'hôte a échoué : {ex.Message}");
+            }
+
+            KillQuietly();
         }
     }
 
@@ -130,6 +174,8 @@ internal sealed class HostConnection
     {
         _closed = true;
         _outbox.Writer.TryComplete();
+        DataWorker.Complete();
+        SecretWorker.Complete();
         foreach (var waiting in _pending.Values)
         {
             waiting.TrySetResult(null);
