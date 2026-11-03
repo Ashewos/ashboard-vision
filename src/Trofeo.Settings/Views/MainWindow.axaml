@@ -11,7 +11,8 @@
         Width="1440" Height="900" MinWidth="1200" MinHeight="760"
         WindowStartupLocation="CenterScreen">
 
-  <Grid RowDefinitions="Auto,Auto,Auto,*">
+  <Panel>
+  <Grid RowDefinitions="Auto,Auto,Auto,*" IsEnabled="{Binding !SettingsTab.Community.HasDialog}">
 
     <!-- En-tête : le symbole et le nom, les cinq onglets (grisés pendant l'assistant), la pastille de l'écran. -->
     <Border Grid.Row="0" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
@@ -81,4 +82,15 @@
       </Border>
     </Grid>
   </Grid>
+
+  <!-- La boîte d'un module complémentaire (installer, valider, mettre à jour, permissions) : par-dessus tout, le reste de la fenêtre est grisé. -->
+  <Border Name="DialogScrim" Background="#CC0E1116" IsVisible="{Binding SettingsTab.Community.HasDialog}">
+    <ContentControl Name="DialogHost" Content="{Binding SettingsTab.Community.Dialog}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center" IsTabStop="False">
+      <ContentControl.DataTemplates>
+        <DataTemplate DataType="vm:InstallModuleDialogViewModel"><views:InstallModuleDialogView /></DataTemplate>
+      </ContentControl.DataTemplates>
+    </ContentControl>
+  </Border>
+  </Panel>
 </Window>

@@ -53,10 +53,19 @@ public class ServiceLinkTests
             new(id, "Démo", new GridSize(2, 1), new Dictionary<SizePreset, GridSize>(), false, SettingsSchema.Empty,
                 new CommunityTypeInfo("Alex", "Démo", "1.0.0", [ModulePermission.Internet], [ModulePermission.Internet]));
 
+        /// <summary>Si posé, le prochain changement a lieu (les types changent) puis lève : le service répond « error ».</summary>
+        public volatile bool FailNextChange;
+
         private ActionResult Changing(string call)
         {
             ModuleCalls.Enqueue(call);
             CurrentTypes = [.. CurrentTypes, CommunityType("alex.t" + CurrentTypes.Count)];
+            if (FailNextChange)
+            {
+                FailNextChange = false;
+                throw new InvalidOperationException("Le dossier du module est verrouillé.");
+            }
+
             return new ActionResult(true, "Fait.");
         }
 
@@ -279,6 +288,56 @@ public class ServiceLinkTests
         Assert.NotNull(link.Types![0].Community);
         Assert.True(Volatile.Read(ref changes) > 0);
         Assert.Equal(["install C:\\a.avmod"], handler.ModuleCalls.ToArray());
+    }
+
+    [Fact]
+    public async Task Types_ReadTimesOutAfterASuccessfulChange_TheChangeStaysASuccess()
+    {
+        var pipe = NewPipeName();
+        using var server = new ControlServer(pipe, new Handler());
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+        var before = link.Types;
+        link.TypesReader = (_, _) => throw new TimeoutException("Le service n'a pas répondu à « types » dans le délai.");
+
+        var result = await link.InstallPackageAsync(@"C:.avmod", [ModulePermission.Internet]);
+
+        Assert.True(result.Ok);
+        Assert.Same(before, link.Types); // on garde ce qu'on avait
+    }
+
+    [Fact]
+    public async Task Types_ReadCancelledAfterASuccessfulChange_TheChangeStaysASuccess()
+    {
+        var pipe = NewPipeName();
+        using var server = new ControlServer(pipe, new Handler());
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+        link.TypesReader = (_, _) => throw new OperationCanceledException();
+
+        var result = await link.UninstallModuleAsync("alex.demo");
+
+        Assert.True(result.Ok);
+    }
+
+    [Fact]
+    public async Task Types_ChangeRequestThatThrows_StillReadsTheTypesAgain()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler { FailNextChange = true };
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+        Assert.Empty(link.Types!);
+
+        // Le service a changé quelque chose avant d'échouer (ou le délai est passé alors qu'il finissait) : la liste doit le dire.
+        var ex = await Assert.ThrowsAsync<ControlException>(() => link.InstallPackageAsync(@"C:.avmod", [ModulePermission.Internet]));
+
+        Assert.Equal("Le dossier du module est verrouillé.", ex.Message);
+        Assert.Equal(["alex.t0"], link.Types!.Select(t => t.TypeId));
     }
 
     [Fact]

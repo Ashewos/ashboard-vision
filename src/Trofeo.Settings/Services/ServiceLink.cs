@@ -62,6 +62,10 @@ public sealed class ServiceLink : IServiceLink
     public UpdateInfo? Updates { get; private set; }
     public IReadOnlyList<ModuleTypeInfo>? Types { get; private set; }
 
+    /// <summary>Comment les types sont relus ; les tests le remplacent pour simuler un service qui ne répond pas (le délai réel est de 10 s).</summary>
+    internal Func<ControlClient, CancellationToken, Task<IReadOnlyList<ModuleTypeInfo>>> TypesReader { get; set; } =
+        (client, ct) => client.GetTypesAsync(ct);
+
     public event Action? Changed;
     public event Action<PreviewFrame>? FrameReceived;
 
@@ -205,25 +209,38 @@ public sealed class ServiceLink : IServiceLink
 
     public Task<IReadOnlyList<ModuleConsumption>> GetConsumptionAsync() => RequestAsync((client, ct) => client.GetConsumptionAsync(ct));
 
-    /// <summary>Une demande qui change les modules complémentaires : au retour, les types sont relus et publiés (qu'elle ait réussi ou non).</summary>
+    /// <summary>
+    /// Une demande qui change les modules complémentaires : au retour, les types sont relus et publiés, qu'elle ait réussi, été refusée
+    /// ou même levé une erreur (un délai peut passer pendant que le service finit son travail : la liste doit dire ce qui s'est passé).
+    /// </summary>
     private Task<ActionResult> ChangeModulesAsync(Func<ControlClient, CancellationToken, Task<ActionResult>> request) =>
         RequestAsync(async (client, ct) =>
         {
-            var result = await request(client, ct).ConfigureAwait(false);
-            await RefreshTypesAsync(client, ct).ConfigureAwait(false);
-            return result;
+            try
+            {
+                return await request(client, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                await RefreshTypesAsync(client, ct).ConfigureAwait(false);
+            }
         });
 
     /// <summary>
     /// Relit les types de modules et les publie tout de suite. Le compteur change avant la lecture : une lecture plus ancienne qui arrive
-    /// après une plus récente est écartée, comme pour les mises à jour.
+    /// après une plus récente est écartée, comme pour les mises à jour. Une lecture qui échoue (service qui refuse, délai, liaison
+    /// fermée) ne change rien et ne fait pas échouer la demande qui l'a précédée : on garde ce qu'on avait.
     /// </summary>
     private async Task RefreshTypesAsync(ControlClient client, CancellationToken ct)
     {
         var generation = Interlocked.Increment(ref _typesGeneration);
         IReadOnlyList<ModuleTypeInfo> types;
-        try { types = await client.GetTypesAsync(ct).ConfigureAwait(false); }
-        catch (ControlException) { return; } // un service qui refuse la lecture ne coupe pas la liaison : on garde ce qu'on avait
+        try { types = await TypesReader(client, ct).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is ControlException or TimeoutException or OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+
         Update(() =>
         {
             if (generation == Volatile.Read(ref _typesGeneration) && State == LinkState.Connected)

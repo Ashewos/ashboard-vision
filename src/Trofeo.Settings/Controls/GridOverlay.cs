@@ -11,7 +11,8 @@ namespace Trofeo.Settings.Controls;
 /// <summary>
 /// Le damier, posé sur la bande (même cellule de la grille, même taille) : les cases en pointillés <c>Line</c> avec les
 /// écarts du thème, le module choisi cerné d'un trait <c>Accent</c> de 2 px et de huit poignées, et pendant un glissement
-/// le cadre fantôme calé sur les cases (<c>Accent</c> si la place est libre, <c>Refuse</c> sinon). Il ne décide de rien :
+/// le cadre fantôme calé sur les cases (<c>Accent</c> si la place est libre, <c>Refuse</c> sinon), et, sur la case d'un module de la
+/// communauté, un point d'exclamation jaune dans un angle. Il ne décide de rien :
 /// il traduit la souris en pixels de l'écran pour <see cref="LayoutTabViewModel"/>, qui applique les règles de placement.
 /// Échap abandonne le glissement.
 /// </summary>
@@ -116,6 +117,14 @@ public sealed class GridOverlay : Avalonia.Controls.Control
                 context.DrawRectangle(accent, handleBorder, new Rect(at.X - HandleSize / 2, at.Y - HandleSize / 2, HandleSize, HandleSize), 2, 2);
         }
 
+        // Un module de la communauté : juste un point d'exclamation jaune dans l'angle de sa case, rien d'autre.
+        var amberBrush = Resource("Amber", Color.Parse("#F2B84B"));
+        foreach (var community in model.Placed.Where(p => p.IsCommunity))
+        {
+            var cell = CellRect(strip, community.Column, community.Row, community.Columns, community.Rows, spacing);
+            CommunityBadge.Draw(context, BadgeCenter(cell), BadgeDiameter, amberBrush, ink);
+        }
+
         // Le cadre fantôme du glissement.
         if (model.Ghost is { } ghost)
         {
@@ -126,6 +135,12 @@ public sealed class GridOverlay : Avalonia.Controls.Control
         }
 
     }
+
+    /// <summary>Le diamètre du point d'exclamation d'une case, en pixels de la bande.</summary>
+    internal const double BadgeDiameter = 16;
+
+    /// <summary>Le centre du point d'exclamation d'une case : dans son angle en haut à droite.</summary>
+    internal static Point BadgeCenter(Rect cell) => new(cell.Right - BadgeDiameter / 2 - 6, cell.Top + BadgeDiameter / 2 + 6);
 
     private static Rect CellRect(ScreenStrip strip, int column, int row, int columns, int rows, GridSpacing spacing)
     {

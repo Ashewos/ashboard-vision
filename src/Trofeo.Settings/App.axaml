@@ -29,6 +29,7 @@
     <DataTemplate DataType="f:SecretFieldViewModel"><fv:SecretFieldView /></DataTemplate>
     <DataTemplate DataType="f:LookupFieldViewModel"><fv:LookupFieldView /></DataTemplate>
     <DataTemplate DataType="f:ActionFieldViewModel"><fv:ActionFieldView /></DataTemplate>
+    <DataTemplate DataType="f:NumberFieldViewModel"><fv:NumberFieldView /></DataTemplate>
 
     <!-- Un onglet = un modèle de vue = une vue. -->
     <DataTemplate DataType="vm:LayoutTabViewModel"><views:LayoutTabView /></DataTemplate>

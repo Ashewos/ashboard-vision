@@ -151,10 +151,13 @@ public sealed class FakeServiceLink : IServiceLink
 
     private static string Join(IReadOnlyList<ModulePermission> granted) => string.Join(",", granted);
 
+    /// <summary>Si posé, toute demande qui change les modules lève cette erreur (la liaison est coupée, le délai est passé…).</summary>
+    public ControlException? ModuleFailure { get; set; }
+
     private Task<ActionResult> Module(string call)
     {
         ModuleCalls.Add(call);
-        return Task.FromResult(ModuleResult);
+        return ModuleFailure is null ? Task.FromResult(ModuleResult) : Task.FromException<ActionResult>(ModuleFailure);
     }
 
     public Task<CommunityOverview> GetCommunityAsync()
@@ -166,7 +169,7 @@ public sealed class FakeServiceLink : IServiceLink
     public Task<PackageInfo> InspectPackageAsync(string path)
     {
         ModuleCalls.Add($"inspect {path}");
-        return Task.FromResult(Package);
+        return InspectFailure is null ? Task.FromResult(Package) : Task.FromException<PackageInfo>(InspectFailure);
     }
 
     public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted) => Module($"install {path} {Join(granted)}");
@@ -177,6 +180,9 @@ public sealed class FakeServiceLink : IServiceLink
         Module($"permissions {id} {Join(granted)}");
 
     public Task<ActionResult> UninstallModuleAsync(string id) => Module($"uninstall {id}");
+
+    /// <summary>Si posé, <see cref="InspectPackageAsync"/> lève cette erreur (le service ne peut pas lire le fichier).</summary>
+    public ControlException? InspectFailure { get; set; }
 
     public Task<ActionResult> RelaunchModuleAsync(string id) => Module($"relaunch {id}");
 
@@ -199,16 +205,22 @@ public sealed class FakeServiceLink : IServiceLink
     /// <summary>Ce que la préparation d'une mise à jour rend.</summary>
     public ModuleUpdatePreparation Preparation { get; set; } = new(true, null, "1.3.0", "Notes.", [ModulePermission.Internet], []);
 
+    /// <summary>Si posé, rend la préparation à la place de <see cref="Preparation"/> (un test la fait attendre, ou lever).</summary>
+    public Func<string, Task<ModuleUpdatePreparation>>? OnPrepare { get; set; }
+
     public Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id)
     {
         ModuleCalls.Add($"prepare {id}");
-        return Task.FromResult(Preparation);
+        return OnPrepare is null ? Task.FromResult(Preparation) : OnPrepare(id);
     }
+
+    /// <summary>Si posé, l'abandon d'une mise à jour lève cette erreur (le service n'est plus là).</summary>
+    public ControlException? CancelFailure { get; set; }
 
     public Task CancelModuleUpdateAsync(string id)
     {
         ModuleCalls.Add($"cancel {id}");
-        return Task.CompletedTask;
+        return CancelFailure is null ? Task.CompletedTask : Task.FromException(CancelFailure);
     }
 
     public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted) => Module($"update {id} {Join(granted)}");

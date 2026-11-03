@@ -38,6 +38,10 @@ public partial class App : Application
             var window = new MainWindow { DataContext = model };
             desktop.MainWindow = window;
 
+            // Trofeo.Settings.exe <chemin.avmod> : la boîte d'installation s'ouvre dès que le service est joint (rien ne s'installe sans clic).
+            if (PackageArgument.Find(desktop.Args) is { } package)
+                model.OpenPackage(package);
+
             // Une exception de l'interface ne ferme plus la fenêtre : elle va au journal et sur la ligne ambre.
             if (Guard is { } guard)
             {

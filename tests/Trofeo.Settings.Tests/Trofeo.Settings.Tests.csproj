@@ -15,6 +15,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Trofeo.Settings\Trofeo.Settings.csproj" />
+    <!-- Seulement pour comparer les textes des permissions de la fenêtre à ceux du service (PermissionTexts) : la fenêtre, elle, ne le référence pas. -->
+    <ProjectReference Include="..\..\src\Trofeo.Extensions\Trofeo.Extensions.csproj" />
   </ItemGroup>
 
 </Project>

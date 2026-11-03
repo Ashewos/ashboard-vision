@@ -3,12 +3,14 @@
              xmlns:t="clr-namespace:Trofeo.Settings"
              xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
              xmlns:views="clr-namespace:Trofeo.Settings.Views"
+             xmlns:controls="clr-namespace:Trofeo.Settings.Controls"
              x:Class="Trofeo.Settings.Views.SettingsTabView"
              x:DataType="vm:SettingsTabViewModel">
 
   <!-- Deux colonnes calmes et équilibrées, alignées à gauche : l'écran, l'aperçu, le démarrage et les mises à jour ; puis les capteurs, la consommation, le partage et l'assistant. -->
   <ScrollViewer VerticalScrollBarVisibility="Auto" AllowAutoHide="False">
-    <Grid ColumnDefinitions="*,16,*" Margin="0,0,8,0">
+    <StackPanel Spacing="16" Margin="0,0,8,0">
+    <Grid ColumnDefinitions="*,16,*">
 
       <StackPanel Grid.Column="0" Spacing="16">
 
@@ -143,5 +145,76 @@
         </Border>
       </StackPanel>
     </Grid>
+
+    <!-- Les modules complémentaires (créés par la communauté) : une ligne par module, l'installation, les mises à jour. -->
+    <Border Name="CommunityPanel" Classes="panel" Padding="20" DataContext="{Binding Community}" x:DataType="vm:CommunitySectionViewModel">
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+          <StackPanel Grid.Column="0" Spacing="4">
+            <TextBlock Classes="section" Text="{x:Static t:Texts.SettingsCommunity}" />
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.CommunityHelp}" />
+          </StackPanel>
+          <Button Grid.Column="1" Name="InstallModuleButton" Classes="primary" VerticalAlignment="Top"
+                  Content="{x:Static t:Texts.CommunityInstallButton}" Command="{Binding InstallFromFileCommand}" IsEnabled="{Binding IsIdle}" />
+        </Grid>
+
+        <!-- La liste des modules validés a été modifiée hors du logiciel. -->
+        <Border Name="TamperedBanner" Classes="note" BorderBrush="{DynamicResource Amber}" IsVisible="{Binding StoreTampered}">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <controls:CommunityBadge Size="22" VerticalAlignment="Top" />
+            <TextBlock Classes="warning" TextWrapping="Wrap" Text="{Binding TamperedText}" />
+          </Grid>
+        </Border>
+
+        <TextBlock Name="CommunityMessage" Classes="error" TextWrapping="Wrap" MaxLines="6" TextTrimming="CharacterEllipsis"
+                   Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+
+        <TextBlock Name="CommunityNone" Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.CommunityNone}" IsVisible="{Binding HasNoModules}" />
+
+        <ItemsControl Name="CommunityList" ItemsSource="{Binding Modules}" IsVisible="{Binding HasModules}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:CommunityModuleRow">
+              <Border Classes="note" Margin="0,0,0,8" Padding="14,12">
+                <StackPanel Spacing="8">
+                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                    <controls:CommunityBadge Grid.Column="0" Size="18" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Spacing="2">
+                      <TextBlock Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="muted" Text="{Binding AuthorLine}" TextTrimming="CharacterEllipsis" IsVisible="{Binding HasAuthorLine}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" MaxWidth="320" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" TextAlignment="Right"
+                               VerticalAlignment="Center" Text="{Binding StateText}" Classes.ok="{Binding StateIsOk}" Classes.warning="{Binding StateIsProblem}" />
+                  </Grid>
+                  <TextBlock Classes="muted" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" Text="{Binding PermissionsText}" />
+                  <TextBlock Classes="warning" TextWrapping="Wrap" MaxLines="4" TextTrimming="CharacterEllipsis" Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+                  <TextBlock Classes="lead" Foreground="{DynamicResource Accent}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                             Text="{Binding UpdateOffer}" IsVisible="{Binding HasUpdateOffer}" />
+                  <WrapPanel IsVisible="{Binding IsNotConfirming}">
+                    <Button Classes="small primary" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityApprove}" Command="{Binding ApproveCommand}"
+                            IsVisible="{Binding CanApprove}" IsEnabled="{Binding CanApproveNow}" />
+                    <Button Classes="small" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityPermissions}" Command="{Binding PermissionsCommand}"
+                            IsVisible="{Binding CanPermissions}" IsEnabled="{Binding CanPermissionsNow}" />
+                    <Button Classes="small" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityUpdate}" Command="{Binding UpdateCommand}"
+                            IsVisible="{Binding CanUpdate}" IsEnabled="{Binding CanUpdateNow}" />
+                    <Button Classes="small" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityRelaunch}" Command="{Binding RelaunchCommand}"
+                            IsVisible="{Binding CanRelaunch}" IsEnabled="{Binding CanRelaunchNow}" />
+                    <Button Classes="small" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityUninstall}" Command="{Binding AskUninstallCommand}"
+                            IsVisible="{Binding CanUninstall}" IsEnabled="{Binding CanUninstallNow}" />
+                  </WrapPanel>
+                  <StackPanel Spacing="6" IsVisible="{Binding ConfirmingUninstall}">
+                    <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding UninstallConfirmText}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Classes="small danger" Content="{x:Static t:Texts.CommunityUninstall}" Command="{Binding ConfirmUninstallCommand}" IsEnabled="{Binding IsIdle}" />
+                      <Button Classes="small" Content="{x:Static t:Texts.ModulesCancel}" Command="{Binding CancelUninstallCommand}" />
+                    </StackPanel>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+    </StackPanel>
   </ScrollViewer>
 </UserControl>

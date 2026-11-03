@@ -113,7 +113,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             shortcuts.CancelCapture();
     }
 
-    partial void OnSelectedTabChanged(TabViewModel value) => RefreshBanner();
+    partial void OnSelectedTabChanged(TabViewModel value)
+    {
+        RefreshBanner();
+        // Les modules complémentaires se relisent quand l'onglet Paramètres s'ouvre (jusque-là, la section ne coûte rien).
+        if (value is SettingsTabViewModel)
+            SettingsTab.Community.Activate();
+    }
+
+    /// <summary>
+    /// <c>Trofeo.Settings.exe &lt;chemin.avmod&gt;</c> : l'onglet Paramètres s'ouvre et la boîte d'installation s'affiche dès que le service est
+    /// joint. Le fichier est inspecté, rien ne s'installe sans le clic sur « Installer ».
+    /// </summary>
+    public void OpenPackage(string path)
+    {
+        if (!IsFirstRunVisible)
+            SelectedTab = SettingsTab;
+        SettingsTab.Community.OpenPackageWhenConnected(path);
+    }
 
     /// <summary>
     /// La ligne <c>Amber</c> sous la bande, dans tous les onglets : le message de la dernière modification (refus du

@@ -39,6 +39,14 @@ public partial class MainWindow : Window
         if (e.Handled || DataContext is not MainViewModel model)
             return;
 
+        // Échap ferme la boîte d'un module complémentaire (une mise à jour en cours est abandonnée).
+        if (e.Key == Key.Escape && model.SettingsTab.Community.Dialog is { } dialog)
+        {
+            _ = dialog.CancelAsync();
+            e.Handled = true;
+            return;
+        }
+
         // Échap abandonne un glissement du damier.
         if (e.Key == Key.Escape && model.LayoutTab.IsDragging)
         {

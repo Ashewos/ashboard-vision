@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:t="clr-namespace:Trofeo.Settings"
+             xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
+             xmlns:controls="clr-namespace:Trofeo.Settings.Controls"
+             x:Class="Trofeo.Settings.Views.InstallModuleDialogView"
+             x:DataType="vm:InstallModuleDialogViewModel">
+
+  <!--
+    La boîte d'un module complémentaire (installer, valider, mettre à jour, permissions) : l'avertissement et son point d'exclamation jaune,
+    ce que le module dit de lui-même (texte brut, longueurs bornées), une case décochée par permission déclarée, puis la confirmation.
+    Les erreurs et les conflits sont affichés tels quels, sans bouton de confirmation.
+  -->
+  <Border Name="Dialog" Classes="panel" Padding="24" Width="620" HorizontalAlignment="Center" VerticalAlignment="Center"
+          AutomationProperties.Name="{Binding Title}">
+    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="16">
+
+      <TextBlock Grid.Row="0" Name="DialogTitle" Classes="heading" TextWrapping="Wrap" Text="{Binding Title}" />
+
+      <ScrollViewer Grid.Row="1" MaxHeight="470" VerticalScrollBarVisibility="Auto" AllowAutoHide="False">
+        <StackPanel Spacing="14" Margin="0,0,16,0">
+
+          <!-- L'avertissement : un point d'exclamation jaune et la phrase de l'installation. -->
+          <Border Name="WarningBox" Classes="note" IsVisible="{Binding ShowsWarning}">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+              <controls:CommunityBadge Grid.Column="0" Size="28" VerticalAlignment="Top" />
+              <TextBlock Grid.Column="1" Name="WarningText" Classes="warning" TextWrapping="Wrap" Text="{Binding WarningText}" />
+            </Grid>
+          </Border>
+
+          <!-- Ce que le module dit de lui-même. -->
+          <StackPanel Spacing="6">
+            <TextBlock Name="ModuleName" Classes="name" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                       Text="{Binding Name}" />
+            <TextBlock Name="ModuleAuthor" Classes="muted" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                       Text="{Binding AuthorText}" IsVisible="{Binding HasAuthor}" />
+            <TextBlock Name="ModuleVersion" Classes="number muted lead" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                       Text="{Binding VersionText}" IsVisible="{Binding HasVersion}" />
+            <TextBlock Name="ModuleDescription" TextWrapping="Wrap" MaxLines="8" TextTrimming="CharacterEllipsis"
+                       Text="{Binding Description}" IsVisible="{Binding HasDescription}" />
+          </StackPanel>
+
+          <StackPanel Spacing="4" IsVisible="{Binding HasNotes}">
+            <TextBlock Classes="section" Text="{Binding NotesTitle}" />
+            <TextBlock Name="ModuleNotes" TextWrapping="Wrap" MaxLines="10" TextTrimming="CharacterEllipsis" Text="{Binding Notes}" />
+          </StackPanel>
+
+          <!-- La mise à jour se télécharge : les cases viendront. -->
+          <StackPanel Name="Preparing" Spacing="8" IsVisible="{Binding IsPreparing}">
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding PreparingText}" />
+            <ProgressBar IsIndeterminate="True" Classes="steps" />
+          </StackPanel>
+
+          <!-- Les erreurs et les conflits, tels quels. -->
+          <ItemsControl Name="Problems" ItemsSource="{Binding Problems}" IsVisible="{Binding HasProblems}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <TextBlock Classes="error" TextWrapping="Wrap" MaxLines="12" TextTrimming="CharacterEllipsis" Margin="0,0,0,4" Text="{Binding}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- Une case par permission déclarée, décochée par défaut. -->
+          <StackPanel Name="PermissionArea" Spacing="8" IsVisible="{Binding ShowsPermissionArea}">
+            <TextBlock Classes="section" TextWrapping="Wrap" Text="{Binding PermissionsIntro}" IsVisible="{Binding HasPermissions}" />
+            <TextBlock Name="NewPermissionsNote" Classes="warning" TextWrapping="Wrap" Text="{Binding NewPermissionsText}"
+                       IsVisible="{Binding HasNewPermissions}" />
+            <TextBlock Name="NoPermissions" Classes="muted" TextWrapping="Wrap" Text="{Binding NoPermissionsText}"
+                       IsVisible="{Binding ShowsNoPermissions}" />
+            <ItemsControl Name="PermissionList" ItemsSource="{Binding Permissions}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PermissionChoice">
+                  <Border Classes="note" Margin="0,0,0,6" Padding="12,8">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Label}">
+                        <StackPanel Spacing="2">
+                          <TextBlock Classes="name" TextWrapping="Wrap" Text="{Binding Label}" />
+                          <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding Explanation}" />
+                        </StackPanel>
+                      </CheckBox>
+                      <TextBlock Grid.Column="1" Classes="warning" VerticalAlignment="Top" Text="{x:Static t:Texts.PermissionNew}"
+                                 IsVisible="{Binding IsNew}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <TextBlock Name="ResultMessage" Classes="error" TextWrapping="Wrap" MaxLines="12" TextTrimming="CharacterEllipsis"
+                     Text="{Binding ResultMessage}" IsVisible="{Binding HasResultMessage}" />
+        </StackPanel>
+      </ScrollViewer>
+
+      <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <Button Name="ConfirmButton" Classes="primary" Content="{Binding ConfirmLabel}" Command="{Binding ConfirmCommand}"
+                IsEnabled="{Binding CanConfirm}" IsVisible="{Binding !HasProblems}" />
+        <Button Name="CancelButton" Content="{x:Static t:Texts.ModulesCancel}" Command="{Binding CancelCommand}" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

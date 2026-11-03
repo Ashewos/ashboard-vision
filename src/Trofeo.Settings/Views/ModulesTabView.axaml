@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:t="clr-namespace:Trofeo.Settings"
              xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
+             xmlns:controls="clr-namespace:Trofeo.Settings.Controls"
              x:Class="Trofeo.Settings.Views.ModulesTabView"
              x:DataType="vm:ModulesTabViewModel">
 
@@ -17,11 +18,12 @@
                    AutomationProperties.Name="{x:Static t:Texts.LayoutOnScreen}">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:ModuleListItem">
-                <Grid ColumnDefinitions="Auto,*">
+                <Grid ColumnDefinitions="Auto,*,Auto">
                   <Ellipse Grid.Column="0" Classes="dot" Margin="0,0,10,0" VerticalAlignment="Center"
                            Classes.online="{Binding IsOnline}" Classes.idle="{Binding IsIdle}" Classes.refuse="{Binding IsRefuse}"
                            AutomationProperties.Name="{Binding HealthText}" ToolTip.Tip="{Binding HealthText}" />
                   <TextBlock Grid.Column="1" Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <controls:CommunityBadge Grid.Column="2" Size="16" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsCommunity}" />
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>
@@ -32,9 +34,10 @@
                    IsVisible="{Binding HasShelved}" AutomationProperties.Name="{x:Static t:Texts.LayoutShelved}">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:ModuleListItem">
-                <Grid ColumnDefinitions="Auto,*">
+                <Grid ColumnDefinitions="Auto,*,Auto">
                   <Ellipse Grid.Column="0" Classes="dot idle" Margin="0,0,10,0" VerticalAlignment="Center" />
                   <TextBlock Grid.Column="1" Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <controls:CommunityBadge Grid.Column="2" Size="16" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsCommunity}" />
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>
@@ -53,14 +56,30 @@
           <StackPanel Spacing="16" Margin="0,0,16,0">
 
             <!-- Le nom du module, et son état en mots. -->
-            <StackPanel Orientation="Horizontal" Spacing="16">
-              <TextBlock Name="ModuleName" Classes="heading" Text="{Binding SelectedName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-              <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding HasHealth}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+              <TextBlock Grid.Column="0" Name="ModuleName" Classes="heading" Text="{Binding SelectedName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding HasHealth}">
                 <Ellipse Classes="dot" VerticalAlignment="Center"
                          Classes.online="{Binding SelectedOnline}" Classes.idle="{Binding SelectedIdle}" Classes.refuse="{Binding SelectedRefuse}" />
                 <TextBlock Name="Health" Classes="lead" VerticalAlignment="Center" Text="{Binding SelectedHealthText}" />
               </StackPanel>
-            </StackPanel>
+            </Grid>
+
+            <!-- Un module complémentaire : le point d'exclamation jaune, la mention, son auteur et les permissions accordées. -->
+            <Border Name="CommunityHeader" Classes="note" IsVisible="{Binding SelectedIsCommunity}">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                <controls:CommunityBadge Grid.Column="0" Size="22" VerticalAlignment="Top" />
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <TextBlock Name="CommunityNotice" Classes="warning" TextWrapping="Wrap" Text="{Binding SelectedCommunityNotice}" />
+                  <TextBlock Name="CommunityDetails" Classes="muted" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                             Text="{Binding SelectedCommunityDetails}" />
+                  <TextBlock Name="CommunityDescription" TextWrapping="Wrap" MaxLines="4" TextTrimming="CharacterEllipsis"
+                             Text="{Binding SelectedCommunityDescription}" IsVisible="{Binding HasSelectedCommunityDescription}" />
+                  <TextBlock Name="CommunityPermissions" Classes="muted" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
+                             Text="{Binding SelectedCommunityPermissions}" />
+                </StackPanel>
+              </Grid>
+            </Border>
 
             <!-- Ce que le module dit de lui-même : son message, ses remarques. -->
             <StackPanel Spacing="4" IsVisible="{Binding HasActionMessage}">

@@ -290,7 +290,7 @@ public sealed class ControlClient : IAsyncDisposable
                 }
                 else
                 {
-                    var response = JsonSerializer.Deserialize<Response>(frame.Value.Payload, ControlJson.Options);
+                    var response = ReadResponse(frame.Value.Payload);
                     if (response is not null && _pending.TryRemove(response.ReplyTo, out var waiting))
                         waiting.TrySetResult(response);
                 }
@@ -311,6 +311,39 @@ public sealed class ControlClient : IAsyncDisposable
                 RaiseDisconnected();
         }
     }
+
+    /// <summary>
+    /// Lit une réponse. Une réponse que cette version ne sait pas lire (un service plus récent : genre de champ inconnu, par exemple)
+    /// ne coupe pas la liaison et ne passe pas pour un service arrêté : on en sauve l'identifiant de la requête et, pour la poignée de
+    /// main, la version du protocole, et le demandeur reçoit un message clair. Du JSON qui n'en est pas du tout reste une violation du
+    /// protocole (<see cref="JsonException"/>, la connexion se ferme).
+    /// </summary>
+    private static Response? ReadResponse(byte[] payload)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<Response>(payload, ControlJson.Options);
+        }
+        catch (JsonException)
+        {
+            using var document = JsonDocument.Parse(payload); // lève JsonException si ce n'est pas du JSON
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("replyTo", out var replyTo) || !replyTo.TryGetInt32(out var id))
+                throw;
+
+            if (root.TryGetProperty("welcome", out var welcome) && welcome.ValueKind == JsonValueKind.Object
+                && welcome.TryGetProperty("protocolVersion", out var version) && version.TryGetInt32(out var protocol)
+                && protocol != ControlPipe.ProtocolVersion)
+            {
+                var serviceVersion = welcome.TryGetProperty("serviceVersion", out var text) && text.ValueKind == JsonValueKind.String ? text.GetString() : null;
+                return new Response(id, MessageTypes.Hello) { Welcome = new Welcome(serviceVersion ?? "", protocol, []) };
+            }
+
+            return new Response(id, MessageTypes.Error) { Message = UnreadableResponse };
+        }
+    }
+
+    private const string UnreadableResponse = "Le service a répondu par quelque chose que cette fenêtre ne comprend pas : mets les deux à jour.";
 
     private void RaiseFrame(PreviewFrame frame)
     {

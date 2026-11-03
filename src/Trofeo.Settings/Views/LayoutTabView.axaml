@@ -3,6 +3,7 @@
              xmlns:t="clr-namespace:Trofeo.Settings"
              xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
              xmlns:mk="clr-namespace:Trofeo.ModuleKit;assembly=Trofeo.ModuleKit"
+             xmlns:controls="clr-namespace:Trofeo.Settings.Controls"
              x:Class="Trofeo.Settings.Views.LayoutTabView"
              x:DataType="vm:LayoutTabViewModel">
 
@@ -33,12 +34,13 @@
                        AutomationProperties.Name="{x:Static t:Texts.LayoutOnScreen}">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:PlacedModuleItem">
-                    <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                       <Ellipse Grid.Column="0" Classes="dot" Margin="0,0,10,0" VerticalAlignment="Center"
                                Classes.online="{Binding IsOnline}" Classes.idle="{Binding IsIdle}" Classes.refuse="{Binding IsRefuse}"
                                AutomationProperties.Name="{Binding HealthText}" ToolTip.Tip="{Binding HealthText}" />
                       <TextBlock Grid.Column="1" Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="2" Classes="number muted lead" Margin="12,0,0,0" Text="{Binding SizeText}" VerticalAlignment="Center" />
+                      <controls:CommunityBadge Grid.Column="2" Size="16" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsCommunity}" />
+                      <TextBlock Grid.Column="3" Classes="number muted lead" Margin="12,0,0,0" Text="{Binding SizeText}" VerticalAlignment="Center" />
                     </Grid>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -74,10 +76,15 @@
                   Content="{x:Static t:Texts.LayoutAddModule}" IsEnabled="{Binding CanEdit}">
             <Button.Flyout>
               <Flyout Placement="TopEdgeAlignedLeft">
-                <ItemsControl Name="TypeList" MinWidth="260" ItemsSource="{Binding AddTypes}">
+                <ItemsControl Name="TypeList" MinWidth="260" MaxWidth="380" ItemsSource="{Binding AddTypes}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:AddTypeItem">
-                      <Button Classes="menu" Content="{Binding Name}" Command="{Binding AddCommand}" Click="OnAddTypeClicked" />
+                      <Button Classes="menu" Command="{Binding AddCommand}" Click="OnAddTypeClicked">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                          <controls:CommunityBadge Grid.Column="1" Size="16" Margin="12,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsCommunity}" />
+                        </Grid>
+                      </Button>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>

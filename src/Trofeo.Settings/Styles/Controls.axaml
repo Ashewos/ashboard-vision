@@ -198,6 +198,14 @@
     <Setter Property="MinHeight" Value="0" />
   </Style>
 
+  <!-- Une saisie refusée (nombre hors des bornes) : le cadre passe à Refuse, même au focus. -->
+  <Style Selector="TextBox.invalid /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource Refuse}" />
+  </Style>
+  <Style Selector="TextBox.invalid:focus /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource Refuse}" />
+  </Style>
+
   <!-- Cartes de thème : un bouton large, sur Raised ; la carte choisie a un contour Accent de 2 px. -->
   <Style Selector="Button.card">
     <Setter Property="Background" Value="{DynamicResource Raised}" />
