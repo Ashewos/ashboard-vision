@@ -25,6 +25,8 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
     private bool _active;
     private int _refreshes;
     private string? _packageWhenConnected;
+    private string? _waitingPackage;
+    private string? _readFailure;
 
     public CommunitySectionViewModel(IServiceLink link, EditSession session, Func<IFilePicker?> picker)
     {
@@ -137,12 +139,17 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
         catch (ControlException ex)
         {
             if (version == _refreshes)
-                Message = UntrustedText.Block(ex.Message);
+                Message = _readFailure = UntrustedText.Block(ex.Message);
             return;
         }
 
         if (version != _refreshes)
             return;
+
+        // Le message d'une lecture qui avait échoué n'a plus lieu d'être ; celui d'une demande refusée (désinstallation…) reste.
+        if (_readFailure is not null && Message == _readFailure)
+            Message = null;
+        _readFailure = null;
 
         _overview = overview;
         var confirming = Modules.Where(m => m.ConfirmingUninstall).Select(m => m.Id).ToHashSet();
@@ -206,8 +213,12 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
     /// <summary>Fait lire le paquet au service (sans rien écrire sur le disque) et ouvre la boîte avec ce qu'il y a vu.</summary>
     public async Task OpenPackageAsync(string path)
     {
+        // Une boîte est déjà ouverte : le fichier attend qu'elle se ferme, il n'est pas perdu.
         if (Dialog is not null)
+        {
+            _waitingPackage = path;
             return;
+        }
 
         Message = null;
         PackageInfo package;
@@ -233,6 +244,13 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
         {
             _overview ??= await TryReadOverviewAsync().ConfigureAwait(true);
             installed = _overview?.Modules.FirstOrDefault(m => m.Id == package.Id);
+        }
+
+        // Pendant l'inspection (ou la lecture des modules), une autre boîte a pu s'ouvrir : celle-là reste, ce fichier attend.
+        if (Dialog is not null)
+        {
+            _waitingPackage = path;
+            return;
         }
 
         var problems = new List<string>(package.Errors);
@@ -419,6 +437,11 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
             Dialog = null;
         if (changed)
             _ = RefreshAsync();
+        if (_waitingPackage is { } waiting && Dialog is null)
+        {
+            _waitingPackage = null;
+            _ = OpenPackageAsync(waiting);
+        }
     }
 }
 

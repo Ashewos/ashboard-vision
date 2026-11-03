@@ -561,4 +561,8 @@ public static class Texts
     public static string CommunityUninstall => Get();
     /// <summary>Confirmation avant de désinstaller un module.</summary>
     public static string CommunityUninstallConfirm => Get();
+    /// <summary>Boîte d'installation : le paquet a des erreurs, dont aucune ne se lit une fois nettoyée.</summary>
+    public static string DialogInvalidPackage => Get();
+    /// <summary>Boîte de mise à jour : le service refuse sans dire pourquoi.</summary>
+    public static string DialogPreparationFailed => Get();
 }

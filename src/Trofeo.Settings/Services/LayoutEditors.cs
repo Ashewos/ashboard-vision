@@ -10,5 +10,5 @@ public static class LayoutEditors
     public static LayoutEditor From(IEnumerable<ModuleTypeInfo> types) => new(
         types.GroupBy(type => type.TypeId).ToDictionary(
             group => group.Key,
-            group => new ModuleDescriptor(group.First().TypeId, group.First().DisplayName, group.First().MinSize, group.First().Presets, group.First().AcceptsCommands)));
+            group => new ModuleDescriptor(group.First().TypeId, group.First().Label(), group.First().MinSize, group.First().Presets, group.First().AcceptsCommands)));
 }

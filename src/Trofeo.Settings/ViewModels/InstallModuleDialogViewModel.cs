@@ -158,13 +158,19 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
 
     /// <summary>La confirmation est en route.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanConfirm))]
+    [NotifyPropertyChangedFor(nameof(CanConfirm), nameof(CanCancel))]
     private bool _isBusy;
 
     /// <summary>La réponse du service à la confirmation quand elle a été refusée : tel quel. La boîte reste ouverte.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasResultMessage))]
     private string? _resultMessage;
+
+    /// <summary>
+    /// Annuler (et Échap) : pas pendant que le service installe — fermer la boîte ne l'arrêterait pas, et abandonnerait le fichier d'une mise
+    /// à jour en cours d'installation. La fermeture de la fenêtre, elle, reste possible.
+    /// </summary>
+    public bool CanCancel => !IsBusy && !_finished;
 
     public bool HasResultMessage => !string.IsNullOrEmpty(ResultMessage);
 
@@ -186,7 +192,10 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
         Notes = UntrustedText.Block(content.Notes);
         VersionText = VersionLine(content.Version, content.InstalledVersion);
         RawVersion = UntrustedText.Line(content.Version);
-        Problems = [.. content.Problems.Select(UntrustedText.Block).Where(p => p.Length > 0)];
+        // « A des problèmes » vient de ce qui a été reçu, pas de ce qu'il en reste une fois nettoyé : des erreurs qui se réduisent à rien
+        // ne doivent pas faire apparaître le bouton de confirmation.
+        var cleanedProblems = content.Problems.Select(UntrustedText.Block).Where(p => p.Length > 0).ToList();
+        Problems = content.Problems.Count > 0 && cleanedProblems.Count == 0 ? [Texts.DialogInvalidPackage] : cleanedProblems;
 
         Permissions.Clear();
         foreach (var permission in content.Permissions)
@@ -199,7 +208,8 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
     /// <summary>La mise à jour ne s'est pas préparée : le motif du service (ou de la liaison), tel quel, sans bouton de confirmation.</summary>
     internal void Fail(string message)
     {
-        Problems = [UntrustedText.Block(message)];
+        var cleaned = UntrustedText.Block(message);
+        Problems = [cleaned.Length > 0 ? cleaned : Texts.DialogPreparationFailed];
         Permissions.Clear();
         IsPreparing = false;
         NotifyContent();
@@ -265,6 +275,7 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
 
         _finished = true;
         OnPropertyChanged(nameof(CanConfirm));
+        OnPropertyChanged(nameof(CanCancel));
         _closed(this, true);
     }
 
@@ -272,10 +283,11 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
     [RelayCommand]
     public async Task CancelAsync()
     {
-        if (_finished)
+        if (!CanCancel)
             return;
         _finished = true;
         OnPropertyChanged(nameof(CanConfirm));
+        OnPropertyChanged(nameof(CanCancel));
         _closed(this, false);
         if (_abandon is null)
             return;

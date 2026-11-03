@@ -154,21 +154,43 @@ public sealed class FakeServiceLink : IServiceLink
     /// <summary>Si posé, toute demande qui change les modules lève cette erreur (la liaison est coupée, le délai est passé…).</summary>
     public ControlException? ModuleFailure { get; set; }
 
+    /// <summary>Si posé, toute demande qui change les modules attend cette tâche (une installation qui dure).</summary>
+    public Task? ModuleGate { get; set; }
+
+    private async Task<ActionResult> Gated(string call)
+    {
+        ModuleCalls.Add(call);
+        await ModuleGate!;
+        return ModuleFailure is null ? ModuleResult : throw ModuleFailure;
+    }
+
     private Task<ActionResult> Module(string call)
     {
+        if (ModuleGate is not null)
+            return Gated(call);
         ModuleCalls.Add(call);
         return ModuleFailure is null ? Task.FromResult(ModuleResult) : Task.FromException<ActionResult>(ModuleFailure);
     }
 
+    /// <summary>Si posé, la lecture des modules lève cette erreur.</summary>
+    public ControlException? CommunityFailure { get; set; }
+
     public Task<CommunityOverview> GetCommunityAsync()
     {
         ModuleCalls.Add("community");
+        if (CommunityFailure is not null)
+            return Task.FromException<CommunityOverview>(CommunityFailure);
         return Task.FromResult(Community);
     }
+
+    /// <summary>Si posé, rend l'inspection à la place de <see cref="Package"/> (un test la fait attendre).</summary>
+    public Func<string, Task<PackageInfo>>? OnInspect { get; set; }
 
     public Task<PackageInfo> InspectPackageAsync(string path)
     {
         ModuleCalls.Add($"inspect {path}");
+        if (OnInspect is not null)
+            return OnInspect(path);
         return InspectFailure is null ? Task.FromResult(Package) : Task.FromException<PackageInfo>(InspectFailure);
     }
 

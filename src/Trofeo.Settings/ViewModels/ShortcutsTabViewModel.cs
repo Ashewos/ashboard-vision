@@ -123,7 +123,7 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
             if (!_types.TryGetValue(placement.TypeId, out var type) || !type.AcceptsCommands)
                 continue;
             var rank = counts[type.TypeId] = counts.GetValueOrDefault(type.TypeId) + 1;
-            targets.Add(new ShortcutTarget(placement.InstanceId, rank == 1 ? type.DisplayName : $"{type.DisplayName} ({rank})"));
+            targets.Add(new ShortcutTarget(placement.InstanceId, rank == 1 ? type.Label() : $"{type.Label()} ({rank})"));
         }
 
         return targets;

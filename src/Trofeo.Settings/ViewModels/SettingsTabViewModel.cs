@@ -508,7 +508,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
             Placements = [.. imported.Placements.Select(Protect)],
             Shelf = imported.Shelf is null ? null : [.. imported.Shelf.Select(Protect)],
         };
-        var names = keptTypes.Select(id => catalog?.GetValueOrDefault(id)?.DisplayName ?? id).ToList();
+        var names = keptTypes.Select(id => catalog?.GetValueOrDefault(id)?.Label() ?? id).ToList();
         return (protectedLayout, names);
     }
 
@@ -529,7 +529,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
         {
             var type = types[placement.TypeId];
             if (placement.Columns < type.MinSize.Columns || placement.Rows < type.MinSize.Rows)
-                return string.Format(Texts.ShareTooSmall, type.DisplayName, type.MinSize.Columns, type.MinSize.Rows);
+                return string.Format(Texts.ShareTooSmall, type.Label(), type.MinSize.Columns, type.MinSize.Rows);
         }
 
         return null;

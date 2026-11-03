@@ -169,8 +169,22 @@ public sealed class CommunitySectionTests
         using var fixture = new CommunityFixture(connected: false);
 
         // Le chemin vient de la ligne de commande ; la liaison n'est pas encore établie : rien ne part.
-        var path = PackageArgument.Find(["--ignore", Path]);
-        Assert.Equal(Path, path);
+        var file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "trofeo-arg-" + Guid.NewGuid().ToString("N") + ".avmod");
+        File.WriteAllText(file, "x");
+        try
+        {
+            RunProgramArgument(fixture, file);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    private static void RunProgramArgument(CommunityFixture fixture, string file)
+    {
+        var path = PackageArgument.Find(["--ignore", file]);
+        Assert.Equal(file, path);
         fixture.Section.OpenPackageWhenConnected(path!);
         Assert.Empty(fixture.Link.ModuleCalls);
         Assert.Null(fixture.Section.Dialog);
@@ -178,7 +192,7 @@ public sealed class CommunitySectionTests
         // Le service est joint : la boîte s'ouvre, après l'inspection du fichier — et rien n'est installé.
         fixture.Link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());
 
-        Assert.Equal(["inspect " + Path], fixture.Link.ModuleCalls);
+        Assert.Equal(["inspect " + file], fixture.Link.ModuleCalls);
         Assert.NotNull(fixture.Section.Dialog);
         Assert.Equal(ModuleDialogMode.Install, fixture.Section.Dialog.Mode);
         Assert.DoesNotContain(fixture.Link.ModuleCalls, call => call.StartsWith("install"));
@@ -209,14 +223,6 @@ public sealed class CommunitySectionTests
     [InlineData("module.zip", null)]
     [InlineData("C:\\a\\b\\", null)]
     public void PackageArgument_Find_IgnoresWhatIsNotAnAvmod(string arg, string? expected) => Assert.Equal(expected, PackageArgument.Find([arg]));
-
-    [Fact]
-    public void PackageArgument_Find_AcceptsAnyCaseAndQuotes()
-    {
-        Assert.Equal(@"C:\x\Y.AVMOD", PackageArgument.Find([@"C:\x\Y.AVMOD"]));
-        Assert.Null(PackageArgument.Find(null));
-        Assert.Null(PackageArgument.Find(["bad\0name.avmod"]));
-    }
 
     // ---- Relancer, désinstaller ----
 

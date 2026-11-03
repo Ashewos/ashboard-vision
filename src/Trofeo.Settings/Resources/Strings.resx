@@ -1081,4 +1081,12 @@
     <value>Ses cases seront retirées de l'écran.</value>
     <comment>Confirmation avant de désinstaller un module.</comment>
   </data>
+  <data name="DialogInvalidPackage" xml:space="preserve">
+    <value>Ce paquet n'est pas valide.</value>
+    <comment>Boîte d'installation : le paquet a des erreurs, dont aucune ne se lit une fois nettoyée.</comment>
+  </data>
+  <data name="DialogPreparationFailed" xml:space="preserve">
+    <value>La mise à jour n'a pas pu être préparée.</value>
+    <comment>Boîte de mise à jour : le service refuse sans dire pourquoi.</comment>
+  </data>
 </root>
