@@ -27,14 +27,19 @@ public sealed class ControlClient : IAsyncDisposable
     // Installer, désinstaller, relancer un module : copie et empreinte des fichiers, ou arrêt d'un hôte qui a quelques secondes pour finir.
     private static readonly TimeSpan ModuleOperationTimeout = TimeSpan.FromMinutes(2);
 
+    // Préparer la mise à jour d'un module : le service télécharge le paquet (10 minutes au plus de son côté) ; le client attend un peu plus.
+    private static readonly TimeSpan PrepareTimeout = TimeSpan.FromMinutes(11);
+
     /// <summary>
-    /// Le délai d'une requête selon son type : 10 minutes pour installer une mise à jour, 2 minutes pour installer, retirer ou relancer
-    /// un module, 150 s pour une action, 45 s pour vérifier les mises à jour (du logiciel ou des modules) ou régler leur canal, 20 s
-    /// pour un rechargement ou un redémarrage, 10 s sinon.
+    /// Le délai d'une requête selon son type : 10 minutes pour installer une mise à jour du logiciel, 11 pour préparer celle d'un module
+    /// (le service télécharge son paquet), 2 minutes pour installer, retirer ou relancer un module (y compris installer une mise à jour
+    /// préparée : plus rien à télécharger), 150 s pour une action, 45 s pour vérifier les mises à jour (du logiciel ou des modules) ou
+    /// régler leur canal, 20 s pour un rechargement ou un redémarrage, 10 s sinon.
     /// </summary>
     internal static TimeSpan TimeoutFor(string requestType) => requestType switch
     {
         MessageTypes.InstallUpdate => InstallTimeout,
+        MessageTypes.PrepareModuleUpdate => PrepareTimeout,
         MessageTypes.InstallPackage or MessageTypes.InstallModuleUpdate or MessageTypes.SetModulePermissions
             or MessageTypes.UninstallModule or MessageTypes.RelaunchModule or MessageTypes.ReloadDevModule => ModuleOperationTimeout,
         MessageTypes.CheckUpdates or MessageTypes.SetUpdatePreferences or MessageTypes.CheckModuleUpdates => UpdateCheckTimeout,
@@ -196,6 +201,17 @@ public sealed class ControlClient : IAsyncDisposable
     /// <summary>Demande la recherche des mises à jour des modules ; le résultat se lit avec <see cref="GetCommunityAsync"/>.</summary>
     public async Task CheckModuleUpdatesAsync(CancellationToken ct) =>
         await SendAsync(new Request(NextId(), MessageTypes.CheckModuleUpdates), TimeoutFor(MessageTypes.CheckModuleUpdates), ct).ConfigureAwait(false);
+
+    /// <summary>Télécharge, vérifie et lit le paquet de la mise à jour proposée ; le service garde le fichier pour l'installation.</summary>
+    public async Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id, CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.PrepareModuleUpdate) { ModuleId = id }, TimeoutFor(MessageTypes.PrepareModuleUpdate), ct)
+            .ConfigureAwait(false)).Preparation
+        ?? throw Incomplete();
+
+    /// <summary>Abandonne la préparation d'une mise à jour : le service supprime le fichier.</summary>
+    public async Task CancelModuleUpdateAsync(string id, CancellationToken ct) =>
+        await SendAsync(new Request(NextId(), MessageTypes.CancelModuleUpdate) { ModuleId = id }, TimeoutFor(MessageTypes.CancelModuleUpdate), ct)
+            .ConfigureAwait(false);
 
     public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
         SendActionAsync(new Request(NextId(), MessageTypes.InstallModuleUpdate) { ModuleId = id, Granted = granted }, ct);

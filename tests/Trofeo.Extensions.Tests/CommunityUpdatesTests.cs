@@ -1,12 +1,13 @@
 using AshboardVision.Sdk;
+using Trofeo.Control;
 using Trofeo.Distribution;
 using Trofeo.Extensions.Updates;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Extensions.Tests;
 
-// Les mises à jour proposées depuis GitHub, du rythme des vérifications à l'installation : rien n'est installé sans action de l'utilisateur,
-// et ce qui est téléchargé est vérifié par son empreinte, puis par son contenu, avant de passer par l'installation ordinaire.
+// Les mises à jour proposées depuis GitHub : le rythme des vérifications (qui n'interrogent que GitHub), puis, au clic, la préparation (le paquet
+// est téléchargé, vérifié par son empreinte puis par son contenu et gardé) et l'installation de ce fichier-là, sans rien retélécharger.
 [Collection("Hosts")]
 public sealed class CommunityUpdatesTests : IAsyncLifetime
 {
@@ -70,6 +71,45 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
             Github.Package(Repo, Id, version, package, checksum);
             return package;
         }
+
+        public const string OtherId = "alex.autre";
+        public const string OtherRepo = "alex/autre";
+
+        /// <summary>Installe un second module (un autre dépôt), pour les tests qui en préparent deux.</summary>
+        public async Task InstallOtherAsync()
+        {
+            var result = await Rig.Community.InstallAsync(
+                Rig.Package(id: OtherId, version: "1.0.0", repository: OtherRepo, declared: Internet), Internet, CancellationToken.None);
+            Assert.True(result.Ok, result.Message);
+        }
+
+        /// <summary>Publie une version du second module sur son propre dépôt.</summary>
+        public void PublishOther(string version)
+        {
+            var package = File.ReadAllBytes(Rig.Package(id: OtherId, version: version, declared: Internet, repository: OtherRepo));
+            Github.Api(OtherRepo, new FakeRelease("v" + version, Assets: FakeGitHub.ModuleAssets(OtherRepo, OtherId, version, package.Length)));
+            Github.Package(OtherRepo, OtherId, version, package);
+        }
+
+        /// <summary>Le paquet de cette version ne finit jamais d'arriver (son empreinte, elle, est servie).</summary>
+        public void StallPackage(string version)
+        {
+            Github.Route(FakeGitHub.AssetUrl(Repo, "v" + version, $"{Id}-{version}.avmod.sha256"), () => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(new string('a', 64)),
+            });
+            Github.Route(FakeGitHub.AssetUrl(Repo, "v" + version, $"{Id}-{version}.avmod"), () => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new StalledStream(new byte[100])),
+            });
+        }
+
+        /// <summary>Les requêtes de fichiers (paquet ou empreinte), par opposition à celles de l'API des versions.</summary>
+        public int FileRequests => Github.Requests.Count(uri => uri.Host == "github.com");
+
+        /// <summary>Les paquets préparés qui existent sur le disque.</summary>
+        public string[] PreparedFiles() =>
+            Directory.Exists(TempRoot) ? Directory.GetFiles(TempRoot, "*.avmod", SearchOption.AllDirectories) : [];
 
         public int TempEntries => Directory.Exists(TempRoot) ? Directory.GetFileSystemEntries(TempRoot).Length : 0;
 
@@ -164,10 +204,10 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
         Assert.Equal(1, rig.Clock.TimersCreated);
     }
 
-    // --- Ce qui est proposé -------------------------------------------------------------------------------------------------------
+    // --- Ce qui est proposé : une vérification n'interroge que GitHub -------------------------------------------------------------
 
     [WindowsHostFact]
-    public async Task Check_NewVersion_IsOfferedWithItsNotesAndItsNewPermissions_AndNothingIsInstalled()
+    public async Task Check_NewVersion_IsOfferedWithItsVersionAndNotes_WithoutDownloadingAnything()
     {
         var rig = NewRig();
         await rig.InstallAsync("1.0.0", declared: Internet);
@@ -176,24 +216,32 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
         await rig.Updates.CheckNowAsync(CancellationToken.None);
 
         var offer = rig.Updates.OfferFor(Id)!;
-        Assert.Equal("1.1.0", offer.Version);
-        Assert.Equal("Ajoute les capteurs.", offer.Notes);
-        Assert.Equal([ModulePermission.Sensors], offer.NewPermissions);
+        Assert.Equal(("1.1.0", "Ajoute les capteurs."), (offer.Version, offer.Notes));
+        Assert.Equal(0, rig.FileRequests); // ni le paquet ni son empreinte : seulement l'API des versions
+        Assert.Equal(1, rig.Github.ApiRequests);
         Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version); // rien n'est installé tout seul
         Assert.False(Directory.Exists(Path.Combine(rig.Rig.Root, Id, "1.1.0")));
-        Assert.Equal(0, rig.TempEntries); // le paquet téléchargé pour lire son manifeste n'est pas gardé
+        Assert.Equal(0, rig.TempEntries);
     }
 
     [WindowsHostFact]
-    public async Task Check_SamePermissions_NoNewPermission()
+    public async Task Check_OfferedEvenWhenThePackageIsMissingOrBroken()
     {
         var rig = NewRig();
         await rig.InstallAsync();
-        rig.Publish("1.1.0");
+        var junk = "pas un zip"u8.ToArray();
+        rig.Github.Api(Repo, new FakeRelease("v1.1.0", Assets: FakeGitHub.ModuleAssets(Repo, Id, "1.1.0", junk.Length)));
+        // aucun fichier publié, ou un fichier abîmé : la vérification ne le sait pas, et ne le demande pas
 
         await rig.Updates.CheckNowAsync(CancellationToken.None);
+        Assert.Equal("1.1.0", rig.Updates.OfferFor(Id)?.Version);
 
-        Assert.Empty(rig.Updates.OfferFor(Id)!.NewPermissions);
+        rig.Github.Package(Repo, Id, "1.1.0", junk, checksum: new string('0', 64));
+        rig.Clock.Advance(TimeSpan.FromMinutes(5));
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+
+        Assert.Equal("1.1.0", rig.Updates.OfferFor(Id)?.Version);
+        Assert.Equal(0, rig.FileRequests);
     }
 
     [WindowsHostFact]
@@ -209,7 +257,7 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
     }
 
     [WindowsHostFact]
-    public async Task Check_TheScheduledOneProposesWithoutInstalling()
+    public async Task Check_TheScheduledOneProposesWithoutInstallingNorDownloading()
     {
         var rig = NewRig();
         await rig.InstallAsync();
@@ -221,23 +269,22 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
         rig.Clock.AdvanceInSteps(TimeSpan.FromDays(3), TimeSpan.FromDays(1));
         await Task.Delay(200);
         Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version);
+        Assert.Equal(0, rig.FileRequests);
     }
 
     [WindowsHostFact]
-    public async Task Check_SameVersionAgain_IsNotDownloadedAgain()
+    public async Task Check_SameVersionAgain_StillNothingDownloaded()
     {
         var rig = NewRig();
         await rig.InstallAsync();
         rig.Publish("1.1.0");
         await rig.Updates.CheckNowAsync(CancellationToken.None);
-        var downloads = rig.Github.Requests.Count(uri => uri.Host == "github.com");
-        Assert.Equal(2, downloads); // l'empreinte et le paquet
 
         rig.Clock.Advance(TimeSpan.FromMinutes(5));
         await rig.Updates.CheckNowAsync(CancellationToken.None);
 
-        Assert.Equal(downloads, rig.Github.Requests.Count(uri => uri.Host == "github.com"));
         Assert.Equal("1.1.0", rig.Updates.OfferFor(Id)!.Version);
+        Assert.Equal(0, rig.FileRequests);
     }
 
     [WindowsHostFact]
@@ -316,184 +363,401 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
         Assert.Null(rig.Updates.OfferFor(Id));
     }
 
-    // --- Un paquet qui n'est pas celui qu'il prétend être --------------------------------------------------------------------------
-
     [WindowsHostFact]
-    public async Task Check_PackageCarryingAnotherId_NoOffer()
+    public async Task Check_DuringAPreparation_IsNotBlocked()
     {
         var rig = NewRig();
         await rig.InstallAsync();
-        rig.Publish("1.1.0", id: "pirate.demo");
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        rig.StallPackage("1.1.0");
+        var preparing = rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        await TestWait.UntilAsync(() => rig.Github.Requests.Any(uri => uri.AbsolutePath.EndsWith(".avmod", StringComparison.Ordinal)));
 
+        await rig.Updates.CheckNowAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.False(preparing.IsCompleted); // la préparation, elle, attend toujours son fichier
+        rig.Updates.CancelUpdate(Id);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => preparing);
+    }
+
+    // --- La préparation : le paquet se télécharge au clic ----------------------------------------------------------------------
+
+    [WindowsHostFact]
+    public async Task Prepare_ReadsTheVersionTheNotesAndBothPermissionLists_FromTheDownloadedPackage()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync("1.0.0", declared: Internet);
+        rig.Publish("1.1.0", declared: InternetAndSensors, notes: "Ajoute les capteurs.");
         await rig.Updates.CheckNowAsync(CancellationToken.None);
 
-        Assert.Null(rig.Updates.OfferFor(Id));
+        var preparation = await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        Assert.True(preparation.Ok, preparation.Message);
+        Assert.Null(preparation.Message);
+        Assert.Equal(("1.1.0", "Ajoute les capteurs."), (preparation.Version, preparation.Notes));
+        Assert.Equal(InternetAndSensors, preparation.Declared); // tout ce que la nouvelle version déclare
+        Assert.Equal([ModulePermission.Sensors], preparation.NewPermissions); // ce qu'elle déclare en plus de l'installée
+        Assert.Equal(2, rig.FileRequests); // l'empreinte et le paquet, au clic
+        Assert.Single(rig.PreparedFiles());
+        Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version); // préparer n'installe rien
     }
 
     [WindowsHostFact]
-    public async Task Check_PackageNamingAnotherRepository_NoOffer()
+    public async Task Prepare_SamePermissions_NoNewPermission()
     {
         var rig = NewRig();
         await rig.InstallAsync();
-        rig.Publish("1.1.0", repository: "pirate/demo");
-
+        rig.Publish("1.1.0");
         await rig.Updates.CheckNowAsync(CancellationToken.None);
 
-        Assert.Null(rig.Updates.OfferFor(Id));
+        var preparation = await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        Assert.True(preparation.Ok, preparation.Message);
+        Assert.Equal(Internet, preparation.Declared);
+        Assert.Empty(preparation.NewPermissions);
     }
 
     [WindowsHostFact]
-    public async Task Check_PackageWithoutRepository_NoOffer()
+    public async Task Prepare_NoOffer_IsRefused_WithoutAnyRequest()
     {
         var rig = NewRig();
         await rig.InstallAsync();
-        rig.Publish("1.1.0", repository: null);
 
-        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        var preparation = await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        var unknown = await rig.Updates.PrepareAsync("alex.inconnu", CancellationToken.None);
 
-        Assert.Null(rig.Updates.OfferFor(Id));
-    }
-
-    [WindowsHostFact]
-    public async Task Check_PackageWhoseVersionIsNotTheTag_NoOffer()
-    {
-        var rig = NewRig();
-        await rig.InstallAsync();
-        var package = File.ReadAllBytes(rig.Rig.Package(version: "1.0.5", declared: Internet));
-        rig.Github.Api(Repo, new FakeRelease("v1.1.0", Assets: FakeGitHub.ModuleAssets(Repo, Id, "1.1.0", package.Length)));
-        rig.Github.Package(Repo, Id, "1.1.0", package);
-
-        await rig.Updates.CheckNowAsync(CancellationToken.None);
-
-        Assert.Null(rig.Updates.OfferFor(Id));
-    }
-
-    [WindowsHostFact]
-    public async Task Check_WrongChecksum_NoOffer_NothingLeftBehind()
-    {
-        var rig = NewRig();
-        await rig.InstallAsync();
-        rig.Publish("1.1.0", checksum: new string('0', 64));
-
-        await rig.Updates.CheckNowAsync(CancellationToken.None);
-
-        Assert.Null(rig.Updates.OfferFor(Id));
+        Assert.All(new[] { preparation, unknown }, p =>
+        {
+            Assert.False(p.Ok);
+            Assert.Equal(ModuleUpdates.NoUpdateMessage, p.Message);
+            Assert.Null(p.Version);
+            Assert.Empty(p.Declared);
+            Assert.Empty(p.NewPermissions);
+        });
+        Assert.Empty(rig.Github.Requests);
         Assert.Equal(0, rig.TempEntries);
     }
 
-    [WindowsHostFact]
-    public async Task Check_NotAnArchive_NoOffer()
+    public static TheoryData<string> BadPackages =>
+    [
+        "autre-id", "autre-depot", "sans-depot", "autre-version", "mauvaise-empreinte", "pas-une-archive", "telechargement-impossible",
+    ];
+
+    [WindowsHostTheory]
+    [MemberData(nameof(BadPackages))]
+    public async Task Prepare_PackageThatIsNotTheAnnouncedOne_IsRefused_NothingOnDisk_TheOfferStays(string problem)
     {
         var rig = NewRig();
         await rig.InstallAsync();
         var junk = "pas un zip"u8.ToArray();
-        rig.Github.Api(Repo, new FakeRelease("v1.1.0", Assets: FakeGitHub.ModuleAssets(Repo, Id, "1.1.0", junk.Length)));
-        rig.Github.Package(Repo, Id, "1.1.0", junk);
+        switch (problem)
+        {
+            case "autre-id":
+                rig.Publish("1.1.0", id: "pirate.demo");
+                break;
+            case "autre-depot":
+                rig.Publish("1.1.0", repository: "pirate/demo");
+                break;
+            case "sans-depot":
+                rig.Publish("1.1.0", repository: null);
+                break;
+            case "autre-version":
+                var other = File.ReadAllBytes(rig.Rig.Package(version: "1.0.5", declared: Internet));
+                rig.Github.Api(Repo, new FakeRelease("v1.1.0", Assets: FakeGitHub.ModuleAssets(Repo, Id, "1.1.0", other.Length)));
+                rig.Github.Package(Repo, Id, "1.1.0", other);
+                break;
+            case "mauvaise-empreinte":
+                rig.Publish("1.1.0", checksum: new string('0', 64));
+                break;
+            case "pas-une-archive":
+                rig.Github.Api(Repo, new FakeRelease("v1.1.0", Assets: FakeGitHub.ModuleAssets(Repo, Id, "1.1.0", junk.Length)));
+                rig.Github.Package(Repo, Id, "1.1.0", junk);
+                break;
+            default:
+                rig.Github.Api(Repo, new FakeRelease("v1.1.0", Assets: FakeGitHub.ModuleAssets(Repo, Id, "1.1.0")));
+                break; // aucun fichier publié : 404
+        }
 
         await rig.Updates.CheckNowAsync(CancellationToken.None);
+        var preparation = await rig.Updates.PrepareAsync(Id, CancellationToken.None);
 
-        Assert.Null(rig.Updates.OfferFor(Id));
+        Assert.False(preparation.Ok);
+        Assert.False(string.IsNullOrWhiteSpace(preparation.Message));
+        Assert.Null(preparation.Version);
         Assert.Equal(0, rig.TempEntries);
+        Assert.Empty(rig.PreparedFiles());
+        Assert.Equal("1.1.0", rig.Updates.OfferFor(Id)?.Version); // l'offre reste : un nouvel essai est possible
+        Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version);
+        Assert.Equal(ModuleUpdates.PrepareFirstMessage, (await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None)).Message);
     }
 
     [WindowsHostFact]
-    public async Task Check_PackageThatNeverFinishes_NoOffer_AfterTheDeadline_AndTheNextCheckIsNotBlocked()
-    {
-        var rig = NewRig();
-        await rig.InstallAsync();
-        rig.Updates.DownloadTimeout = TimeSpan.FromMilliseconds(300);
-        rig.Github.Api(Repo, new FakeRelease("v1.1.0", Assets: FakeGitHub.ModuleAssets(Repo, Id, "1.1.0")));
-        rig.Github.Route(FakeGitHub.AssetUrl(Repo, "v1.1.0", "alex.demo-1.1.0.avmod.sha256"), () => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-        {
-            Content = new StringContent(new string('a', 64)),
-        });
-        rig.Github.Route(FakeGitHub.AssetUrl(Repo, "v1.1.0", "alex.demo-1.1.0.avmod"), () => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-        {
-            Content = new StreamContent(new StalledStream(new byte[100])),
-        });
-
-        await rig.Updates.CheckNowAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20));
-        await rig.Updates.CheckNowAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20)); // la porte n'est pas restée fermée
-
-        Assert.Null(rig.Updates.OfferFor(Id));
-        Assert.Equal(0, rig.TempEntries);
-    }
-
-    [WindowsHostFact]
-    public async Task InstallUpdate_PackageThatNeverFinishes_FailsAfterTheDeadline_NothingLeftBehind()
+    public async Task Prepare_PackageThatNeverFinishes_IsRefusedAfterTheDeadline_NothingOnDisk()
     {
         var rig = NewRig();
         await rig.InstallAsync();
         rig.Publish("1.1.0");
         await rig.Updates.CheckNowAsync(CancellationToken.None);
         rig.Updates.DownloadTimeout = TimeSpan.FromMilliseconds(300);
-        rig.Github.Route(FakeGitHub.AssetUrl(Repo, "v1.1.0", "alex.demo-1.1.0.avmod"), () => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        rig.StallPackage("1.1.0");
+
+        var preparation = await rig.Updates.PrepareAsync(Id, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.False(preparation.Ok);
+        Assert.Contains("trop de temps", preparation.Message);
+        Assert.Equal(0, rig.TempEntries);
+        Assert.Equal("1.1.0", rig.Updates.OfferFor(Id)?.Version);
+    }
+
+    [WindowsHostFact]
+    public async Task Prepare_CancelledByTheCaller_StaysACancellation_NothingOnDisk()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        rig.StallPackage("1.1.0");
+        using var cts = new CancellationTokenSource();
+        var preparing = rig.Updates.PrepareAsync(Id, cts.Token);
+        await TestWait.UntilAsync(() => rig.Github.Requests.Any(uri => uri.AbsolutePath.EndsWith(".avmod", StringComparison.Ordinal)));
+
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => preparing.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal(0, rig.TempEntries);
+        Assert.Equal(ModuleUpdates.PrepareFirstMessage, (await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None)).Message);
+    }
+
+    [WindowsHostFact]
+    public async Task Prepare_KeepsThePreparedFileOpen_SoItCannotChangeBeforeTheInstallation()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        var file = Assert.Single(rig.PreparedFiles());
+
+        Assert.Throws<IOException>(() => File.Delete(file));
+        Assert.Throws<IOException>(() => new FileStream(file, FileMode.Open, FileAccess.Write, FileShare.ReadWrite).Dispose());
+        Assert.Throws<IOException>(() => File.Move(file, file + ".autre"));
+        using (var reading = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            Content = new StreamContent(new StalledStream(new byte[100])),
-        });
+            Assert.True(reading.Length > 0); // on peut le lire
+        }
 
-        var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20));
+        rig.Updates.CancelUpdate(Id);
 
-        Assert.False(result.Ok);
-        Assert.Contains("trop de temps", result.Message);
-        Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version);
+        Assert.Empty(rig.PreparedFiles()); // l'abandon libère puis supprime
+    }
+
+    [WindowsHostFact]
+    public async Task Prepare_AgainForTheSameModule_ReplacesThePreviousFile()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        var first = Assert.Single(rig.PreparedFiles());
+
+        var again = await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        Assert.True(again.Ok, again.Message);
+        var second = Assert.Single(rig.PreparedFiles());
+        Assert.NotEqual(first, second);
+        Assert.False(File.Exists(first));
+        Assert.Equal(1, rig.TempEntries);
+    }
+
+    [WindowsHostFact]
+    public async Task Prepare_ForAnotherModule_ReplacesThePreviousFile_EvenAnotherModulesOne()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        await rig.InstallOtherAsync();
+        rig.Publish("1.1.0");
+        rig.PublishOther("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        var first = Assert.Single(rig.PreparedFiles());
+
+        var other = await rig.Updates.PrepareAsync(UpdateRig.OtherId, CancellationToken.None);
+
+        Assert.True(other.Ok, other.Message);
+        Assert.False(File.Exists(first)); // une seule préparation pour tout le service
+        Assert.Contains(UpdateRig.OtherId, Assert.Single(rig.PreparedFiles()));
+        Assert.Equal(ModuleUpdates.PrepareFirstMessage, (await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None)).Message);
+    }
+
+    [WindowsHostFact]
+    public async Task Prepare_WhileAnotherIsDownloading_CancelsIt_AndLeavesOnlyTheNewFile()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        rig.StallPackage("1.1.0");
+        var slow = rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        await TestWait.UntilAsync(() => rig.Github.Requests.Any(uri => uri.AbsolutePath.EndsWith(".avmod", StringComparison.Ordinal)));
+        rig.Publish("1.1.0"); // le fichier est de nouveau disponible
+
+        var fast = await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        Assert.True(fast.Ok, fast.Message);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => slow.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Single(rig.PreparedFiles());
+        Assert.Equal(1, rig.TempEntries);
+    }
+
+    // --- L'abandon et l'expiration ---------------------------------------------------------------------------------------------
+
+    [WindowsHostFact]
+    public async Task CancelUpdate_RemovesThePreparedFile_AndTheInstallationIsRefused()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        var requests = rig.Github.Requests.Count;
+
+        rig.Updates.CancelUpdate(Id);
+        var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None);
+
+        Assert.Equal(0, rig.TempEntries);
+        Assert.Equal(new ActionResult(false, ModuleUpdates.PrepareFirstMessage), result);
+        Assert.Equal(requests, rig.Github.Requests.Count); // et sans rien télécharger
+        Assert.Equal("1.1.0", rig.Updates.OfferFor(Id)?.Version);
+    }
+
+    [WindowsHostFact]
+    public async Task CancelUpdate_WhileDownloading_CancelsThePreparation_DiskEmpty()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        rig.StallPackage("1.1.0");
+        var preparing = rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        await TestWait.UntilAsync(() => rig.Github.Requests.Any(uri => uri.AbsolutePath.EndsWith(".avmod", StringComparison.Ordinal)));
+
+        rig.Updates.CancelUpdate(Id);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => preparing.WaitAsync(TimeSpan.FromSeconds(20)));
         Assert.Equal(0, rig.TempEntries);
     }
 
     [WindowsHostFact]
-    public async Task Check_PackageDownloadFails_NoOffer_NoException()
+    public async Task CancelUpdate_NothingPrepared_OrAnotherModulePrepared_ChangesNothing()
     {
         var rig = NewRig();
         await rig.InstallAsync();
-        rig.Github.Api(Repo, new FakeRelease("v1.1.0", Assets: FakeGitHub.ModuleAssets(Repo, Id, "1.1.0")));
-        // aucun fichier publié : 404
-
+        rig.Updates.CancelUpdate(Id); // rien de préparé
+        rig.Updates.CancelUpdate("alex.inconnu");
+        rig.Publish("1.1.0");
         await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
 
-        Assert.Null(rig.Updates.OfferFor(Id));
+        rig.Updates.CancelUpdate("alex.autre"); // un autre module : ne touche pas à celui-ci
+
+        Assert.Single(rig.PreparedFiles());
+        Assert.True((await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None)).Ok);
     }
 
-    // --- L'installation -----------------------------------------------------------------------------------------------------------
-
     [WindowsHostFact]
-    public async Task InstallUpdate_NoOffer_IsRefused()
+    public async Task Prepared_ExpiresAfterFifteenMinutes_AndTheInstallationIsRefusedWithoutAnyRequest()
     {
         var rig = NewRig();
         await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        var requests = rig.FileRequests;
 
+        rig.Clock.Advance(ModuleUpdates.PreparedLifetime - TimeSpan.FromSeconds(1));
+        Assert.Single(rig.PreparedFiles());
+        rig.Clock.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Empty(rig.PreparedFiles());
+        Assert.Equal(0, rig.TempEntries);
+        Assert.Equal(TimeSpan.FromMinutes(15), ModuleUpdates.PreparedLifetime);
         var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None);
-
-        Assert.Equal(new ActionResult(false, "Aucune mise à jour proposée pour ce module."), result);
-        Assert.DoesNotContain(rig.Github.Requests, uri => uri.Host == "github.com");
+        Assert.Equal(new ActionResult(false, ModuleUpdates.PrepareFirstMessage), result);
+        Assert.Equal(requests, rig.FileRequests); // la vérification planifiée a pu partir au passage : on compte les fichiers
     }
 
     [WindowsHostFact]
-    public async Task InstallUpdate_InstallsTheVerifiedPackage_WithOnlyTheCheckedPermissions()
+    public async Task ExpiryTimer_ExistsOnlyWhileAFileIsPrepared()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        var baseline = rig.Clock.TimersAlive; // le minuteur des vérifications
+        Assert.Equal(1, baseline); // sans fichier préparé : seulement ce minuteur-là
+
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        Assert.Equal(baseline + 1, rig.Clock.TimersAlive);
+
+        rig.Updates.CancelUpdate(Id);
+        Assert.Equal(baseline, rig.Clock.TimersAlive);
+
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        Assert.Equal(baseline + 1, rig.Clock.TimersAlive);
+        Assert.True((await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None)).Ok);
+        Assert.Equal(baseline, rig.Clock.TimersAlive); // installée : le minuteur d'expiration est libéré
+    }
+
+    [WindowsHostFact]
+    public async Task ExpiryTimer_FailedPreparation_LeavesNone()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0", checksum: new string('0', 64));
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        var baseline = rig.Clock.TimersAlive;
+
+        var preparation = await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        Assert.False(preparation.Ok);
+        Assert.Equal(baseline, rig.Clock.TimersAlive);
+    }
+
+    // --- L'installation : le fichier préparé, sans rien retélécharger ------------------------------------------------------------
+
+    [WindowsHostFact]
+    public async Task Install_AfterPreparation_InstallsThePreparedFile_WithoutAnyNetworkRequest_AndOnlyTheCheckedPermissions()
     {
         var rig = NewRig();
         await rig.InstallAsync("1.0.0", declared: Internet);
         rig.Publish("1.1.0", declared: InternetAndSensors);
         await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        var requests = rig.Github.Requests.Count;
 
         var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None); // « capteurs » n'est pas cochée
 
         Assert.True(result.Ok, result.Message);
+        Assert.Equal(requests, rig.Github.Requests.Count); // aucune requête de plus
         var approved = Assert.Single(rig.Rig.Approved.Modules);
         Assert.Equal("1.1.0", approved.Version);
         Assert.Equal(Internet, approved.Granted);
         Assert.True(Directory.Exists(Path.Combine(rig.Rig.Root, Id, "1.1.0")));
         Assert.False(Directory.Exists(Path.Combine(rig.Rig.Root, Id, "1.0.0")));
         Assert.Null(rig.Updates.OfferFor(Id));
-        Assert.Equal(0, rig.TempEntries);
+        Assert.Equal(0, rig.TempEntries); // le fichier préparé est supprimé
     }
 
     [WindowsHostFact]
-    public async Task InstallUpdate_CheckedPermissionsInclude_TheNewOne_WhenTheUserChecksIt()
+    public async Task Install_CheckedPermissionsInclude_TheNewOne_WhenTheUserChecksIt()
     {
         var rig = NewRig();
         await rig.InstallAsync("1.0.0", declared: Internet);
         rig.Publish("1.1.0", declared: InternetAndSensors);
         await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
 
         var result = await rig.Updates.InstallAsync(Id, InternetAndSensors, CancellationToken.None);
 
@@ -502,98 +766,91 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
     }
 
     [WindowsHostFact]
-    public async Task InstallUpdate_PermissionTheNewVersionDoesNotDeclare_IsRefusedAndTheOfferStays()
+    public async Task Install_WithoutPreparation_IsRefused_WithoutAnyRequestOrFile()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        var requests = rig.Github.Requests.Count;
+
+        var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None);
+
+        Assert.Equal(new ActionResult(false, "Prépare d'abord cette mise à jour."), result);
+        Assert.Equal(requests, rig.Github.Requests.Count);
+        Assert.Equal(0, rig.TempEntries);
+        Assert.Equal("1.1.0", rig.Updates.OfferFor(Id)?.Version);
+    }
+
+    [WindowsHostFact]
+    public async Task Install_NoOffer_IsRefused()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+
+        var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None);
+
+        Assert.Equal(new ActionResult(false, ModuleUpdates.NoUpdateMessage), result);
+        Assert.Empty(rig.Github.Requests);
+    }
+
+    [WindowsHostFact]
+    public async Task Install_UnknownModule_IsRefused()
+    {
+        var rig = NewRig();
+
+        var result = await rig.Updates.InstallAsync("alex.inconnu", Internet, CancellationToken.None);
+
+        Assert.False(result.Ok);
+    }
+
+    [WindowsHostFact]
+    public async Task Install_PreparedForAnotherModule_IsRefused_AndTheOtherFileStays()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        await rig.InstallOtherAsync();
+        rig.Publish("1.1.0");
+        rig.PublishOther("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        var result = await rig.Updates.InstallAsync(UpdateRig.OtherId, Internet, CancellationToken.None);
+
+        Assert.Equal(new ActionResult(false, ModuleUpdates.PrepareFirstMessage), result);
+        Assert.Single(rig.PreparedFiles());
+    }
+
+    [WindowsHostFact]
+    public async Task Install_Refused_DeletesThePreparedFile_AndANewTryNeedsANewPreparation()
     {
         var rig = NewRig();
         await rig.InstallAsync("1.0.0", declared: Internet);
         rig.Publish("1.1.0", declared: Internet);
         await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
 
-        var result = await rig.Updates.InstallAsync(Id, [ModulePermission.Sensors], CancellationToken.None);
+        var refused = await rig.Updates.InstallAsync(Id, [ModulePermission.Sensors], CancellationToken.None); // une permission que le paquet ne déclare pas
 
-        Assert.False(result.Ok);
+        Assert.False(refused.Ok);
+        Assert.Equal(0, rig.TempEntries);
         Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version);
         Assert.Equal("1.1.0", rig.Updates.OfferFor(Id)?.Version);
-        Assert.Equal(0, rig.TempEntries);
+        Assert.Equal(ModuleUpdates.PrepareFirstMessage, (await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None)).Message);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        Assert.True((await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None)).Ok);
     }
 
     [WindowsHostFact]
-    public async Task InstallUpdate_FileChangedSinceTheCheck_IsRefused_NothingChanges_NothingLeftBehind()
+    public async Task Install_Cancelled_Throws_AndTheFileIsDeleted()
     {
         var rig = NewRig();
         await rig.InstallAsync();
         rig.Publish("1.1.0");
         await rig.Updates.CheckNowAsync(CancellationToken.None);
-        rig.Publish("1.1.0", content: "autre contenu", checksum: new string('a', 64)); // le fichier publié n'a plus la bonne empreinte
-
-        var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None);
-
-        Assert.False(result.Ok);
-        Assert.Contains("empreinte", result.Message);
-        Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version);
-        Assert.False(Directory.Exists(Path.Combine(rig.Rig.Root, Id, "1.1.0")));
-        Assert.Equal(0, rig.TempEntries);
-    }
-
-    [WindowsHostFact]
-    public async Task InstallUpdate_PackageSwappedForAnotherModule_IsRefused()
-    {
-        var rig = NewRig();
-        await rig.InstallAsync();
-        rig.Publish("1.1.0");
-        await rig.Updates.CheckNowAsync(CancellationToken.None);
-        // Le fichier et son empreinte sont cohérents, mais c'est le paquet d'un autre module.
-        rig.Publish("1.1.0", id: "pirate.demo");
-
-        var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None);
-
-        Assert.False(result.Ok);
-        Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version);
-        Assert.Null(rig.Rig.Community.Entries.FirstOrDefault(e => e.Id == "pirate.demo"));
-        Assert.Equal(0, rig.TempEntries);
-    }
-
-    [WindowsHostFact]
-    public async Task InstallUpdate_PackageSwappedForAnotherRepository_IsRefused()
-    {
-        var rig = NewRig();
-        await rig.InstallAsync();
-        rig.Publish("1.1.0");
-        await rig.Updates.CheckNowAsync(CancellationToken.None);
-        rig.Publish("1.1.0", repository: "pirate/demo");
-
-        var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None);
-
-        Assert.False(result.Ok);
-        Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version);
-        Assert.Equal(0, rig.TempEntries);
-    }
-
-    [WindowsHostFact]
-    public async Task InstallUpdate_DownloadFails_Refused_NothingLeftBehind()
-    {
-        var rig = NewRig();
-        await rig.InstallAsync();
-        rig.Publish("1.1.0");
-        await rig.Updates.CheckNowAsync(CancellationToken.None);
-        rig.Github.Route(FakeGitHub.AssetUrl(Repo, "v1.1.0", "alex.demo-1.1.0.avmod"), () => throw new HttpRequestException("Connexion coupée."));
-
-        var result = await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None);
-
-        Assert.False(result.Ok);
-        Assert.Equal("1.0.0", Assert.Single(rig.Rig.Approved.Modules).Version);
-        Assert.Equal(0, rig.TempEntries);
-    }
-
-    [WindowsHostFact]
-    public async Task InstallUpdate_Cancelled_Throws_NothingLeftBehind()
-    {
-        var rig = NewRig();
-        await rig.InstallAsync();
-        rig.Publish("1.1.0");
-        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rig.Updates.InstallAsync(Id, Internet, cts.Token));
 
@@ -602,13 +859,120 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
     }
 
     [WindowsHostFact]
-    public async Task InstallUpdate_UnknownModule_IsRefused()
+    public async Task PreparedFile_Disappears_WhenTheModuleIsUninstalled()
     {
         var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
 
-        var result = await rig.Updates.InstallAsync("alex.inconnu", Internet, CancellationToken.None);
+        await rig.Rig.Community.UninstallAsync(Id);
 
-        Assert.False(result.Ok);
+        Assert.Equal(0, rig.TempEntries);
+        Assert.Equal(ModuleUpdates.NoUpdateMessage, (await rig.Updates.InstallAsync(Id, Internet, CancellationToken.None)).Message);
+    }
+
+    [WindowsHostFact]
+    public async Task PreparedFile_Disappears_WhenTheSameOrANewerVersionGetsInstalledByOtherMeans()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        var package = rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        var avmod = Path.Combine(rig.Rig.NewFolder(), "alex.demo-1.1.0.avmod");
+        await File.WriteAllBytesAsync(avmod, package);
+
+        var result = await rig.Rig.Community.InstallAsync(avmod, Internet, CancellationToken.None);
+
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal(0, rig.TempEntries);
+    }
+
+    [WindowsHostFact]
+    public async Task PreparedFile_StaysWhenAnotherModuleChanges()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        await rig.InstallOtherAsync(); // un autre module arrive : Changed est levé, la préparation reste
+
+        Assert.Single(rig.PreparedFiles());
+    }
+
+    [WindowsHostFact]
+    public async Task Dispose_CancelsAndDeletesEverything()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        rig.Updates.Dispose();
+
+        Assert.Equal(0, rig.TempEntries);
+        Assert.Equal(0, rig.Clock.TimersAlive);
+    }
+
+    [WindowsHostFact]
+    public async Task Dispose_WhileDownloading_CancelsThePreparation_DiskEmpty()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        rig.StallPackage("1.1.0");
+        var preparing = rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        await TestWait.UntilAsync(() => rig.Github.Requests.Any(uri => uri.AbsolutePath.EndsWith(".avmod", StringComparison.Ordinal)));
+
+        rig.Updates.Dispose();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => preparing.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal(0, rig.TempEntries);
+    }
+
+    // --- Dossiers laissés par un service tué en plein téléchargement --------------------------------------------------------------
+
+    [WindowsHostFact]
+    public async Task Orphans_AreRemovedAtTheFirstPreparation_AndNeverBefore()
+    {
+        var rig = NewRig();
+        var orphan = Path.Combine(rig.TempRoot, "abandonne");
+        Directory.CreateDirectory(orphan);
+        File.WriteAllText(Path.Combine(orphan, "alex.demo-1.0.9.avmod.part"), "reste");
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        rig.Clock.AdvanceInSteps(TimeSpan.FromDays(2), TimeSpan.FromDays(1));
+        Assert.True(Directory.Exists(orphan)); // ni au démarrage ni à une vérification
+
+        var preparation = await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        Assert.True(preparation.Ok, preparation.Message);
+        Assert.False(Directory.Exists(orphan));
+        Assert.Equal(1, rig.TempEntries); // seulement la préparation en cours
+    }
+
+    [WindowsHostFact]
+    public async Task Orphans_AreCleanedOnlyOncePerProcess()
+    {
+        var rig = NewRig();
+        await rig.InstallAsync();
+        rig.Publish("1.1.0");
+        await rig.Updates.CheckNowAsync(CancellationToken.None);
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+        var late = Path.Combine(rig.TempRoot, "tardif");
+        Directory.CreateDirectory(late); // n'importe quoi qui arrive ensuite n'est pas pris pour un orphelin
+
+        await rig.Updates.PrepareAsync(Id, CancellationToken.None);
+
+        Assert.True(Directory.Exists(late));
     }
 
     // --- Par CommunityModules --------------------------------------------------------------------------------------------------
@@ -623,10 +987,13 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
             Assert.True(result.Ok, result.Message);
 
             await rig.Community.CheckUpdatesAsync(CancellationToken.None);
+            var preparation = await rig.Community.PrepareUpdateAsync(Id, CancellationToken.None);
+            rig.Community.CancelUpdate(Id);
             var install = await rig.Community.InstallUpdateAsync(Id, Internet, CancellationToken.None);
 
             Assert.Null(rig.Community.UpdateFor(Id));
-            Assert.Equal(new ActionResult(false, "Aucune mise à jour proposée pour ce module."), install);
+            Assert.Equal(new ModuleUpdatePreparation(false, ModuleUpdates.NoUpdateMessage, null, null, [], []), preparation);
+            Assert.Equal(new ActionResult(false, ModuleUpdates.NoUpdateMessage), install);
         }
         finally
         {
@@ -635,7 +1002,7 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
     }
 
     [WindowsHostFact]
-    public async Task Community_WithHttpClient_ChecksOffersAndInstalls()
+    public async Task Community_WithHttpClient_ChecksPreparesAndInstalls()
     {
         var github = new FakeGitHub();
         var rig = new CommunityRig(updateHttp: github.Client());
@@ -648,11 +1015,17 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
 
             await rig.Community.CheckUpdatesAsync(CancellationToken.None);
             var offer = rig.Community.UpdateFor(Id)!;
+            Assert.Equal(("1.1.0", "Notes."), (offer.Version, offer.Notes));
+            Assert.DoesNotContain(github.Requests, uri => uri.Host == "github.com"); // pas de paquet avant le clic
+
+            var preparation = await rig.Community.PrepareUpdateAsync(Id, CancellationToken.None);
+            var requests = github.Requests.Count;
             var result = await rig.Community.InstallUpdateAsync(Id, Internet, CancellationToken.None);
 
-            Assert.Equal(("1.1.0", "Notes."), (offer.Version, offer.Notes));
-            Assert.Equal([ModulePermission.Sensors], offer.NewPermissions);
+            Assert.True(preparation.Ok, preparation.Message);
+            Assert.Equal([ModulePermission.Sensors], preparation.NewPermissions);
             Assert.True(result.Ok, result.Message);
+            Assert.Equal(requests, github.Requests.Count);
             Assert.Equal("1.1.0", Assert.Single(rig.Approved.Modules).Version);
             Assert.Null(rig.Community.UpdateFor(Id));
         }

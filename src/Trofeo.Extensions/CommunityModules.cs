@@ -1079,6 +1079,14 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
     public Task CheckUpdatesAsync(CancellationToken ct) => _updates?.CheckNowAsync(ct) ?? Task.CompletedTask;
 
     /// <inheritdoc />
+    public Task<ModuleUpdatePreparation> PrepareUpdateAsync(string id, CancellationToken ct) =>
+        _updates?.PrepareAsync(id, ct)
+        ?? Task.FromResult(new ModuleUpdatePreparation(false, ModuleUpdates.NoUpdateMessage, null, null, [], []));
+
+    /// <inheritdoc />
+    public void CancelUpdate(string id) => _updates?.CancelUpdate(id);
+
+    /// <inheritdoc />
     public Task<ActionResult> InstallUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
         _updates?.InstallAsync(id, granted, ct) ?? Task.FromResult(new ActionResult(false, ModuleUpdates.NoUpdateMessage));
 

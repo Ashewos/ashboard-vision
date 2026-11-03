@@ -118,24 +118,21 @@ public sealed partial class ServiceControlHandlerTests
 
         Assert.Null(module.UpdateVersion);
         Assert.Null(module.UpdateNotes);
-        Assert.Empty(module.UpdateNewPermissions);
     }
 
     [Fact]
-    public void GetCommunity_UpdateOffered_FillsTheVersionTheNotesAndTheNewPermissions()
+    public void GetCommunity_UpdateOffered_FillsTheVersionAndTheNotes()
     {
         using var rig = new Rig();
         rig.Community.Entries = [Entry("alex.demo"), Entry("alex.autre")];
-        rig.Community.Offers["alex.demo"] = new ModuleUpdateOffer("1.3.0", "Ajoute une caméra.", [ModulePermission.Sensors, ModulePermission.NowPlaying]);
+        rig.Community.Offers["alex.demo"] = new ModuleUpdateOffer("1.3.0", "Ajoute une caméra.");
 
         var modules = rig.Handler.GetCommunity().Modules;
 
         var offered = modules.Single(m => m.Id == "alex.demo");
         Assert.Equal(("1.3.0", "Ajoute une caméra."), (offered.UpdateVersion, offered.UpdateNotes));
-        Assert.Equal([ModulePermission.Sensors, ModulePermission.NowPlaying], offered.UpdateNewPermissions);
         var other = modules.Single(m => m.Id == "alex.autre"); // l'offre d'un module n'est pas celle d'un autre
         Assert.Null(other.UpdateVersion);
-        Assert.Empty(other.UpdateNewPermissions);
     }
 
     [Fact]
@@ -144,7 +141,7 @@ public sealed partial class ServiceControlHandlerTests
         // Le service ne décide pas qui a des mises à jour : il montre ce que ICommunityModules propose.
         using var rig = new Rig();
         rig.Community.Entries = [Entry("alex.dev", dev: true, folder: @"C:\dev\mon-module")];
-        rig.Community.Offers["alex.dev"] = new ModuleUpdateOffer("2.0.0", "", []);
+        rig.Community.Offers["alex.dev"] = new ModuleUpdateOffer("2.0.0", "");
 
         Assert.Equal("2.0.0", Assert.Single(rig.Handler.GetCommunity().Modules).UpdateVersion);
     }
@@ -268,6 +265,55 @@ public sealed partial class ServiceControlHandlerTests
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => check);
+    }
+
+    [Fact]
+    public async Task PrepareModuleUpdate_DelegatesAndReturnsWhatTheCommunityReadInThePackage()
+    {
+        using var rig = new Rig();
+        var expected = new ModuleUpdatePreparation(
+            true, null, "1.3.0", "Ajoute une caméra.", [ModulePermission.Internet, ModulePermission.Sensors], [ModulePermission.Sensors]);
+        rig.Community.Preparation = expected;
+
+        var preparation = await rig.Handler.PrepareModuleUpdateAsync("alex.demo", CancellationToken.None);
+
+        Assert.Equal(expected, preparation);
+        Assert.Equal(["prepareUpdate alex.demo"], rig.Community.Calls);
+    }
+
+    [Fact]
+    public async Task PrepareModuleUpdate_Refused_ReturnsTheRefusal()
+    {
+        using var rig = new Rig();
+        rig.Community.Preparation = new ModuleUpdatePreparation(false, "L'empreinte du fichier téléchargé ne correspond pas.", null, null, [], []);
+
+        var preparation = await rig.Handler.PrepareModuleUpdateAsync("alex.demo", CancellationToken.None);
+
+        Assert.False(preparation.Ok);
+        Assert.Equal("L'empreinte du fichier téléchargé ne correspond pas.", preparation.Message);
+    }
+
+    [Fact]
+    public async Task PrepareModuleUpdate_CancelledByTheCaller_IsPassedOn()
+    {
+        using var rig = new Rig();
+        using var cts = new CancellationTokenSource();
+        rig.Community.PrepareGate = new TaskCompletionSource();
+
+        var preparing = rig.Handler.PrepareModuleUpdateAsync("alex.demo", cts.Token);
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => preparing);
+    }
+
+    [Fact]
+    public void CancelModuleUpdate_AsksTheCommunityToDropThePreparedFile()
+    {
+        using var rig = new Rig();
+
+        rig.Handler.CancelModuleUpdate("alex.demo");
+
+        Assert.Equal(["cancelUpdate alex.demo"], rig.Community.Calls);
     }
 
     [Fact]

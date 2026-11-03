@@ -260,6 +260,14 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
                 case MessageTypes.CheckModuleUpdates:
                     await _handler.CheckModuleUpdatesAsync(ct).ConfigureAwait(false);
                     return new Response(request.Id, request.Type);
+                case MessageTypes.PrepareModuleUpdate:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Preparation = await _handler.PrepareModuleUpdateAsync(Required(request.ModuleId, "moduleId"), ct).ConfigureAwait(false),
+                    };
+                case MessageTypes.CancelModuleUpdate:
+                    _handler.CancelModuleUpdate(Required(request.ModuleId, "moduleId"));
+                    return new Response(request.Id, request.Type);
                 case MessageTypes.InstallModuleUpdate:
                     return new Response(request.Id, request.Type)
                     {

@@ -138,8 +138,10 @@ public sealed class ModuleUpdateChecker(UpdateChecker checker, TimeProvider time
 
             return releases;
         }
-        catch (UpdateException ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException && !(ex is OperationCanceledException && ct.IsCancellationRequested))
         {
+            // UpdateException (réseau, limite, réponse illisible) comme toute exception inattendue d'un lecteur : ce dépôt devient « inconnu »,
+            // les autres continuent. Seule une annulation demandée par l'appelant traverse.
             Trace.TraceInformation($"Mises à jour des modules : « {repository} » n'a pas répondu comme prévu : {ex.Message}");
             lock (_gate)
             {

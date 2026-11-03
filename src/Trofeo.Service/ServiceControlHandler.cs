@@ -294,7 +294,7 @@ public sealed class ServiceControlHandler(
         return new CommunityOverview(modules, store.ModulesRoot, store.DeveloperMode, store.DevFolders, store.Tampered);
     }
 
-    // La mise à jour proposée (version, notes, permissions nouvelles) est celle que GitHub a annoncée et que le service a vérifiée.
+    // La mise à jour proposée (version, notes) est celle que GitHub a annoncée ; ses permissions ne se lisent qu'à la préparation (clic sur « Mettre à jour »).
     private CommunityModuleInfo ToModuleInfo(CommunityEntry entry)
     {
         var manifest = entry.Manifest;
@@ -303,7 +303,7 @@ public sealed class ServiceControlHandler(
             entry.Id, manifest?.Name ?? entry.Id, manifest?.Author ?? "", manifest?.Description ?? "",
             manifest?.Version ?? entry.Approval?.Version, Enum.Parse<LinkCommunityState>(entry.State.ToString()), entry.Message,
             manifest?.Permissions ?? [], community.GrantedTo(entry), entry.FromDevFolder,
-            UpdateVersion: update?.Version, UpdateNotes: update?.Notes, UpdateNewPermissions: update?.NewPermissions ?? []);
+            UpdateVersion: update?.Version, UpdateNotes: update?.Notes);
     }
 
     public PackageInfo InspectPackage(string path)
@@ -338,6 +338,11 @@ public sealed class ServiceControlHandler(
     public Task<ActionResult> ReloadDevModuleAsync(string id, CancellationToken ct) => community.ReloadDevModuleAsync(id);
 
     public Task CheckModuleUpdatesAsync(CancellationToken ct) => community.CheckUpdatesAsync(ct);
+
+    // Le clic sur « Mettre à jour » : le paquet est téléchargé et lu ici, puis gardé pour l'installation (ou abandonné).
+    public Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id, CancellationToken ct) => community.PrepareUpdateAsync(id, ct);
+
+    public void CancelModuleUpdate(string id) => community.CancelUpdate(id);
 
     public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
         community.InstallUpdateAsync(id, granted, ct);

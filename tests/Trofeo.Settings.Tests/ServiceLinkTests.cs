@@ -100,6 +100,14 @@ public class ServiceLinkTests
             return Task.CompletedTask;
         }
 
+        public Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id, CancellationToken ct)
+        {
+            ModuleCalls.Enqueue("prepare " + id);
+            return Task.FromResult(new ModuleUpdatePreparation(true, null, "1.3.0", "Notes.", [ModulePermission.Internet], []));
+        }
+
+        public void CancelModuleUpdate(string id) => ModuleCalls.Enqueue("cancel " + id);
+
         public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
             Task.FromResult(Changing("update " + id));
 
@@ -312,7 +320,14 @@ public class ServiceLinkTests
         Assert.Equal("alex.demo", (await link.InspectPackageAsync("x.avmod")).Id);
         await link.CheckModuleUpdatesAsync();
         Assert.Equal("service", Assert.Single(await link.GetConsumptionAsync()).Id);
+        // Préparer une mise à jour (télécharger, lire) et l'abandonner ne changent encore aucun module : rien à relire.
+        var preparation = await link.PrepareModuleUpdateAsync("alex.demo");
+        await link.CancelModuleUpdateAsync("alex.demo");
+        Assert.True(preparation.Ok);
+        Assert.Equal("1.3.0", preparation.Version);
         Assert.Equal(calls, Volatile.Read(ref handler.TypesCalls));
+        Assert.Contains("prepare alex.demo", handler.ModuleCalls);
+        Assert.Contains("cancel alex.demo", handler.ModuleCalls);
     }
 
     [Fact]
@@ -323,6 +338,8 @@ public class ServiceLinkTests
         await Assert.ThrowsAsync<ControlException>(() => link.InstallPackageAsync("a", []));
         await Assert.ThrowsAsync<ControlException>(() => link.GetCommunityAsync());
         await Assert.ThrowsAsync<ControlException>(() => link.GetConsumptionAsync());
+        await Assert.ThrowsAsync<ControlException>(() => link.PrepareModuleUpdateAsync("alex.demo"));
+        await Assert.ThrowsAsync<ControlException>(() => link.CancelModuleUpdateAsync("alex.demo"));
     }
 
     [Fact]

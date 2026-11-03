@@ -142,7 +142,7 @@ public static partial class ReleaseFeed
                     && GetString(asset, "name") is { Length: > 0 and <= MaxAssetNameLength } name
                     && GetString(asset, "browser_download_url") is { Length: > 0 and <= MaxAssetUrlLength } url)
                 {
-                    var size = asset.TryGetProperty("size", out var value) && value.TryGetInt64(out var bytes) ? bytes : 0;
+                    var size = asset.TryGetProperty("size", out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var bytes) ? bytes : 0;
                     assets.Add(new ReleaseAsset(name, url, size));
                 }
             }
@@ -258,7 +258,7 @@ public static partial class ReleaseFeed
             if (name == setupName)
             {
                 setupUrl = GetString(asset, "browser_download_url");
-                setupSize = asset.TryGetProperty("size", out var size) && size.TryGetInt64(out var bytes) ? bytes : 0;
+                setupSize = asset.TryGetProperty("size", out var size) && size.ValueKind == JsonValueKind.Number && size.TryGetInt64(out var bytes) ? bytes : 0;
             }
             else if (name == checksumName)
             {

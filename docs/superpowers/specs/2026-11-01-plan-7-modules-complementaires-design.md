@@ -172,7 +172,7 @@ Tout ce qui suit est marqué **(choix de Claude)** : Alex peut le revoir.
 
 ### 5.7 Mises à jour des modules
 - Si le manifeste nomme un dépôt GitHub (`propriétaire/dépôt`), le logiciel y cherche les versions comme pour lui-même (code de `Trofeo.Distribution`) : au démarrage du service, puis toutes les 24 heures, tous modules confondus.
-- Une nouvelle version est **proposée, jamais installée en silence** : la fenêtre montre la version, ses notes, et les permissions nouvelles à valider.
+- Une nouvelle version est **proposée, jamais installée en silence** : la fenêtre montre la version et ses notes. Une vérification n'interroge que GitHub. Le paquet n'est téléchargé que lorsque l'utilisateur clique sur « Mettre à jour » : son empreinte est vérifiée, les permissions nouvelles sont lues dans ce fichier et présentées à valider, et c'est ce fichier-là qui est installé (décision d'Alex, 03/11/2026).
 - Le fichier téléchargé est vérifié par son empreinte SHA-256 avant d'être installé.
 
 ### 5.8 Mode développeur

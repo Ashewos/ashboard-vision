@@ -1,30 +1,38 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using AshboardVision.Sdk;
+using Trofeo.Control;
 using Trofeo.Distribution;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Extensions.Updates;
 
-/// <summary>Ce que la fenêtre de réglage montre d'une mise à jour proposée pour un module.</summary>
+/// <summary>Ce que la fenêtre de réglage montre d'une mise à jour proposée pour un module : ce que GitHub en dit, rien de plus.</summary>
 /// <param name="Version">La version proposée.</param>
 /// <param name="Notes">Les notes de la version (nettoyées, bornées).</param>
-/// <param name="NewPermissions">Les permissions que la nouvelle version déclare en plus de celles de la version installée : à valider une par une.</param>
-public sealed record ModuleUpdateOffer(string Version, string Notes, IReadOnlyList<ModulePermission> NewPermissions);
+public sealed record ModuleUpdateOffer(string Version, string Notes);
 
 /// <summary>
 /// Les mises à jour des modules : quand les chercher, ce qu'on en retient, et leur installation à la demande de l'utilisateur.
 /// <para>
 /// <b>Rythme.</b> Une vérification 60 s après qu'un module portant un dépôt (<c>repository</c>) est apparu, puis toutes les 24 h, avec
 /// un seul minuteur qui n'existe que tant qu'il y a un tel module : aucun minuteur et aucune requête sans lui. L'utilisateur peut
-/// aussi lancer une vérification (<see cref="CheckNowAsync"/>).
+/// aussi lancer une vérification (<see cref="CheckNowAsync"/>). <b>Une vérification n'interroge que GitHub</b> : elle ne télécharge aucun
+/// paquet et ne connaît que la version et les notes.
 /// </para>
 /// <para>
-/// <b>Rien ne s'installe tout seul.</b> Une vérification ne fait que proposer. Pour proposer, le paquet est téléchargé (avec son
-/// empreinte, vérifiée) dans un dossier temporaire et son manifeste est lu : c'est le seul moyen de dire quelles permissions sont
-/// nouvelles. Il doit porter l'identifiant et le dépôt du module concerné, et la version de l'étiquette ; sinon rien n'est proposé.
-/// Le paquet n'est pas gardé : l'installation (<see cref="InstallAsync"/>) le télécharge de nouveau, le vérifie de nouveau, puis passe
-/// par <see cref="ICommunityModules.InstallAsync"/> avec les seules permissions que l'utilisateur a cochées. Les fichiers temporaires
-/// sont supprimés dans tous les cas.
+/// <b>Le paquet se télécharge au clic</b> (décision d'Alex, 03/11/2026). Le clic sur « Mettre à jour » est la <see cref="PrepareAsync">préparation</see> :
+/// le service télécharge le paquet, vérifie son empreinte, ouvre le fichier en lecture seule (il ne peut plus changer) et lit son manifeste,
+/// qui doit porter l'identifiant et le dépôt du module concerné et la version annoncée. Il rend ce qu'il faut pour afficher les permissions
+/// nouvelles à valider. La validation (<see cref="InstallAsync"/>) installe <i>ce fichier-là</i>, sans rien retélécharger, par
+/// <see cref="ICommunityModules.InstallAsync"/> et avec les seules permissions que l'utilisateur a cochées. L'abandon
+/// (<see cref="CancelUpdate"/>) supprime le fichier.
+/// </para>
+/// <para>
+/// Un seul fichier est préparé pour tout le service : une nouvelle préparation annule celle en cours et supprime le fichier déjà prêt, même
+/// d'un autre module. Un fichier prêt expire au bout de <see cref="PreparedLifetime"/> (un minuteur, qui n'existe que tant qu'un fichier
+/// est prêt). Il disparaît aussi avec son module, ou quand une version égale ou plus récente est installée, et à l'arrêt. Une
+/// vérification et une préparation ne s'attendent pas.
 /// </para>
 /// </summary>
 public sealed class ModuleUpdates : IDisposable
@@ -35,14 +43,20 @@ public sealed class ModuleUpdates : IDisposable
     /// <summary>L'intervalle des vérifications suivantes.</summary>
     public static readonly TimeSpan CheckInterval = TimeSpan.FromHours(24);
 
+    /// <summary>Le temps pendant lequel un fichier préparé attend la validation de l'utilisateur.</summary>
+    public static readonly TimeSpan PreparedLifetime = TimeSpan.FromMinutes(15);
+
     /// <summary>La réponse quand aucune mise à jour n'est proposée pour le module demandé.</summary>
     public const string NoUpdateMessage = "Aucune mise à jour proposée pour ce module.";
+
+    /// <summary>La réponse d'une installation sans fichier préparé (jamais préparé, abandonné, expiré, remplacé, ou déjà installé).</summary>
+    public const string PrepareFirstMessage = "Prépare d'abord cette mise à jour.";
 
     private const string WrongPackageMessage = "Le paquet téléchargé ne correspond pas à la mise à jour annoncée de ce module : il n'est pas installé.";
 
     /// <summary>
     /// Le temps total laissé au téléchargement d'un paquet (10 minutes) : le silence est déjà borné à 60 s, mais un serveur qui goutte
-    /// à goutte ne doit pas garder la porte des vérifications fermée indéfiniment. Réglable pour les tests.
+    /// à goutte ne doit pas retenir la préparation indéfiniment. Réglable pour les tests.
     /// </summary>
     internal TimeSpan DownloadTimeout { get; set; } = TimeSpan.FromMinutes(10);
 
@@ -57,10 +71,72 @@ public sealed class ModuleUpdates : IDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private Dictionary<string, Held> _offers = new(StringComparer.Ordinal);
     private ITimer? _timer;
+    private Slot? _slot;
+    private ITimer? _expiry;
+    private int _orphansCleared;
     private bool _disposed;
 
-    /// <summary>Une proposition : ce que GitHub a annoncé et ce que la fenêtre en voit.</summary>
+    /// <summary>Une proposition : ce que GitHub a annoncé (avec les adresses du paquet) et ce que la fenêtre en voit.</summary>
     private sealed record Held(ModuleUpdate Update, ModuleUpdateOffer Offer);
+
+    /// <summary>
+    /// La préparation en cours ou prête (une seule pour tout le service) : son dossier temporaire, son fichier gardé ouvert, et de quoi
+    /// l'annuler. <see cref="Ready"/> ne change que sous le verrou du moteur, tant que la préparation est la courante.
+    /// </summary>
+    private sealed class Slot(string id, string folder, ModuleUpdate update, CancellationTokenSource cts) : IDisposable
+    {
+        private int _disposed;
+
+        public string Id { get; } = id;
+
+        public ModuleUpdate Update { get; } = update;
+
+        public CancellationTokenSource Cts { get; } = cts;
+
+        public string? File { get; set; }
+
+        public FileStream? Lock { get; set; }
+
+        public volatile bool Ready;
+
+        /// <summary>Annule le téléchargement s'il court encore (son propriétaire nettoie alors lui-même).</summary>
+        public void Abandon()
+        {
+            try
+            {
+                Cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // déjà libérée
+            }
+        }
+
+        /// <summary>Libère le fichier et supprime le dossier. À faire par le propriétaire d'une préparation inachevée, ou par qui retire une préparation prête.</summary>
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            Lock?.Dispose();
+            try
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                // déjà parti
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Trace.TraceWarning($"Mises à jour des modules : {folder} n'a pas pu être supprimé : {ex.Message}");
+            }
+
+            Cts.Dispose();
+        }
+    }
 
     /// <param name="community">Les modules (leur liste, l'inspection d'un paquet, l'installation) ; ses changements sont suivis.</param>
     /// <param name="checker">Cherche les versions sur GitHub.</param>
@@ -89,8 +165,9 @@ public sealed class ModuleUpdates : IDisposable
     }
 
     /// <summary>
-    /// Cherche les mises à jour maintenant. Attend son tour si une vérification est en cours. Ne lève jamais pour un échec réseau ou
-    /// une réponse douteuse : il n'y a simplement rien de nouveau (et ce qui était proposé le reste si GitHub n'a pas répondu).
+    /// Cherche les mises à jour maintenant, auprès de GitHub seulement. Attend son tour si une vérification est en cours (jamais une
+    /// préparation). Ne lève jamais pour un échec réseau ou une réponse douteuse : il n'y a simplement rien de nouveau (et ce qui était
+    /// proposé le reste si GitHub n'a pas répondu).
     /// </summary>
     public async Task CheckNowAsync(CancellationToken ct)
     {
@@ -109,28 +186,9 @@ public sealed class ModuleUpdates : IDisposable
             var next = new Dictionary<string, Held>(StringComparer.Ordinal);
             foreach (var (id, update) in check.Found)
             {
-                if (!sources.TryGetValue(id, out var source))
+                if (sources.ContainsKey(id))
                 {
-                    continue;
-                }
-
-                Held? known;
-                lock (_gate)
-                {
-                    _offers.TryGetValue(id, out known);
-                }
-
-                if (known is not null && known.Update.Version == update.Version && known.Update.Package == update.Package
-                    && known.Update.Sha256 == update.Sha256)
-                {
-                    // La même version, déjà lue : pas de nouveau téléchargement (seules les notes ont pu être retouchées).
-                    next[id] = known with { Update = update, Offer = known.Offer with { Notes = update.Notes } };
-                    continue;
-                }
-
-                if (await BuildOfferAsync(entries.First(e => e.Id == id), source, update, ct).ConfigureAwait(false) is { } offer)
-                {
-                    next[id] = new Held(update, offer);
+                    next[id] = new Held(update, new ModuleUpdateOffer(update.Version, update.Notes));
                 }
             }
 
@@ -143,51 +201,185 @@ public sealed class ModuleUpdates : IDisposable
     }
 
     /// <summary>
-    /// Installe la mise à jour proposée pour <paramref name="id"/>, avec les seules permissions de <paramref name="granted"/>. Télécharge
-    /// le paquet et vérifie son empreinte, puis qu'il porte bien l'identifiant, le dépôt et la version de la proposition, avant de passer
-    /// par l'installation ordinaire. Un échec se dit dans le résultat, sans rien laisser derrière.
+    /// Prépare la mise à jour proposée pour <paramref name="id"/> (le clic sur « Mettre à jour ») : télécharge le paquet, vérifie son empreinte,
+    /// garde le fichier ouvert et lit son manifeste. Sans offre pour ce module : refus (<see cref="NoUpdateMessage"/>). Un échec (réseau,
+    /// empreinte, paquet qui n'est pas celui qui est annoncé, délai dépassé) se dit dans la réponse, sans exception et sans rien laisser sur
+    /// le disque ; l'offre reste, on peut réessayer. Une annulation (<paramref name="ct"/>, <see cref="CancelUpdate"/>, une préparation
+    /// plus récente, l'arrêt) lève <see cref="OperationCanceledException"/> et supprime tout aussi.
     /// </summary>
-    public async Task<ActionResult> InstallAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct)
+    public async Task<ModuleUpdatePreparation> PrepareAsync(string id, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(id);
-        ArgumentNullException.ThrowIfNull(granted);
         Held? held;
         lock (_gate)
         {
+            if (_disposed)
+            {
+                return Refused(NoUpdateMessage);
+            }
+
             _offers.TryGetValue(id, out held);
         }
 
         var entry = _community.Entries.FirstOrDefault(e => e.Id == id);
         if (held is null || entry is null || ModuleUpdateChecker.UpdateSource.Of(entry) is not { } source)
         {
-            return new ActionResult(false, NoUpdateMessage);
+            return Refused(NoUpdateMessage);
         }
 
         var folder = NewTempFolder(out var problem);
         if (folder is null)
         {
-            return new ActionResult(false, problem!);
+            return Refused(problem!);
+        }
+
+        var slot = new Slot(id, folder, held.Update, CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token));
+        Slot? previous;
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                slot.Dispose();
+                return Refused(NoUpdateMessage);
+            }
+
+            previous = _slot;
+            _slot = slot;
+            StopExpiryLocked();
+        }
+
+        Release(previous); // une seule préparation à la fois : la précédente (même d'un autre module) est annulée et son fichier supprimé
+        try
+        {
+            var token = slot.Cts.Token;
+            var file = Path.Combine(folder, $"{id}-{held.Update.Version}.avmod");
+            var (failure, hash) = await DownloadAsync(held.Update, file, token).ConfigureAwait(false);
+            if (failure is not null)
+            {
+                return Refused(failure);
+            }
+
+            slot.File = file;
+            try
+            {
+                // Ouvert sans partage en écriture ni en suppression, puis vérifié sur ce qu'on tient : ce fichier ne change plus jusqu'à l'installation.
+                slot.Lock = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+                if (!string.Equals(Convert.ToHexString(await SHA256.HashDataAsync(slot.Lock, token).ConfigureAwait(false)), hash, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Refused(WrongPackageMessage);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return Refused($"Le téléchargement a échoué ({ex.Message.TrimEnd('.')}).");
+            }
+
+            if (Inspect(file, source, held.Update) is not { } manifest)
+            {
+                Trace.TraceInformation($"Mises à jour des modules : le paquet de « {id} » {held.Update.Version} n'est pas celui qui est annoncé.");
+                return Refused(WrongPackageMessage);
+            }
+
+            var installed = entry.Manifest?.Permissions ?? entry.Approval?.Granted ?? [];
+            var preparation = new ModuleUpdatePreparation(
+                true, null, held.Update.Version, held.Update.Notes, [.. manifest.Permissions], [.. manifest.Permissions.Where(p => !installed.Contains(p))]);
+            lock (_gate)
+            {
+                token.ThrowIfCancellationRequested();
+                if (_disposed || !ReferenceEquals(_slot, slot))
+                {
+                    throw new OperationCanceledException(token); // remplacée entre-temps
+                }
+
+                slot.Ready = true;
+                _expiry = _time.CreateTimer(_ => Expire(slot), null, PreparedLifetime, Timeout.InfiniteTimeSpan);
+            }
+
+            return preparation;
+        }
+        finally
+        {
+            if (!slot.Ready)
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_slot, slot))
+                    {
+                        _slot = null;
+                    }
+                }
+
+                slot.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Abandonne la préparation de <paramref name="id"/> : annule son téléchargement s'il court, supprime son fichier. Sans effet s'il n'y
+    /// a pas de préparation pour ce module.
+    /// </summary>
+    public void CancelUpdate(string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        Slot? slot = null;
+        lock (_gate)
+        {
+            if (_slot is { } current && current.Id == id)
+            {
+                slot = current;
+                _slot = null;
+                StopExpiryLocked();
+            }
+        }
+
+        Release(slot);
+    }
+
+    /// <summary>
+    /// Installe le fichier préparé pour <paramref name="id"/>, avec les seules permissions de <paramref name="granted"/>, par
+    /// <see cref="ICommunityModules.InstallAsync"/> et sans aucune requête réseau. Sans fichier prêt pour ce module : refus, rien n'est
+    /// téléchargé (<see cref="PrepareFirstMessage"/>, ou <see cref="NoUpdateMessage"/> s'il n'y a même pas d'offre). Le fichier est supprimé
+    /// dans tous les cas : après un échec, un nouvel essai repasse par une préparation. L'offre disparaît après un succès.
+    /// </summary>
+    public async Task<ActionResult> InstallAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        ArgumentNullException.ThrowIfNull(granted);
+        Slot? slot = null;
+        bool offered;
+        lock (_gate)
+        {
+            offered = _offers.ContainsKey(id);
+            if (_slot is { Ready: true } current && current.Id == id)
+            {
+                slot = current;
+                _slot = null; // retirée : ni l'expiration ni un changement de module ne la supprimeront pendant l'installation
+                StopExpiryLocked();
+            }
+        }
+
+        if (slot is null)
+        {
+            return new ActionResult(false, offered ? PrepareFirstMessage : NoUpdateMessage);
         }
 
         try
         {
-            var file = Path.Combine(folder, $"{id}-{held.Update.Version}.avmod");
-            if (await DownloadAsync(held.Update, file, ct).ConfigureAwait(false) is { } failure)
+            var entry = _community.Entries.FirstOrDefault(e => e.Id == id);
+            if (entry is null || ModuleUpdateChecker.UpdateSource.Of(entry) is null)
             {
-                return new ActionResult(false, failure);
+                return new ActionResult(false, NoUpdateMessage);
             }
 
-            if (Inspect(file, source, held.Update) is null)
-            {
-                return new ActionResult(false, WrongPackageMessage);
-            }
-
-            var result = await _community.InstallAsync(file, granted, ct).ConfigureAwait(false);
+            var result = await _community.InstallAsync(slot.File!, granted, ct).ConfigureAwait(false);
             if (result.Ok)
             {
                 lock (_gate)
                 {
-                    _offers.Remove(id);
+                    if (_offers.TryGetValue(id, out var held) && held.Update.Version == slot.Update.Version)
+                    {
+                        _offers.Remove(id);
+                    }
                 }
             }
 
@@ -195,13 +387,14 @@ public sealed class ModuleUpdates : IDisposable
         }
         finally
         {
-            DeleteQuietly(folder);
+            slot.Dispose();
         }
     }
 
-    /// <summary>Arrête le minuteur et ne suit plus les modules. Une vérification en cours est annulée.</summary>
+    /// <summary>Arrête le minuteur, annule ce qui se prépare et supprime le fichier préparé. Une vérification en cours est annulée.</summary>
     public void Dispose()
     {
+        Slot? slot;
         lock (_gate)
         {
             if (_disposed)
@@ -212,10 +405,14 @@ public sealed class ModuleUpdates : IDisposable
             _disposed = true;
             _timer?.Dispose();
             _timer = null;
+            StopExpiryLocked();
+            slot = _slot;
+            _slot = null;
         }
 
         _community.Changed -= OnChanged;
         _lifetime.Cancel();
+        Release(slot);
     }
 
     // --- Suivi des modules ---------------------------------------------------------------------------------------------------------
@@ -239,11 +436,12 @@ public sealed class ModuleUpdates : IDisposable
 
     /// <summary>
     /// Met le minuteur d'accord avec les modules : un seul tant qu'il y en a un qui porte un dépôt, aucun sinon ; et retire les
-    /// propositions qui n'ont plus de sens (module parti, version installée entre-temps).
+    /// propositions et le fichier préparé qui n'ont plus de sens (module parti, version égale ou plus récente installée entre-temps).
     /// </summary>
     private void Evaluate()
     {
         var sources = SourcesOf(_community.Entries);
+        Slot? stale = null;
         lock (_gate)
         {
             if (_disposed)
@@ -263,15 +461,28 @@ public sealed class ModuleUpdates : IDisposable
 
             foreach (var (id, held) in _offers.ToList())
             {
-                if (!sources.TryGetValue(id, out var source)
-                    || !AppVersion.TryParse(held.Update.Version, out var offered)
-                    || offered.CompareTo(source.Installed) <= 0)
+                if (!Outdated(held.Update.Version, id, sources))
                 {
-                    _offers.Remove(id);
+                    continue;
                 }
+
+                _offers.Remove(id);
+            }
+
+            if (_slot is { } slot && Outdated(slot.Update.Version, slot.Id, sources))
+            {
+                stale = slot;
+                _slot = null;
+                StopExpiryLocked();
             }
         }
+
+        Release(stale);
     }
+
+    /// <summary>Vrai si la version proposée n'a plus de sens : le module n'est plus là, ou une version égale ou plus récente est installée.</summary>
+    private static bool Outdated(string offered, string id, Dictionary<string, ModuleUpdateChecker.UpdateSource> sources) =>
+        !sources.TryGetValue(id, out var source) || !AppVersion.TryParse(offered, out var version) || version.CompareTo(source.Installed) <= 0;
 
     private async Task RunScheduledAsync()
     {
@@ -308,63 +519,66 @@ public sealed class ModuleUpdates : IDisposable
         Evaluate(); // une proposition qui ne tient plus (installée entre-temps) est retirée tout de suite
     }
 
-    // --- Lecture d'un paquet -------------------------------------------------------------------------------------------------------
+    // --- La préparation ------------------------------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Télécharge le paquet proposé, vérifie son empreinte et lit son manifeste : la proposition n'existe que s'il porte l'identifiant et le
-    /// dépôt du module, la version annoncée, et qu'il s'installerait. Le paquet n'est pas gardé. <c>null</c> sinon (sans bruit).
-    /// </summary>
-    private async Task<ModuleUpdateOffer?> BuildOfferAsync(
-        CommunityEntry entry, ModuleUpdateChecker.UpdateSource source, ModuleUpdate update, CancellationToken ct)
+    private static ModuleUpdatePreparation Refused(string message) => new(false, message, null, null, [], []);
+
+    /// <summary>La préparation retirée de la place : son téléchargement est annulé, et son fichier supprimé s'il était prêt (sinon c'est son propriétaire qui nettoie).</summary>
+    private static void Release(Slot? slot)
     {
-        var folder = NewTempFolder(out _);
-        if (folder is null)
+        if (slot is null)
         {
-            return null;
+            return;
         }
 
-        try
+        slot.Abandon();
+        if (slot.Ready)
         {
-            var file = Path.Combine(folder, $"{entry.Id}-{update.Version}.avmod");
-            if (await DownloadAsync(update, file, ct).ConfigureAwait(false) is { } failure)
-            {
-                Trace.TraceInformation($"Mises à jour des modules : « {entry.Id} » {update.Version} n'est pas proposée : {failure}");
-                return null;
-            }
-
-            if (Inspect(file, source, update) is not { } manifest)
-            {
-                Trace.TraceInformation($"Mises à jour des modules : le paquet de « {entry.Id} » {update.Version} n'est pas celui qui est annoncé.");
-                return null;
-            }
-
-            var installed = entry.Manifest?.Permissions ?? entry.Approval?.Granted ?? [];
-            return new ModuleUpdateOffer(update.Version, update.Notes, [.. manifest.Permissions.Where(p => !installed.Contains(p))]);
-        }
-        finally
-        {
-            DeleteQuietly(folder);
+            slot.Dispose();
         }
     }
 
-    /// <summary>Télécharge et vérifie (empreinte, taille) ; rend la raison de l'échec en français, ou <c>null</c> si le fichier est là et vérifié.</summary>
-    private async Task<string?> DownloadAsync(ModuleUpdate update, string file, CancellationToken ct)
+    /// <summary>Le fichier prêt a trop attendu : supprimé, sauf s'il a été retiré entre-temps.</summary>
+    private void Expire(Slot slot)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_slot, slot))
+            {
+                return;
+            }
+
+            _slot = null;
+            StopExpiryLocked();
+        }
+
+        slot.Dispose();
+    }
+
+    private void StopExpiryLocked()
+    {
+        _expiry?.Dispose();
+        _expiry = null;
+    }
+
+    /// <summary>Télécharge et vérifie (empreinte, taille) ; rend la raison de l'échec en français, ou l'empreinte vérifiée si le fichier est là.</summary>
+    private async Task<(string? Failure, string? Hash)> DownloadAsync(ModuleUpdate update, string file, CancellationToken ct)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(DownloadTimeout);
         try
         {
-            await VerifiedDownload.DownloadAsync(_http, update.Package, update.Sha256, file, null, deadline.Token, ModuleUpdateChecker.MaxPackageBytes)
-                .ConfigureAwait(false);
-            return null;
+            var hash = await VerifiedDownload.DownloadAsync(
+                _http, update.Package, update.Sha256, file, null, deadline.Token, ModuleUpdateChecker.MaxPackageBytes).ConfigureAwait(false);
+            return (null, hash);
         }
         catch (UpdateException ex)
         {
-            return ex.Message;
+            return (ex.Message, null);
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
         {
-            return "Le téléchargement a pris trop de temps.";
+            return ("Le téléchargement a pris trop de temps.", null);
         }
     }
 
@@ -398,9 +612,17 @@ public sealed class ModuleUpdates : IDisposable
 
     // --- Dossier temporaire --------------------------------------------------------------------------------------------------------
 
-    /// <summary>Un dossier neuf sous <c>tempRoot</c> ; <c>null</c> (et la raison) s'il ne se crée pas.</summary>
+    /// <summary>
+    /// Un dossier neuf sous <c>tempRoot</c> ; <c>null</c> (et la raison) s'il ne se crée pas. À la première demande du processus, ce qu'un
+    /// service tué en plein téléchargement a pu laisser dans <c>tempRoot</c> est supprimé, sans bruit : rien n'est fait au démarrage.
+    /// </summary>
     private string? NewTempFolder(out string? problem)
     {
+        if (Interlocked.Exchange(ref _orphansCleared, 1) == 0)
+        {
+            RemoveOrphans();
+        }
+
         try
         {
             var folder = Path.Combine(_tempRoot, Guid.NewGuid().ToString("N")[..12]);
@@ -415,15 +637,37 @@ public sealed class ModuleUpdates : IDisposable
         }
     }
 
-    private static void DeleteQuietly(string folder)
+    private void RemoveOrphans()
     {
         try
         {
-            Directory.Delete(folder, recursive: true);
+            if (!Directory.Exists(_tempRoot))
+            {
+                return;
+            }
+
+            foreach (var entry in Directory.EnumerateFileSystemEntries(_tempRoot))
+            {
+                try
+                {
+                    if (Directory.Exists(entry))
+                    {
+                        Directory.Delete(entry, recursive: true);
+                    }
+                    else
+                    {
+                        File.Delete(entry);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // un reste qu'on ne peut pas supprimer ne change rien à ce qui suit
+                }
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Trace.TraceWarning($"Mises à jour des modules : {folder} n'a pas pu être supprimé : {ex.Message}");
+            // le dossier n'est pas lisible : la création du dossier suivant le dira
         }
     }
 }

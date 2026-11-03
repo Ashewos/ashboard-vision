@@ -309,6 +309,51 @@ public sealed class ModuleUpdateCheckerTests
     }
 
     [Fact]
+    public async Task Check_RepositoryThatMakesTheReaderThrow_IsUnknown_AndTheOthersAreStillChecked()
+    {
+        // Une exception inattendue (ici celle du gestionnaire HTTP) ne coupe pas la vérification des autres modules.
+        _github.Api(Repo, Release("1.1.0"));
+        _github.ApiRaw("pirate/boom", () => throw new InvalidOperationException("inattendu"));
+
+        var check = await NewChecker().CheckWithStatusAsync([Entry(id: "pirate.boom", repository: "pirate/boom"), Entry()], CancellationToken.None);
+
+        Assert.Equal([Id], check.Found.Keys);
+        Assert.Equal(["pirate.boom"], check.Unknown);
+    }
+
+    [Fact]
+    public async Task Check_RepositoryThatMakesTheReaderThrow_NeverHidesTheCancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        _github.ApiRaw(Repo, () =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => NewChecker().CheckAsync([Entry()], cts.Token));
+    }
+
+    [Theory]
+    [InlineData("\"4096\"")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("1e999")]
+    public async Task Check_AssetSizeOfTheWrongType_OnlyThatModuleGetsNoUpdate(string size)
+    {
+        // Le fichier d'un module dont la taille est mal typée n'est pas proposé ; le module d'un autre dépôt l'est toujours.
+        var package = Id + "-1.1.0.avmod";
+        var badAssets = "[ { \"name\": \"" + package + "\", \"size\": " + size + ", \"browser_download_url\": \"" + FakeGitHub.AssetUrl(Repo, "v1.1.0", package) + "\" },"
+            + " { \"name\": \"" + package + ".sha256\", \"size\": 100, \"browser_download_url\": \"" + FakeGitHub.AssetUrl(Repo, "v1.1.0", package + ".sha256") + "\" } ]";
+        _github.ApiRaw(Repo, () => FakeGitHub.Json("[ { \"tag_name\": \"v1.1.0\", \"draft\": false, \"prerelease\": false, \"assets\": " + badAssets + " } ]"));
+        _github.Api("alex/autre", Release("1.1.0", repo: "alex/autre", id: "alex.autre"));
+
+        var found = await CheckAsync(Entry(), Entry(id: "alex.autre", repository: "alex/autre"));
+
+        Assert.Equal(["alex.autre"], found.Keys);
+    }
+
+    [Fact]
     public async Task Check_SameRepositoryAskedAgainWithinAMinute_ReusesTheAnswer_ThenAsksAgain()
     {
         _github.Api(Repo, Release("1.1.0"));

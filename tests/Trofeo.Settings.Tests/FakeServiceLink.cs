@@ -196,6 +196,21 @@ public sealed class FakeServiceLink : IServiceLink
         return Task.CompletedTask;
     }
 
+    /// <summary>Ce que la préparation d'une mise à jour rend.</summary>
+    public ModuleUpdatePreparation Preparation { get; set; } = new(true, null, "1.3.0", "Notes.", [ModulePermission.Internet], []);
+
+    public Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id)
+    {
+        ModuleCalls.Add($"prepare {id}");
+        return Task.FromResult(Preparation);
+    }
+
+    public Task CancelModuleUpdateAsync(string id)
+    {
+        ModuleCalls.Add($"cancel {id}");
+        return Task.CompletedTask;
+    }
+
     public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted) => Module($"update {id} {Join(granted)}");
 
     public Task<IReadOnlyList<ModuleConsumption>> GetConsumptionAsync()

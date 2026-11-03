@@ -190,6 +190,16 @@ public sealed class ServiceLink : IServiceLink
         return true;
     });
 
+    // Préparer ne change aucun module (le fichier reste chez le service) : pas de relecture des types, contrairement à l'installation.
+    public Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id) =>
+        RequestAsync((client, ct) => client.PrepareModuleUpdateAsync(id, ct));
+
+    public Task CancelModuleUpdateAsync(string id) => RequestAsync(async (client, ct) =>
+    {
+        await client.CancelModuleUpdateAsync(id, ct).ConfigureAwait(false);
+        return true;
+    });
+
     public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted) =>
         ChangeModulesAsync((client, ct) => client.InstallModuleUpdateAsync(id, granted, ct));
 

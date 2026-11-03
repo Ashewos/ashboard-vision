@@ -62,13 +62,25 @@ public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, T
 
 /// <summary>
 /// Un module complémentaire vu par la fenêtre. <paramref name="Message"/> est écrit pour être lu tel quel ; <paramref name="Declared"/>
-/// est ce que le manifeste demande, <paramref name="Granted"/> ce que l'utilisateur a accordé. Les trois dernières valeurs décrivent une
-/// mise à jour trouvée sur GitHub (<c>null</c> et liste vide : aucune).
+/// est ce que le manifeste demande, <paramref name="Granted"/> ce que l'utilisateur a accordé. Les deux dernières valeurs décrivent une
+/// mise à jour trouvée sur GitHub (<c>null</c> : aucune). Les permissions qu'elle apporte ne se connaissent qu'après sa préparation
+/// (<see cref="ModuleUpdatePreparation"/>), qui télécharge le paquet.
 /// </summary>
 public sealed record CommunityModuleInfo(
     string Id, string Name, string Author, string Description, string? Version, LinkCommunityState State, string? Message,
     IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted, bool FromDevFolder,
-    string? UpdateVersion, string? UpdateNotes, IReadOnlyList<ModulePermission> UpdateNewPermissions);
+    string? UpdateVersion, string? UpdateNotes);
+
+/// <summary>
+/// Ce que le service a lu dans le paquet d'une mise à jour qu'il vient de télécharger et de vérifier (clic sur « Mettre à jour »). Si
+/// <paramref name="Ok"/> est faux, <paramref name="Message"/> dit pourquoi (en français, à montrer tel quel) et le reste est vide. Sinon
+/// le fichier est gardé par le service : l'installation (<see cref="IControlHandler.InstallModuleUpdateAsync"/>) installe celui-là, sans
+/// rien retélécharger, et <see cref="IControlHandler.CancelModuleUpdate"/> l'abandonne. <paramref name="Declared"/> est tout ce que la
+/// nouvelle version déclare, <paramref name="NewPermissions"/> ce qu'elle déclare en plus de la version installée.
+/// </summary>
+public sealed record ModuleUpdatePreparation(
+    bool Ok, string? Message, string? Version, string? Notes,
+    IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> NewPermissions);
 
 /// <summary>
 /// Les modules complémentaires et leurs réglages généraux : le dossier des modules, le mode développeur et ses dossiers, et
@@ -167,7 +179,19 @@ public interface IControlHandler
     /// <summary>Cherche les mises à jour des modules complémentaires ; le résultat se lit ensuite avec <see cref="GetCommunity"/>.</summary>
     Task CheckModuleUpdatesAsync(CancellationToken ct);
 
-    /// <summary>Installe la mise à jour proposée pour un module, avec les permissions cochées (les nouvelles comprises).</summary>
+    /// <summary>
+    /// Prépare la mise à jour proposée pour un module : télécharge le paquet, vérifie son empreinte et lit son manifeste. Le fichier est
+    /// gardé jusqu'à l'installation, l'abandon ou son expiration ; une nouvelle préparation (de n'importe quel module) remplace la précédente.
+    /// </summary>
+    Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id, CancellationToken ct);
+
+    /// <summary>Abandonne la préparation en cours ou prête pour ce module (supprime le fichier) ; sans effet s'il n'y en a pas.</summary>
+    void CancelModuleUpdate(string id);
+
+    /// <summary>
+    /// Installe le fichier préparé pour ce module, avec les permissions cochées (les nouvelles comprises), sans rien retélécharger. Sans
+    /// préparation, refuse.
+    /// </summary>
     Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct);
 
     /// <summary>Ce que consomment le service et chaque module.</summary>
@@ -208,6 +232,8 @@ internal static class MessageTypes
     public const string RemoveDevFolder = "removeDevFolder";
     public const string ReloadDevModule = "reloadDevModule";
     public const string CheckModuleUpdates = "checkModuleUpdates";
+    public const string PrepareModuleUpdate = "prepareModuleUpdate";
+    public const string CancelModuleUpdate = "cancelModuleUpdate";
     public const string InstallModuleUpdate = "installModuleUpdate";
     public const string Consumption = "consumption";
     public const string Error = "error";
@@ -246,6 +272,7 @@ internal sealed record Response(int ReplyTo, string Type)
     public CommunityOverview? Community { get; init; }
     public PackageInfo? Package { get; init; }
     public IReadOnlyList<ModuleConsumption>? Consumption { get; init; }
+    public ModuleUpdatePreparation? Preparation { get; init; }
 }
 
 internal static class ControlJson

@@ -104,7 +104,16 @@ public interface IServiceLink : IAsyncDisposable
     /// <summary>Cherche les mises à jour des modules ; le résultat se lit ensuite avec <see cref="GetCommunityAsync"/>.</summary>
     Task CheckModuleUpdatesAsync();
 
-    /// <summary>Installe la mise à jour proposée pour un module, avec les permissions cochées (les nouvelles comprises).</summary>
+    /// <summary>
+    /// Clic sur « Mettre à jour » : le service télécharge le paquet de la mise à jour proposée, vérifie son empreinte et lit son manifeste. La
+    /// réponse dit ce que la nouvelle version déclare et ce qu'elle ajoute (les cases à présenter) ; ne change encore aucun module.
+    /// </summary>
+    Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id);
+
+    /// <summary>Abandonne la mise à jour préparée (le service supprime le fichier).</summary>
+    Task CancelModuleUpdateAsync(string id);
+
+    /// <summary>Installe la mise à jour préparée pour un module, avec les permissions cochées (les nouvelles comprises) et sans rien retélécharger.</summary>
     Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted);
 
     /// <summary>Ce que consomment le service et chaque module.</summary>

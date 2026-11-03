@@ -168,6 +168,50 @@ public sealed class ReleaseFeedRepositoryTests
         Assert.Equal(ReleaseFeed.MaxReleases, ReleaseFeed.ParseRepository(json).Count);
     }
 
+    // Un « size » qui n'est pas un nombre ne doit jamais faire lever autre chose que UpdateException : l'exception d'un seul fichier
+    // couperait la lecture de toute la réponse (et, côté logiciel, celle de ses propres mises à jour).
+    [Theory]
+    [InlineData("\"4096\"")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("[1]")]
+    [InlineData("true")]
+    [InlineData("1e999")]
+    [InlineData("12345678901234567890123")]
+    public void ParseRepository_SizeOfTheWrongTypeOrRange_KeepsTheAssetWithoutASize(string size)
+    {
+        var asset = $$"""{ "name": "a.avmod", "size": {{size}}, "browser_download_url": "https://github.com/a/b/releases/download/v1.0.0/a.avmod" }""";
+        var json = $"[{Release("v1.0.0", assets: $"[{asset}, {Asset("b.avmod", "https://github.com/a/b/releases/download/v1.0.0/b.avmod")}]")}]";
+
+        var assets = ReleaseFeed.ParseRepository(json).Single().Assets;
+
+        Assert.Equal(["a.avmod", "b.avmod"], assets.Select(a => a.Name));
+        Assert.Equal(0, assets[0].Size);
+        Assert.Equal(1234, assets[1].Size);
+    }
+
+    [Theory]
+    [InlineData("\"51500000\"")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("[1]")]
+    [InlineData("true")]
+    [InlineData("1e999")]
+    public void Parse_SetupSizeOfTheWrongType_IsReadAsUnknown_NotAnException(string size)
+    {
+        // Le fil du logiciel lui-même : l'installateur reste trouvé, sa taille est inconnue (il ne sera pas installé : taille nulle).
+        var json = $$"""
+            [ { "tag_name": "v1.1.0", "draft": false, "prerelease": false, "assets": [
+                { "name": "Ashboard-Vision-Setup-1.1.0.exe", "size": {{size}}, "browser_download_url": "https://github.com/Ashewos/ashboard-vision/releases/download/v1.1.0/Ashboard-Vision-Setup-1.1.0.exe" }
+            ] } ]
+            """;
+
+        var release = Assert.Single(ReleaseFeed.Parse(json));
+
+        Assert.Equal(0, release.SetupSize);
+        Assert.Equal("1.1.0", release.Version.ToString());
+    }
+
     [Theory]
     [InlineData("{}")]
     [InlineData("\"texte\"")]

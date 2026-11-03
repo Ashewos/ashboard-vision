@@ -14,7 +14,7 @@ public partial class ControlChannelTests
     private static CommunityModuleInfo SampleModule() => new(
         "alex.demo", "Démo", "Alex", "Un module de démonstration", "1.2.0", LinkCommunityState.NeedsApproval, "À valider dans la fenêtre de réglage",
         Declared: [ModulePermission.Internet, ModulePermission.Sensors], Granted: [ModulePermission.Internet],
-        FromDevFolder: true, UpdateVersion: "1.3.0", UpdateNotes: "Nouveau réglage.", UpdateNewPermissions: [ModulePermission.NowPlaying]);
+        FromDevFolder: true, UpdateVersion: "1.3.0", UpdateNotes: "Nouveau réglage.");
 
     private sealed partial class FakeHandler
     {
@@ -147,6 +147,17 @@ public partial class ControlChannelTests
             return Task.FromResult(ActionToReturn);
         }
 
+        public ModuleUpdatePreparation? PreparationToReturn { get; set; } = new(
+            true, null, "1.3.0", "Nouveau réglage.", [ModulePermission.Internet, ModulePermission.NowPlaying], [ModulePermission.NowPlaying]);
+
+        public Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id, CancellationToken ct)
+        {
+            Record($"prepareModuleUpdate {id}");
+            return Task.FromResult(PreparationToReturn!);
+        }
+
+        public void CancelModuleUpdate(string id) => Record($"cancelModuleUpdate {id}");
+
         public IReadOnlyList<ModuleConsumption> GetConsumption()
         {
             Record("consumption");
@@ -232,7 +243,6 @@ public partial class ControlChannelTests
                 module.UpdateVersion, module.UpdateNotes));
         Assert.Equal(expected.Declared, module.Declared);
         Assert.Equal(expected.Granted, module.Granted);
-        Assert.Equal(expected.UpdateNewPermissions, module.UpdateNewPermissions);
     }
 
     [Fact]
@@ -241,7 +251,7 @@ public partial class ControlChannelTests
         var modules = Enum.GetValues<LinkCommunityState>()
             .Select(state => new CommunityModuleInfo(
                 "alex." + state.ToString().ToLowerInvariant(), "N", "A", "D", Version: null, state, Message: null, [], [], FromDevFolder: false,
-                UpdateVersion: null, UpdateNotes: null, UpdateNewPermissions: []))
+                UpdateVersion: null, UpdateNotes: null))
             .ToList();
         var handler = new FakeHandler { CommunityToReturn = new CommunityOverview(modules, @"C:\M", false, [], false) };
         var (server, client) = await StartAsync(handler);
@@ -253,7 +263,6 @@ public partial class ControlChannelTests
         Assert.Equal(modules.Select(m => m.State), overview.Modules.Select(m => m.State));
         Assert.All(overview.Modules, m => Assert.Null(m.Version));
         Assert.All(overview.Modules, m => Assert.Null(m.Message));
-        Assert.All(overview.Modules, m => Assert.Empty(m.UpdateNewPermissions));
     }
 
     [Fact]
@@ -394,6 +403,65 @@ public partial class ControlChannelTests
     }
 
     [Fact]
+    public async Task PrepareModuleUpdate_RoundTrip_CarriesTheVersionTheNotesAndBothPermissionLists()
+    {
+        var handler = new FakeHandler();
+        var (server, client) = await StartAsync(handler);
+        using var _ = server;
+        await using var __ = client;
+
+        var preparation = await client.PrepareModuleUpdateAsync("alex.demo", CancellationToken.None);
+
+        Assert.True(preparation.Ok);
+        Assert.Equal(("1.3.0", "Nouveau réglage."), (preparation.Version, preparation.Notes));
+        Assert.Equal([ModulePermission.Internet, ModulePermission.NowPlaying], preparation.Declared);
+        Assert.Equal([ModulePermission.NowPlaying], preparation.NewPermissions);
+        Assert.Equal(["prepareModuleUpdate alex.demo"], handler.Calls);
+    }
+
+    [Fact]
+    public async Task PrepareModuleUpdate_Refused_RoundTrips_WithItsMessageAndNoVersion()
+    {
+        var handler = new FakeHandler { PreparationToReturn = new ModuleUpdatePreparation(false, "Aucune mise à jour proposée pour ce module.", null, null, [], []) };
+        var (server, client) = await StartAsync(handler);
+        using var _ = server;
+        await using var __ = client;
+
+        var preparation = await client.PrepareModuleUpdateAsync("alex.demo", CancellationToken.None);
+
+        Assert.False(preparation.Ok);
+        Assert.Equal("Aucune mise à jour proposée pour ce module.", preparation.Message);
+        Assert.Null(preparation.Version);
+        Assert.Empty(preparation.Declared);
+        Assert.Empty(preparation.NewPermissions);
+    }
+
+    [Fact]
+    public async Task PrepareModuleUpdate_EmptyAnswer_IsReportedAsIncomplete_AndTheConnectionStays()
+    {
+        var handler = new FakeHandler { PreparationToReturn = null };
+        var (server, client) = await StartAsync(handler);
+        using var _ = server;
+        await using var __ = client;
+
+        await Assert.ThrowsAsync<ControlException>(() => client.PrepareModuleUpdateAsync("alex.demo", CancellationToken.None));
+        Assert.True((await client.GetStatusAsync(CancellationToken.None)).Emulated);
+    }
+
+    [Fact]
+    public async Task CancelModuleUpdate_RoundTrip()
+    {
+        var handler = new FakeHandler();
+        var (server, client) = await StartAsync(handler);
+        using var _ = server;
+        await using var __ = client;
+
+        await client.CancelModuleUpdateAsync("alex.demo", CancellationToken.None);
+
+        Assert.Equal(["cancelModuleUpdate alex.demo"], handler.Calls);
+    }
+
+    [Fact]
     public async Task Consumption_RoundTrip()
     {
         var handler = new FakeHandler();
@@ -424,6 +492,7 @@ public partial class ControlChannelTests
     public void TimeoutFor_ModuleRequests()
     {
         Assert.Equal(TimeSpan.FromSeconds(45), ControlClient.TimeoutFor(MessageTypes.CheckModuleUpdates));
+        Assert.Equal(TimeSpan.FromMinutes(11), ControlClient.TimeoutFor(MessageTypes.PrepareModuleUpdate)); // au-dessus des 10 min du service
         foreach (var slow in new[]
                  {
                      MessageTypes.InstallPackage, MessageTypes.SetModulePermissions, MessageTypes.UninstallModule, MessageTypes.RelaunchModule,
@@ -436,7 +505,7 @@ public partial class ControlChannelTests
         foreach (var quick in new[]
                  {
                      MessageTypes.Types, MessageTypes.Community, MessageTypes.InspectPackage, MessageTypes.ApproveModule, MessageTypes.SetModulesRoot,
-                     MessageTypes.SetDeveloperMode, MessageTypes.AddDevFolder, MessageTypes.RemoveDevFolder, MessageTypes.Consumption,
+                     MessageTypes.SetDeveloperMode, MessageTypes.AddDevFolder, MessageTypes.RemoveDevFolder, MessageTypes.Consumption, MessageTypes.CancelModuleUpdate,
                  })
         {
             Assert.Equal(TimeSpan.FromSeconds(10), ControlClient.TimeoutFor(quick));
@@ -513,6 +582,8 @@ public partial class ControlChannelTests
     [InlineData("""{"id":1,"type":"approveModule","granted":[]}""", "Paramètre manquant : moduleId.")]
     [InlineData("""{"id":1,"type":"setDeveloperMode"}""", "Paramètre manquant : on.")]
     [InlineData("""{"id":1,"type":"addDevFolder","granted":[]}""", "Paramètre manquant : path.")]
+    [InlineData("""{"id":1,"type":"prepareModuleUpdate"}""", "Paramètre manquant : moduleId.")]
+    [InlineData("""{"id":1,"type":"cancelModuleUpdate"}""", "Paramètre manquant : moduleId.")]
     public async Task Wire_MissingParameter_IsAnErrorResponse(string request, string message)
     {
         var handler = new FakeHandler();

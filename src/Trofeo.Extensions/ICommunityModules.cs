@@ -92,8 +92,18 @@ public interface ICommunityModules
     Task CheckUpdatesAsync(CancellationToken ct);
 
     /// <summary>
-    /// Installe la mise à jour proposée pour ce module, avec les seules permissions cochées : le paquet est téléchargé, vérifié
-    /// (empreinte, identifiant, dépôt), puis installé comme n'importe quel <c>.avmod</c>. Sans proposition, refuse.
+    /// Prépare la mise à jour proposée pour ce module (clic sur « Mettre à jour ») : le paquet est téléchargé, son empreinte vérifiée, son
+    /// manifeste lu (identifiant, dépôt, version), et le fichier gardé jusqu'à <see cref="InstallUpdateAsync"/>, <see cref="CancelUpdate"/> ou
+    /// son expiration. Une seule préparation pour tout le service : une nouvelle remplace la précédente. Un échec se dit dans la réponse.
+    /// </summary>
+    Task<ModuleUpdatePreparation> PrepareUpdateAsync(string id, CancellationToken ct);
+
+    /// <summary>Abandonne la préparation de ce module (téléchargement annulé, fichier supprimé) ; sans effet s'il n'y en a pas.</summary>
+    void CancelUpdate(string id);
+
+    /// <summary>
+    /// Installe le fichier préparé pour ce module, avec les seules permissions cochées, comme n'importe quel <c>.avmod</c> et sans rien
+    /// retélécharger. Sans préparation, refuse.
     /// </summary>
     Task<ActionResult> InstallUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct);
 

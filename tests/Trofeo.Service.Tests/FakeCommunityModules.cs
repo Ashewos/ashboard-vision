@@ -120,6 +120,20 @@ internal sealed class FakeCommunityModules : ICommunityModules
         return CheckGate?.Task.WaitAsync(ct) ?? Task.CompletedTask;
     }
 
+    /// <summary>Ce que la préparation rend.</summary>
+    public ModuleUpdatePreparation Preparation { get; set; } = new(true, null, "1.3.0", "Notes.", [], []);
+
+    /// <summary>Si elle est posée, la préparation attend qu'on la libère (ou qu'on l'annule).</summary>
+    public TaskCompletionSource? PrepareGate { get; set; }
+
+    public Task<ModuleUpdatePreparation> PrepareUpdateAsync(string id, CancellationToken ct)
+    {
+        Record($"prepareUpdate {id}");
+        return PrepareGate is { } gate ? gate.Task.WaitAsync(ct).ContinueWith(_ => Preparation, ct) : Task.FromResult(Preparation);
+    }
+
+    public void CancelUpdate(string id) => Record($"cancelUpdate {id}");
+
     public Task<ActionResult> InstallUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
         Task.FromResult(Record($"installUpdate {id} {Join(granted)}"));
 
