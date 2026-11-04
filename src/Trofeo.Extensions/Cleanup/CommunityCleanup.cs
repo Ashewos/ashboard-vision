@@ -255,7 +255,12 @@ public sealed class CommunityCleanup
                 {
                     gone &= TryDelete(() =>
                     {
-                        entry.Attributes = FileAttributes.Normal;
+                        // Changer les attributs d'un lien changerait ceux de sa cible, hors de cet arbre.
+                        if (!IsRedirecting(() => entry.LinkTarget))
+                        {
+                            entry.Attributes = FileAttributes.Normal;
+                        }
+
                         entry.Delete();
                     }, $"{entry.FullName} n'a pas pu être supprimé");
                 }

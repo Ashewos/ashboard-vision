@@ -521,7 +521,7 @@ public sealed partial class CommunityCleanupTests : IDisposable
     {
         // I2 : un point d'analyse sans cible (dossier synchronisé par OneDrive…) se traite comme un dossier normal.
         Assert.False(CommunityCleanup.IsRedirecting(() => null));
-        Assert.True(CommunityCleanup.IsRedirecting(() => @"D:illeurs"));
+        Assert.True(CommunityCleanup.IsRedirecting(() => @"D:\ailleurs"));
         Assert.True(CommunityCleanup.IsRedirecting(() => throw new IOException("illisible")));
         Assert.True(CommunityCleanup.IsRedirecting(() => throw new UnauthorizedAccessException()));
     }
@@ -551,7 +551,7 @@ public sealed partial class CommunityCleanupTests : IDisposable
     {
         // M3 : un dossier de travail sur un partage réseau n'est pas ouvert, même dans une liste dont le sceau tient ; son conteneur et
         // ses secrets restent alors en place (son identifiant ne peut pas être lu sans toucher au réseau).
-        var inspection = new ListInspection(ListTrust.Verified, null, [], [@"\serveur\partage\module", @"D:\dev\mon-module", "relatif"]);
+        var inspection = new ListInspection(ListTrust.Verified, null, [], [@"\\serveur\partage\module", @"D:\dev\mon-module", "relatif"]);
 
         Assert.Equal([@"D:\dev\mon-module"], CommunityCleanup.UsableDevFolders(inspection));
     }
