@@ -108,7 +108,7 @@ public sealed partial class CommunitySectionTests
     }
 
     [Fact]
-    public async Task Section_IsFree_UntilTheTabIsOpened()
+    public async Task Section_ReadsTheListWhenTheTabOpens_AndWhenTheTypesChange_NotOnEveryState()
     {
         using var fixture = new CommunityFixture();
 

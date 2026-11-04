@@ -109,7 +109,10 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
 
     // ---- La liste ----
 
-    /// <summary>L'onglet s'ouvre : la liste est relue maintenant, puis chaque fois que les types de modules changent.</summary>
+    /// <summary>
+    /// L'onglet Paramètres s'ouvre : la liste est relue maintenant, puis chaque fois que les types de modules changent. (Avant, seul
+    /// <see cref="Watch"/> lit, une fois par connexion, pour le bandeau du mode développeur.)
+    /// </summary>
     public void Activate()
     {
         _active = true;

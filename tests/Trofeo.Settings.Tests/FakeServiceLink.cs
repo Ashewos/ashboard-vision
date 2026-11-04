@@ -278,9 +278,14 @@ public sealed class FakeServiceLink : IServiceLink
     /// <summary>Si posé, la lecture de la consommation lève cette erreur.</summary>
     public ControlException? ConsumptionFailure { get; set; }
 
+    /// <summary>Si posé, rend la lecture de la consommation à la place de <see cref="Consumption"/> (un test la fait attendre).</summary>
+    public Func<Task<IReadOnlyList<ModuleConsumption>>>? OnConsumption { get; set; }
+
     public Task<IReadOnlyList<ModuleConsumption>> GetConsumptionAsync()
     {
         ModuleCalls.Add("consumption");
+        if (OnConsumption is not null)
+            return OnConsumption();
         if (ConsumptionFailure is not null)
             return Task.FromException<IReadOnlyList<ModuleConsumption>>(ConsumptionFailure);
         return Task.FromResult<IReadOnlyList<ModuleConsumption>>([.. Consumption]);

@@ -689,7 +689,7 @@ internal static class Program
         {
             link.Set(LinkState.Connected, welcome, status);
             link.SetTypes(types);
-            link.Consumption.Add(new ModuleConsumption("originaux", "Modules d'origine", false, 0.8, 44L * 1024 * 1024, false));
+            link.Consumption.Add(new ModuleConsumption("originaux", "Modules d'origine (dans le service)", false, 0.8, 44L * 1024 * 1024, false));
             link.Package = CommunityFixture.Package(
                 id: "alex.minecraft", name: "Serveur Minecraft", author: "Alex", version: "1.0.0", description: "Surveille ton serveur Minecraft : joueurs connectés et latence.",
                 declared: [AshboardVision.Sdk.ModulePermission.ThisComputer, AshboardVision.Sdk.ModulePermission.Internet, AshboardVision.Sdk.ModulePermission.Sensors]);

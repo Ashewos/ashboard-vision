@@ -78,6 +78,20 @@ public sealed class CommunityModulesDevFolderTests : IAsyncLifetime
     }
 
     [Fact]
+    public void InspectDevFolder_TamperedList_SaysSo_NotThatTheModeIsOff()
+    {
+        var rig = NewRig();
+        var dev = Folder(rig, "alex.dev", "mon-module");
+        Assert.True(rig.Community.SetDeveloperMode(true).Ok);
+        var sealedList = Path.Combine(Directory.GetParent(rig.Root)!.FullName, "settings", "modules.json");
+        File.WriteAllText(sealedList, File.ReadAllText(sealedList).Replace("\"developerMode\": true", "\"developerMode\": false")); // modifiée hors du logiciel
+
+        var inspection = rig.Community.InspectDevFolder(dev);
+
+        Assert.Equal(["La liste des modules validés a été modifiée hors du logiciel : valide de nouveau tes modules."], inspection.Errors);
+    }
+
+    [Fact]
     public void InspectDevFolder_PathRefusals_AreTheSameAsAddDevFolder()
     {
         var rig = NewRig();

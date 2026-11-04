@@ -119,7 +119,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnSelectedTabChanged(TabViewModel value)
     {
         RefreshBanner();
-        // Les modules complémentaires se relisent quand l'onglet Paramètres s'ouvre (jusque-là, la section ne coûte rien).
+        // Les modules complémentaires se relisent quand l'onglet Paramètres s'ouvre (jusque-là, une seule lecture par connexion, faite par
+        // Watch pour le bandeau du mode développeur : ni consommation ni minuteur).
         if (value is SettingsTabViewModel)
             SettingsTab.Community.Activate();
         UpdateConsumptionVisibility();

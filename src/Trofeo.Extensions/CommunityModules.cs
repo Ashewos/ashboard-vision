@@ -885,6 +885,10 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         return result;
     }
 
+    // La liste scellée a été trouvée altérée : rien n'est validé et le mode développeur est éteint (même phrase que le bandeau de la fenêtre).
+    private const string TamperedStoreMessage =
+        "La liste des modules validés a été modifiée hors du logiciel : valide de nouveau tes modules.";
+
     // Les refus de chemin d'un dossier de travail : les mêmes pour l'examiner (InspectDevFolder) et pour l'ajouter.
     private static ActionResult? CheckDevFolderPath(string path, out string full)
     {
@@ -928,7 +932,12 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             return Refused(CommunityCatalog.ApprovalsUnreadableMessage);
         }
 
-        if (loaded.Tampered || !loaded.Modules.DeveloperMode)
+        if (loaded.Tampered)
+        {
+            return Refused(TamperedStoreMessage);
+        }
+
+        if (!loaded.Modules.DeveloperMode)
         {
             return Refused("Allume d'abord le mode développeur.");
         }

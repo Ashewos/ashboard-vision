@@ -268,6 +268,59 @@ public sealed partial class CommunitySectionTests
     }
 
     [Fact]
+    public async Task Reload_ManifestIdChanged_ReloadsTheNewId_WithoutAskingAnything()
+    {
+        // Le développeur a changé l'identifiant de son manifeste : le service connaît maintenant le module sous le nouveau.
+        using var fixture = WithDeveloperMode(new CommunityFixture(), [DevModule(granted: [ModulePermission.Internet, ModulePermission.Sensors])], DevPath);
+        await fixture.Section.RefreshAsync();
+        fixture.Link.DevFolder = fixture.Link.DevFolder with { Id = "alex.dev-renomme" };
+
+        await fixture.Section.DevFolders.Single().ReloadCommand.ExecuteAsync(null);
+
+        Assert.Null(fixture.Section.Dialog);
+        Assert.Equal(["inspectDev " + DevPath, "reloadDev alex.dev-renomme"], fixture.Link.ModuleCalls.Where(c => c != "community"));
+    }
+
+    [Fact]
+    public async Task AddDevFolder_DoubleClickDuringTheInspection_InspectsOnce_OpensOneDialog()
+    {
+        using var fixture = WithDeveloperMode(new CommunityFixture(), []);
+        fixture.Picker.FolderResult = DevPath;
+        var gate = new TaskCompletionSource<PackageInfo>();
+        fixture.Link.OnInspectDevFolder = _ => gate.Task;
+
+        var first = fixture.Section.AddDevFolderAsync();
+        var second = fixture.Section.AddDevFolderAsync();   // la section est occupée : ce clic ne fait rien
+        await second;
+        gate.SetResult(fixture.Link.DevFolder);
+        await first;
+
+        Assert.Equal(1, fixture.Link.ModuleCalls.Count(c => c == "inspectDev " + DevPath));
+        Assert.Equal(1, fixture.Picker.FolderCalls);
+        Assert.NotNull(fixture.Section.Dialog);
+    }
+
+    [Fact]
+    public async Task Reload_ADialogOpensDuringTheInspection_ThatDialogIsNotReplaced()
+    {
+        using var fixture = WithDeveloperMode(new CommunityFixture(), [DevModule(granted: [ModulePermission.Internet])], DevPath);
+        await fixture.Section.RefreshAsync();
+        var gate = new TaskCompletionSource<PackageInfo>();
+        fixture.Link.OnInspectDevFolder = _ => gate.Task;
+        var reloading = fixture.Section.DevFolders.Single().ReloadCommand.ExecuteAsync(null);
+
+        await fixture.Section.OpenPackageAsync(Path);       // un fichier .avmod ouvre sa boîte pendant ce temps
+        var installDialog = fixture.Section.Dialog;
+        gate.SetResult(fixture.Link.DevFolder);              // le dossier déclare une permission de plus : il voudrait sa boîte aussi
+        await reloading;
+
+        Assert.NotNull(installDialog);
+        Assert.Same(installDialog, fixture.Section.Dialog);
+        Assert.Equal(ModuleDialogMode.Install, fixture.Section.Dialog!.Mode);
+        Assert.DoesNotContain(fixture.Link.ModuleCalls, c => c.StartsWith("reloadDev") || c.StartsWith("addDev"));
+    }
+
+    [Fact]
     public async Task Reload_NewPermission_AsksFirst_ThenAddsTheFolderAndReloads()
     {
         // Le dossier déclare maintenant Internet et Capteurs ; seule Internet est accordée.
@@ -385,6 +438,57 @@ public sealed partial class CommunitySectionTests
         fixture.Time.Advance(TimeSpan.FromMinutes(5));
         await Task.Delay(50, TestContext.Current.CancellationToken);
         Assert.Equal(other, Reads(fixture));
+    }
+
+    [Fact]
+    public async Task Consumption_AnswerArrivingAfterTheTableWasHidden_ChangesNothing()
+    {
+        using var fixture = new CommunityFixture();
+        fixture.Link.Consumption.Add(new ModuleConsumption("originaux", "Modules d'origine", false, 1, 44L * 1024 * 1024, false));
+        var consumption = fixture.Section.Consumption;
+        consumption.SetTabShown(true);
+        Assert.Equal(["Modules d'origine"], consumption.Rows.Select(r => r.Name));
+        var answer = new TaskCompletionSource<IReadOnlyList<ModuleConsumption>>();
+        fixture.Link.OnConsumption = () => answer.Task;
+        await AdvanceUntilAsync(fixture, () => Reads(fixture) == 2);   // la seconde lecture est en route
+        consumption.SetTabShown(false);                                // le tableau est masqué avant sa réponse
+
+        answer.SetResult([new ModuleConsumption("alex.camera", "Caméra", true, 9, 1024 * 1024, true)]);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["Modules d'origine"], consumption.Rows.Select(r => r.Name));
+        Assert.False(consumption.HasFailure);
+
+        // Une erreur qui arrive après le masquage ne s'affiche pas non plus.
+        var late = new TaskCompletionSource<IReadOnlyList<ModuleConsumption>>();
+        fixture.Link.OnConsumption = () => late.Task;
+        consumption.SetTabShown(true);                                 // relue tout de suite : en attente
+        consumption.SetTabShown(false);
+        late.SetException(new ControlException("Le service ne répond pas."));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        Assert.False(consumption.HasFailure);
+        Assert.Equal(["Modules d'origine"], consumption.Rows.Select(r => r.Name));
+    }
+
+    [Fact]
+    public async Task Watch_OneListReadPerConnection_NoConsumption_NoTimer_WhileTheTabIsNotOpen()
+    {
+        using var fixture = new CommunityFixture(connected: false);
+        fixture.Section.Watch();
+        Assert.Empty(fixture.Link.ModuleCalls);                       // pas connecté : rien
+
+        fixture.Link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());
+        fixture.Link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());   // l'état revient chaque seconde
+        fixture.Time.Advance(TimeSpan.FromMinutes(5));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["community"], fixture.Link.ModuleCalls);        // une seule lecture de la liste, aucune de consommation
+        Assert.False(fixture.Section.Consumption.IsPolling);
+
+        fixture.Link.Set(LinkState.ServiceStopped);                   // la liaison revient plus tard : une nouvelle lecture
+        fixture.Link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());
+        Assert.Equal(2, fixture.Link.ModuleCalls.Count(c => c == "community"));
+        Assert.DoesNotContain("consumption", fixture.Link.ModuleCalls);
     }
 
     [Fact]

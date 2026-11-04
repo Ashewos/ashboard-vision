@@ -259,7 +259,8 @@ public sealed partial class CommunitySectionViewModel
             // Rien de nouveau à accorder : on recharge tout de suite.
             if (!package.Declared.Any(p => !module.Granted.Contains(p)))
             {
-                await RunAsync(() => _link.ReloadDevModuleAsync(module.Id)).ConfigureAwait(true);
+                // L'identifiant du manifeste relu : le développeur a pu le changer depuis le dernier examen du service.
+                await RunAsync(() => _link.ReloadDevModuleAsync(package.Id ?? module.Id)).ConfigureAwait(true);
                 return;
             }
         }

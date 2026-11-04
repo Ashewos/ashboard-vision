@@ -1158,7 +1158,7 @@
     <comment>Titre de section, dans Paramètres.</comment>
   </data>
   <data name="ConsumptionHelp" xml:space="preserve">
-    <value>Ce que consomment les modules d'origine (ensemble) et chaque module complémentaire. Relu toutes les 5 secondes tant que cette section est affichée.</value>
+    <value>Le service entier, qui fait tourner les modules d'origine, et chaque module complémentaire. Relu toutes les 5 secondes tant que cette section est affichée.</value>
     <comment>Sous le titre de la consommation.</comment>
   </data>
   <data name="ConsumptionModule" xml:space="preserve">
