@@ -4,7 +4,8 @@
     Fabrique l'installateur d'Ashboard Vision : installer/out/Ashboard-Vision-Setup-<version>.exe et son empreinte .sha256.
 
 .DESCRIPTION
-    1. publie Trofeo.Display, Trofeo.Settings et Trofeo.SensorHelper (Release, win-x64, autonome) dans installer/publish/ ;
+    1. publie Trofeo.Display, Trofeo.Settings, Trofeo.SensorHelper et Trofeo.ModuleHost (l'hôte des modules complémentaires) (Release, win-x64,
+       autonome) dans installer/publish/ ;
     2. y ajoute les mods, les licences et le fichier LICENSE ;
     3. lit l'adresse officielle, la version et l'empreinte de PawnIO (pawnio.json) pour les donner à l'installateur, qui le télécharge
        pendant l'installation (PawnIO n'est jamais embarqué) ;
@@ -71,7 +72,7 @@ function Assert-InnoVersion([string] $isccPath) {
 
 function Publish-Project([string] $project) {
     Step "Publication de $project"
-    # Dossier d'artefacts à part : ni src/*/bin ni src/*/obj ne sont écrits. -o rassemble les trois programmes au même endroit.
+    # Dossier d'artefacts à part : ni src/*/bin ni src/*/obj ne sont écrits. -o rassemble les quatre programmes au même endroit.
     & dotnet publish (Join-Path $repo "src/$project/$project.csproj") `
         -c Release -r win-x64 --self-contained `
         -o $publishDir `
@@ -150,8 +151,8 @@ if (Test-Path -LiteralPath $publishDir) { Remove-Item -LiteralPath $publishDir -
 if (Test-Path -LiteralPath $outDir) { Get-ChildItem -LiteralPath $outDir -Filter 'Ashboard-Vision-Setup-*' | Remove-Item -Force }
 New-Item -ItemType Directory -Force -Path $publishDir, $outDir | Out-Null
 
-foreach ($project in 'Trofeo.Display', 'Trofeo.Settings', 'Trofeo.SensorHelper') { Publish-Project $project }
-foreach ($exe in 'Trofeo.Display.exe', 'Trofeo.Settings.exe', 'Trofeo.SensorHelper.exe') {
+foreach ($project in 'Trofeo.Display', 'Trofeo.Settings', 'Trofeo.SensorHelper', 'Trofeo.ModuleHost') { Publish-Project $project }
+foreach ($exe in 'Trofeo.Display.exe', 'Trofeo.Settings.exe', 'Trofeo.SensorHelper.exe', 'Trofeo.ModuleHost.exe') {
     if (-not (Test-Path -LiteralPath (Join-Path $publishDir $exe))) { throw "$exe manque dans la publication." }
 }
 # Les symboles des bibliothèques natives (SkiaSharp, HarfBuzz) viennent avec leurs paquets : l'utilisateur n'en a pas l'usage.

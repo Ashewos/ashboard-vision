@@ -52,6 +52,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 
+; L'association des fichiers .avmod (voir [Registry]) : Windows doit être prévenu pour la prendre en compte tout de suite.
+ChangesAssociations=yes
+
 ; Windows ferme le service et la fenêtre s'ils tiennent des fichiers ; PrepareToInstall les arrête déjà avant (y compris ceux lancés depuis le dépôt).
 CloseApplications=yes
 RestartApplications=no
@@ -81,8 +84,17 @@ Name: "demarrage"; Description: "Démarrer {#AppName} avec Windows"; GroupDescri
 Name: "pawnio"; Description: "Installer le pilote des températures (PawnIO), connexion Internet requise"; GroupDescription: "Températures :"
 
 [Files]
-; Les trois programmes, les modules, les polices et leurs licences OFL, le mod des quotas, les licences.
+; Les quatre programmes (service, fenêtre, assistant des capteurs, hôte des modules), les modules, les polices et leurs licences OFL, le mod des quotas, les licences.
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Registry]
+; Un double-clic sur un module (.avmod) ouvre la fenêtre de réglage sur sa boîte d'installation (Trofeo.Settings.exe <chemin>) : elle montre
+; ce que le module demande, et rien ne s'installe sans le clic sur « Installer ». Seule cette extension est associée. HKA : HKLM, puisque
+; l'installateur est en administrateur ; les clés sont retirées à la désinstallation.
+Root: HKA; Subkey: "Software\Classes\.avmod"; ValueType: string; ValueName: ""; ValueData: "AshboardVision.Module"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\AshboardVision.Module"; ValueType: string; ValueName: ""; ValueData: "Module {#AppName}"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\AshboardVision.Module\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\Trofeo.Settings.exe,0"
+Root: HKA; Subkey: "Software\Classes\AshboardVision.Module\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Trofeo.Settings.exe"" ""%1"""
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\Trofeo.Settings.exe"
@@ -120,6 +132,7 @@ const
   ServiceExe = 'Trofeo.Display.exe';
   SettingsExe = 'Trofeo.Settings.exe';
   HelperExe = 'Trofeo.SensorHelper.exe';
+  ModuleHostExe = 'Trofeo.ModuleHost.exe'; // lancé par le service, un par module complémentaire
 
 // Arrête tous les processus de ce nom, d'où qu'ils viennent. Un processus absent n'est pas une erreur.
 procedure StopProcess(const ImageName: String);
@@ -129,11 +142,12 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ' + ImageName, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-// Le service et la fenêtre verrouillent leurs fichiers ; l'assistant des capteurs (tâche SYSTEM) aussi.
+// Le service et la fenêtre verrouillent leurs fichiers ; l'assistant des capteurs (tâche SYSTEM) et les hôtes des modules aussi.
 procedure StopAllPrograms;
 begin
   StopProcess(SettingsExe); // d'abord : la fenêtre sait relancer le service
   StopProcess(ServiceExe);
+  StopProcess(ModuleHostExe); // le service s'arrête avec ses hôtes (job object) ; ceci couvre un hôte resté seul
   StopProcess(HelperExe);
   Sleep(500); // le temps que Windows relâche les fichiers
 end;
@@ -270,7 +284,7 @@ begin
 end;
 
 // Désinstallation : on arrête d'abord tout (le nettoyage de l'utilisateur ne fait rien si le service tient son mutex), puis le
-// nettoyage propre à l'utilisateur (valeur Run, mod des quotas, question sur les réglages), puis l'assistant des capteurs
+// nettoyage propre à l'utilisateur (valeur Run, mod des quotas, modules complémentaires, question sur les réglages), puis l'assistant des capteurs
 // (tâche et dossier). Tout cela avant la suppression des fichiers, dont ces programmes font partie.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var

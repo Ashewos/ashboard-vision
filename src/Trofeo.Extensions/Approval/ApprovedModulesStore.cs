@@ -27,6 +27,12 @@ public sealed record ApprovedLoad(ApprovedModules Modules, bool Tampered, bool U
 [SupportedOSPlatform("windows")]
 public sealed class ApprovedModulesStore
 {
+    /// <summary>Le nom du fichier de la liste, dans le dossier des réglages.</summary>
+    public const string FileName = "modules.json";
+
+    /// <summary>Le nom du fichier de la clé du sceau, dans le dossier des réglages.</summary>
+    public const string KeyFileName = "modules.key";
+
     internal static readonly byte[] Entropy = Encoding.UTF8.GetBytes("ashboard-vision.modules");
     private const int KeyLength = 32;
     private const int ReadAttempts = 3;
@@ -110,6 +116,66 @@ public sealed class ApprovedModulesStore
         }
 
         File.Move(tmp, _filePath, overwrite: true);
+    }
+
+    /// <summary>
+    /// Lit la liste pour la désinstallation, qui doit retrouver les modules à nettoyer même si le sceau ne tient plus. Fichier absent :
+    /// <see cref="ListTrust.Absent"/>. Sceau valide : <see cref="ListTrust.Verified"/>, avec le dossier des modules. Sceau faux, clé
+    /// absente ou contenu invalide : <see cref="ListTrust.Unverified"/>, avec seulement les identifiants et les chemins de dossiers de
+    /// développement que le texte contient (sans le dossier des modules : son emplacement n'est pas sûr) ; un JSON illisible rend des
+    /// listes vides. Échec d'entrée-sortie persistant : <see cref="ListTrust.Unreadable"/>. Ne modifie rien.
+    /// </summary>
+    public ListInspection Inspect()
+    {
+        var file = ReadFileWithRetry(_filePath);
+        if (file.Missing) return new ListInspection(ListTrust.Absent, null, [], []);
+        if (file.IoError is { } fileError) return InspectUnreadable(_filePath, fileError);
+
+        var key = ReadKey();
+        if (key.IoError is { } keyError) return InspectUnreadable(_keyPath, keyError);
+
+        try
+        {
+            if (key.Key is null) throw new CryptographicException("La clé du sceau est absente ou indéchiffrable.");
+            var verified = ReadVerified(file.Bytes!, key.Key);
+            return new ListInspection(
+                ListTrust.Verified, verified.ModulesRoot, [.. verified.Modules.Select(m => m.Id)], [.. verified.DevFolders.Select(f => f.Path)]);
+        }
+        catch (Exception ex) when (ex is CryptographicException or JsonException or FormatException or InvalidOperationException)
+        {
+            _warn($"La liste des modules validés ({_filePath}) a été modifiée ou est illisible : la désinstallation n'en retient que les identifiants valides ({ex.Message})");
+            return ReadUnverified(file.Bytes!);
+        }
+    }
+
+    private ListInspection InspectUnreadable(string path, Exception error)
+    {
+        _warn($"Le fichier {path} n'a pas pu être lu ({error.Message}) : la désinstallation ne peut pas retrouver les modules validés.");
+        return new ListInspection(ListTrust.Unreadable, null, [], []);
+    }
+
+    /// <summary>Lit au mieux les identifiants et les dossiers de développement d'un fichier dont le sceau ne tient pas.</summary>
+    private static ListInspection ReadUnverified(byte[] file)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(file);
+            if (document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object
+                && data.Deserialize<StoreDto>(DataOptions) is { } dto)
+            {
+                return new ListInspection(
+                    ListTrust.Unverified, null,
+                    [.. (dto.Modules ?? []).Select(m => m?.Id).OfType<string>()],
+                    [.. (dto.DevFolders ?? []).Select(f => f?.Path).OfType<string>()]);
+            }
+        }
+        catch (JsonException)
+        {
+            // Un contenu qui n'a pas la forme attendue : rien à retenir.
+        }
+
+        return new ListInspection(ListTrust.Unverified, null, [], []);
     }
 
     private ApprovedLoad Unreadable(string path, Exception error)

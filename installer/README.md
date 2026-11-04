@@ -11,10 +11,12 @@ pwsh installer/build.ps1 -Version 1.0.0-beta.1
 Le script cherche `ISCC.exe` (paramètre `-Iscc`, sinon `C:\Program Files\Inno Setup 7\ISCC.exe`, sinon le `PATH`) et refuse une version
 inférieure à 7.1. Il écrit dans `installer/out/` (l'installateur, son `.sha256` et le journal `iscc.log`).
 
-Il publie `Trofeo.Display`, `Trofeo.Settings` et `Trofeo.SensorHelper` (Release, `win-x64`, autonomes) dans `installer/publish/`, en passant
+Il publie `Trofeo.Display`, `Trofeo.Settings`, `Trofeo.SensorHelper` et `Trofeo.ModuleHost` (l'hôte des modules complémentaires ; Release, `win-x64`,
+autonomes) dans `installer/publish/`, en passant
 par `installer/artifacts/` (`--artifacts-path`) : les dossiers `bin` et `obj` des projets ne sont pas touchés, donc le service lancé depuis
 `src/Trofeo.Display/bin/Release` n'est pas dérangé. Il y copie `mods/` (la version du mod ashboard-quotas y prend celle du logiciel : le
-fichier du dépôt ne change pas), `LICENSE`, `LICENCES-TIERCES.txt` et les textes de licence des paquets. `installer/out/`,
+fichier du dépôt ne change pas), `LICENSE`, `LICENCES-TIERCES.txt` et les textes de licence des paquets. Il échoue si l'un des quatre `.exe`
+(dont `Trofeo.ModuleHost.exe`) manque après la publication. `installer/out/`,
 `installer/publish/`, `installer/artifacts/` ne sont pas versionnés.
 
 ## Ce que fait l'installateur
@@ -22,19 +24,34 @@ fichier du dépôt ne change pas), `LICENSE`, `LICENCES-TIERCES.txt` et les text
 - **Pages** : bienvenue, licence GPL-3.0, dossier (`Program Files\Ashboard Vision`), options, installation, fin avec « Lancer Ashboard Vision ».
   Les textes standard viennent de `French.isl`.
 - **Options** : raccourci sur le bureau (décoché), démarrer avec Windows (coché), installer PawnIO (coché ; téléchargé pendant l'installation, connexion Internet requise).
-- **Avant la copie** : arrête `Trofeo.Settings.exe` (d'abord : elle sait relancer le service), `Trofeo.Display.exe` et `Trofeo.SensorHelper.exe` (même ceux lancés depuis le dépôt), puis
+- **Avant la copie** : arrête `Trofeo.Settings.exe` (d'abord : elle sait relancer le service), `Trofeo.Display.exe`, `Trofeo.ModuleHost.exe` (l'hôte d'un module
+  complémentaire, qui s'arrête normalement avec le service) et `Trofeo.SensorHelper.exe` (même ceux lancés depuis le dépôt), puis
   écrit `{app}\options-installation.json` (`{ "demarrerAvecWindows": true|false }`), que le service lit à son premier lancement.
 - **Après la copie** (`CurStepChanged`, `ssPostInstall`) : `Trofeo.SensorHelper.exe install [--pawnio <PawnIO_setup.exe>]`, dont le code de sortie est journalisé (un message sobre signale un échec, sauf en mode silencieux ; le code 3 sans PawnIO est normal) (copie l'assistant dans
   `Program Files\ashboard-vision\sensors`, crée la tâche, retire les anciens emplacements). Puis, **sans élévation** (`runasoriginaluser`),
   la case « Lancer » ouvre la fenêtre de réglage, qui démarre le service s'il ne tourne pas (et, la première fois, son assistant), comme
   les raccourcis du menu Démarrer et du bureau. En mode silencieux (mise à jour lancée par le logiciel), les options de la première
   installation sont gardées et seul le service est relancé, sans question ; il rouvre la fenêtre si la mise à jour est partie d'elle.
+- **Fichiers `.avmod`** : l'installateur associe l'extension `.avmod` (`ChangesAssociations=yes`, section `[Registry]`, clés sous `HKA\Software\Classes` : `.avmod`,
+  `AshboardVision.Module` « Module Ashboard Vision », son icône, sa commande `"{app}\Trofeo.Settings.exe" "%1"`) ; un double-clic ouvre la fenêtre de réglage sur
+  la boîte d'installation du module, qui montre ce qu'il demande, et rien ne s'installe sans le clic sur « Installer ». Les clés sont retirées à la désinstallation
+  (`uninsdeletekey`). Aucune autre extension n'est associée.
 - **Journal** : l'installation note le téléchargement de PawnIO et le code de l'assistant des capteurs ; la désinstallation, les codes de
   ses deux étapes. Pour l'avoir : `Ashboard-Vision-Setup-<version>.exe /LOG="<fichier>"`.
-- **Désinstallation** : arrête les trois programmes, lance `Trofeo.Display.exe --desinstaller-utilisateur` (avec `--silencieux` si la
-  désinstallation l'est : valeur `Run`, mod des quotas, question sur les réglages), puis `Trofeo.SensorHelper.exe uninstall` (tâche et
+- **Désinstallation** : arrête les programmes (dont les hôtes de modules), lance `Trofeo.Display.exe --desinstaller-utilisateur` (avec `--silencieux` si la
+  désinstallation l'est : valeur `Run`, mod des quotas, modules complémentaires, question sur les réglages), puis `Trofeo.SensorHelper.exe uninstall` (tâche et
   dossier de l'assistant), puis supprime `options-installation.json` (le seul fichier que Setup ne suit pas) et le dossier d'installation s'il est vide (un dossier partagé n'est jamais effacé en bloc). PawnIO reste installé. Ces étapes sont dans le code de l'installateur
   (`CurUninstallStepChanged`), pour garantir l'ordre : arrêter d'abord, car le nettoyage ne fait rien si le service tient son mutex.
+- **Modules complémentaires, à la désinstallation** (`CommunityCleanup`, appelé par le nettoyage de l'utilisateur avant l'effacement des réglages) :
+  - toujours : le conteneur (`ashboard-vision.mod.<id>`) et la portée du coffre à secrets de chaque module connu de la liste scellée
+    (`modules.json`) et de chaque dossier de développement (son identifiant est lu dans son manifeste, sans rien exécuter) ;
+  - si tu choisis d'effacer tes réglages : aussi `modules.json`, `modules.key` et le dossier des modules **seulement s'il est le dossier par défaut**
+    (`Documents\Ashboard Vision\Modules`, puis `Documents\Ashboard Vision` s'il est resté vide). Un dossier des modules que tu as choisi, même vide,
+    et les dossiers de développement ne sont jamais supprimés. Un lien (jonction) dans ce dossier n'est pas suivi : seul le lien est retiré ;
+  - la liste est lue **avant** toute suppression et n'est crue que si son sceau tient. Sans liste, le dossier des modules est le dossier par défaut. Avec un sceau
+    faux ou une liste illisible, seuls les identifiants conformes à la règle d'identifiant servent (jamais un type d'origine ni un chemin) et le dossier des modules
+    est laissé : son emplacement n'est pas sûr, à toi de le supprimer à la main ;
+  - chaque étape est tentée même si la précédente échoue (un conteneur déjà parti ne bloque rien).
 
 ## Points vérifiés avant d'écrire (31/10/2026)
 

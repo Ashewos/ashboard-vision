@@ -280,4 +280,94 @@ public sealed class ApprovedModulesStoreTests : IDisposable
         Assert.False(store.Load().Tampered);
         Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
     }
+
+    // --- Inspect : ce que la désinstallation peut lire, et jusqu'où elle peut le croire -----------------------------------------------
+
+    [Fact]
+    public void Inspect_Missing_IsAbsent()
+    {
+        var inspection = NewStore().Inspect();
+
+        Assert.Equal(ListTrust.Absent, inspection.Trust);
+        Assert.Empty(inspection.ModuleIds);
+        Assert.Empty(inspection.DevFolderPaths);
+    }
+
+    [Fact]
+    public void Inspect_Sealed_IsVerifiedWithTheContent()
+    {
+        var store = NewStore();
+        store.Save(Sample());
+
+        var inspection = store.Inspect();
+
+        Assert.Equal(ListTrust.Verified, inspection.Trust);
+        Assert.Equal(@"D:\Modules", inspection.ModulesRoot);
+        Assert.Equal(["alex.depot-github", "alex.demo"], inspection.ModuleIds);
+        Assert.Equal([@"D:\dev\mon-module"], inspection.DevFolderPaths);
+        Assert.Empty(_warnings);
+    }
+
+    [Fact]
+    public void Inspect_EditedByHand_IsUnverifiedButStillReadable()
+    {
+        var store = NewStore();
+        store.Save(Sample());
+        File.WriteAllText(FilePath, File.ReadAllText(FilePath).Replace("alex.demo", "alex.autre"));
+
+        var inspection = store.Inspect();
+
+        Assert.Equal(ListTrust.Unverified, inspection.Trust);
+        Assert.Null(inspection.ModulesRoot); // un emplacement qu'on ne peut pas croire n'est pas rendu
+        Assert.Equal(["alex.depot-github", "alex.autre"], inspection.ModuleIds);
+        Assert.Equal([@"D:\dev\mon-module"], inspection.DevFolderPaths);
+        Assert.Single(_warnings);
+    }
+
+    [Fact]
+    public void Inspect_KeyMissing_IsUnverified()
+    {
+        var store = NewStore();
+        store.Save(Sample());
+        File.Delete(KeyPath);
+
+        var inspection = store.Inspect();
+
+        Assert.Equal(ListTrust.Unverified, inspection.Trust);
+        Assert.Equal(2, inspection.ModuleIds.Count);
+    }
+
+    [Fact]
+    public void Inspect_Garbage_IsUnverifiedAndEmpty()
+    {
+        File.WriteAllText(FilePath, "{ pas du json");
+
+        var inspection = NewStore().Inspect();
+
+        Assert.Equal(ListTrust.Unverified, inspection.Trust);
+        Assert.Empty(inspection.ModuleIds);
+        Assert.Empty(inspection.DevFolderPaths);
+    }
+
+    [Fact]
+    public void Inspect_WrongTypesInData_IsUnverifiedAndEmpty()
+    {
+        File.WriteAllText(FilePath, "{ \"data\": { \"modules\": [ { \"id\": 12 } ] }, \"mac\": \"AAAA\" }");
+
+        var inspection = NewStore().Inspect();
+
+        Assert.Equal(ListTrust.Unverified, inspection.Trust);
+        Assert.Empty(inspection.ModuleIds);
+    }
+
+    [Fact]
+    public void Inspect_FileLocked_IsUnreadable()
+    {
+        NewStore().Save(Sample());
+
+        using (new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Equal(ListTrust.Unreadable, NewStore().Inspect().Trust);
+        }
+    }
 }

@@ -138,4 +138,40 @@ public sealed class UserCleanupTests
         Assert.True(report.Ran); // la préparation n'est pas sautée
         Assert.Equal("\"" + serviceExe + "\"", runKey.Read("ashboard-vision")); // la case de l'installateur est appliquée de nouveau
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Run_CallsTheModulesCleanup_BeforeTheSettingsFolderGoes(bool deleteSettings)
+    {
+        // Le nettoyage des modules relit la liste scellée, qui est dans le dossier des réglages : il passe avant l'effacement.
+        using var dir = new TempDir();
+        var settings = Settings(dir);
+        var calls = new List<(bool Erase, bool SettingsStillThere)>();
+        var cleanup = new UserCleanup(new FakeRunKey(), new FakeClaude().Installer(null), (erase, _) =>
+        {
+            calls.Add((erase, Directory.Exists(settings)));
+            return Task.CompletedTask;
+        });
+
+        await cleanup.RunAsync(settings, deleteSettings, CancellationToken.None);
+
+        Assert.Equal([(deleteSettings, true)], calls);
+        Assert.Equal(!deleteSettings, Directory.Exists(settings));
+    }
+
+    [Fact]
+    public async Task Run_ModulesCleanupFailing_StillCleansTheRest()
+    {
+        using var dir = new TempDir();
+        var runKey = new FakeRunKey();
+        runKey.Values["ashboard-vision"] = "x";
+        var settings = Settings(dir);
+        var cleanup = new UserCleanup(runKey, new FakeClaude().Installer(null), (_, _) => throw new IOException("verrou"));
+
+        await cleanup.RunAsync(settings, deleteSettings: true, CancellationToken.None);
+
+        Assert.Empty(runKey.Values);
+        Assert.False(Directory.Exists(settings));
+    }
 }

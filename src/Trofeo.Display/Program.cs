@@ -97,7 +97,19 @@ static class Program
         {
             if (!silent) ApplicationConfiguration.Initialize();
             var deleteSettings = ShouldDeleteSettings(silent, AskKeepSettings);
-            var cleanup = new UserCleanup(new RegistryRunKey(), QuotaModInstaller.CreateProduction(null));
+            // Les modules complémentaires : leurs conteneurs et leurs secrets, puis (réglages effacés) la liste et le dossier par défaut.
+            // Le nettoyage relit la liste scellée avant toute suppression ; il est fourni d'ici parce que Trofeo.Extensions dépend de
+            // Trofeo.Distribution.
+            var vault = new DpapiSecretVault(Path.Combine(AppPaths.SettingsDir, "secrets.dat"));
+            var modules = new CommunityCleanup(
+                AppPaths.SettingsDir, Trofeo.Extensions.Sandbox.AppContainerProfile.Delete, vault.RemoveScope, warn: message => Trace.TraceWarning(message));
+            var cleanup = new UserCleanup(
+                new RegistryRunKey(), QuotaModInstaller.CreateProduction(null),
+                (deleteSettings, _) =>
+                {
+                    modules.Run(deleteSettings);
+                    return Task.CompletedTask;
+                });
             Task.Run(() => cleanup.RunAsync(
                 AppPaths.SettingsDir, deleteSettings, CancellationToken.None,
                 [AppPaths.SettingsDir + "-sauvegardes", AppPaths.LegacySettingsDir, UpdateDownloadDir])).GetAwaiter().GetResult();
@@ -168,7 +180,8 @@ static class Program
         using var dataBroker = new ServiceDataBroker(
             sensorHub, () => new SmtcMediaSource(new TraceModuleLog("modules-complementaires", Guid.Empty, TimeProvider.System)), TimeProvider.System);
         var community = new CommunityModules(
-            new ApprovedModulesStore(Path.Combine(AppPaths.SettingsDir, "modules.json"), Path.Combine(AppPaths.SettingsDir, "modules.key"), Warn),
+            new ApprovedModulesStore(
+                Path.Combine(AppPaths.SettingsDir, ApprovedModulesStore.FileName), Path.Combine(AppPaths.SettingsDir, ApprovedModulesStore.KeyFileName), Warn),
             registry.SetCommunityFactories,
             vault.Scope,
             vault.RemoveScope,
