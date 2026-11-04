@@ -208,13 +208,41 @@ public sealed class FakeServiceLink : IServiceLink
 
     public Task<ActionResult> RelaunchModuleAsync(string id) => Module($"relaunch {id}");
 
-    public Task<ActionResult> SetModulesRootAsync(string path) => Module($"root {path}");
+    // Comme le service : une demande acceptée change ce que la lecture suivante rend.
+    private async Task<ActionResult> Changing(string call, Func<CommunityOverview, CommunityOverview> change)
+    {
+        var result = await Module(call);
+        if (result.Ok)
+            Community = change(Community);
+        return result;
+    }
 
-    public Task<ActionResult> SetDeveloperModeAsync(bool on) => Module($"dev {on}");
+    public Task<ActionResult> SetModulesRootAsync(string path) => Changing($"root {path}", c => c with { ModulesRoot = path });
 
-    public Task<ActionResult> AddDevFolderAsync(string path, IReadOnlyList<ModulePermission> granted) => Module($"addDev {path} {Join(granted)}");
+    public Task<ActionResult> SetDeveloperModeAsync(bool on) => Changing($"dev {on}", c => c with
+    {
+        DeveloperMode = on,
+        Modules = [.. c.Modules.Where(m => on || !m.FromDevFolder)], // éteint, les modules des dossiers de travail disparaissent
+    });
 
-    public Task<ActionResult> RemoveDevFolderAsync(string path) => Module($"removeDev {path}");
+    public Task<ActionResult> AddDevFolderAsync(string path, IReadOnlyList<ModulePermission> granted) =>
+        Changing($"addDev {path} {Join(granted)}", c => c with { DevFolders = [.. c.DevFolders.Where(f => f != path), path] });
+
+    public Task<ActionResult> RemoveDevFolderAsync(string path) =>
+        Changing($"removeDev {path}", c => c with { DevFolders = [.. c.DevFolders.Where(f => f != path)] });
+
+    /// <summary>Ce que le service lit dans un dossier de travail.</summary>
+    public PackageInfo DevFolder { get; set; } = new("alex.dev", "Démo", "Alex", "0.1.0", "Un module en cours d'écriture.",
+        [ModulePermission.Internet, ModulePermission.Sensors], [], null, null);
+
+    /// <summary>Si posé, rend l'examen d'un dossier à la place de <see cref="DevFolder"/> (un test le fait attendre, ou lever).</summary>
+    public Func<string, Task<PackageInfo>>? OnInspectDevFolder { get; set; }
+
+    public Task<PackageInfo> InspectDevFolderAsync(string path)
+    {
+        ModuleCalls.Add($"inspectDev {path}");
+        return OnInspectDevFolder is null ? Task.FromResult(DevFolder) : OnInspectDevFolder(path);
+    }
 
     public Task<ActionResult> ReloadDevModuleAsync(string id) => Module($"reloadDev {id}");
 
@@ -247,9 +275,14 @@ public sealed class FakeServiceLink : IServiceLink
 
     public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted) => Module($"update {id} {Join(granted)}");
 
+    /// <summary>Si posé, la lecture de la consommation lève cette erreur.</summary>
+    public ControlException? ConsumptionFailure { get; set; }
+
     public Task<IReadOnlyList<ModuleConsumption>> GetConsumptionAsync()
     {
         ModuleCalls.Add("consumption");
+        if (ConsumptionFailure is not null)
+            return Task.FromException<IReadOnlyList<ModuleConsumption>>(ConsumptionFailure);
         return Task.FromResult<IReadOnlyList<ModuleConsumption>>([.. Consumption]);
     }
 

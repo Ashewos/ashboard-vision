@@ -192,6 +192,12 @@ public sealed class ControlClient : IAsyncDisposable
     public Task<ActionResult> AddDevFolderAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
         SendActionAsync(new Request(NextId(), MessageTypes.AddDevFolder) { Path = path, Granted = granted }, ct);
 
+    /// <summary>Ce que le service lit dans le manifeste d'un dossier de travail, sans rien lancer ni rien ajouter.</summary>
+    public async Task<PackageInfo> InspectDevFolderAsync(string path, CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.InspectDevFolder) { Path = path }, TimeoutFor(MessageTypes.InspectDevFolder), ct)
+            .ConfigureAwait(false)).Package
+        ?? throw Incomplete();
+
     public Task<ActionResult> RemoveDevFolderAsync(string path, CancellationToken ct) =>
         SendActionAsync(new Request(NextId(), MessageTypes.RemoveDevFolder) { Path = path }, ct);
 

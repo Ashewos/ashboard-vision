@@ -18,7 +18,7 @@ public sealed class CommunityCatalog(Func<ApprovedLoad> load)
     internal const string ApprovalsUnreadableMessage =
         "Liste des modules validés illisible pour le moment : réessaie dans un instant.";
 
-    private const string CollisionMessage =
+    internal const string CollisionMessage =
         "Un module installé porte déjà cet identifiant : désinstalle-le ou change l'identifiant.";
 
     // Un manifeste fait quelques Ko : au-delà, ce n'est pas un manifeste.

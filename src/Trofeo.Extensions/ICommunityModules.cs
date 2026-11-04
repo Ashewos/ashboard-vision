@@ -74,6 +74,13 @@ public interface ICommunityModules
     /// <summary>Ajoute un dossier de développement avec les permissions accordées.</summary>
     ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted);
 
+    /// <summary>
+    /// Ce que contient un dossier de travail avant de l'ajouter : son manifeste est lu, rien n'est lancé, écrit ni annoncé. Chaque refus
+    /// (chemin, mode développeur éteint, manifeste illisible, SDK incompatible, identifiant déjà pris par un module installé ou par un autre
+    /// dossier de travail) est dans <see cref="PackageInspection.Errors"/> ; <c>Conflict</c> et <c>Installed</c> restent nuls.
+    /// </summary>
+    PackageInspection InspectDevFolder(string path);
+
     /// <summary>Retire un dossier de développement (le dossier lui-même n'est pas touché).</summary>
     ActionResult RemoveDevFolder(string path);
 

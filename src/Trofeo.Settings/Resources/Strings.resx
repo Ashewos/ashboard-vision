@@ -1089,4 +1089,112 @@
     <value>La mise à jour n'a pas pu être préparée.</value>
     <comment>Boîte de mise à jour : le service refuse sans dire pourquoi.</comment>
   </data>
+  <data name="CommunityFolderTitle" xml:space="preserve">
+    <value>Dossier des modules</value>
+    <comment>Titre de la zone du dossier des modules, dans Paramètres.</comment>
+  </data>
+  <data name="CommunityFolderHelp" xml:space="preserve">
+    <value>Les nouveaux modules sont rangés ici. Ceux qui sont déjà installés restent où ils sont.</value>
+    <comment>Sous le dossier des modules.</comment>
+  </data>
+  <data name="CommunityFolderChange" xml:space="preserve">
+    <value>Changer…</value>
+    <comment>Bouton : choisit le dossier des modules.</comment>
+  </data>
+  <data name="CommunityFolderPickTitle" xml:space="preserve">
+    <value>Choisir le dossier des modules</value>
+    <comment>Titre du sélecteur de dossier.</comment>
+  </data>
+  <data name="DeveloperTitle" xml:space="preserve">
+    <value>Mode développeur</value>
+    <comment>Titre de la zone du mode développeur.</comment>
+  </data>
+  <data name="DeveloperHelp" xml:space="preserve">
+    <value>Charge un module depuis son dossier de travail, sans fichier .avmod, pour l'essayer pendant que tu l'écris. Éteint, ces modules disparaissent de l'écran.</value>
+    <comment>Sous l'interrupteur du mode développeur.</comment>
+  </data>
+  <data name="DeveloperBanner" xml:space="preserve">
+    <value>Mode développeur actif</value>
+    <comment>Bandeau en haut de la fenêtre tant que le mode développeur est allumé.</comment>
+  </data>
+  <data name="DeveloperFolders" xml:space="preserve">
+    <value>Dossiers de travail</value>
+    <comment>Titre de la liste des dossiers du mode développeur.</comment>
+  </data>
+  <data name="DeveloperNoFolders" xml:space="preserve">
+    <value>Aucun dossier de travail pour l'instant.</value>
+    <comment>Liste des dossiers de travail vide.</comment>
+  </data>
+  <data name="DeveloperNoModule" xml:space="preserve">
+    <value>Aucun module lisible dans ce dossier.</value>
+    <comment>Ligne d'un dossier de travail dont le module n'est pas dans la liste.</comment>
+  </data>
+  <data name="DeveloperAddFolder" xml:space="preserve">
+    <value>Ajouter un dossier…</value>
+    <comment>Bouton : choisit le dossier de travail d'un module.</comment>
+  </data>
+  <data name="DeveloperPickTitle" xml:space="preserve">
+    <value>Choisir le dossier de travail d'un module</value>
+    <comment>Titre du sélecteur de dossier.</comment>
+  </data>
+  <data name="DeveloperReload" xml:space="preserve">
+    <value>Recharger</value>
+    <comment>Bouton d'une ligne : recharge le module avec les fichiers de son dossier.</comment>
+  </data>
+  <data name="DeveloperRemove" xml:space="preserve">
+    <value>Retirer</value>
+    <comment>Bouton d'une ligne : retire le dossier de la liste (le dossier lui-même n'est pas touché).</comment>
+  </data>
+  <data name="DialogDevTitle" xml:space="preserve">
+    <value>Tester un module en développement</value>
+    <comment>Titre de la boîte qui ajoute un dossier de travail ou recharge son module.</comment>
+  </data>
+  <data name="DialogDevAdd" xml:space="preserve">
+    <value>Ajouter</value>
+    <comment>Bouton de confirmation de la boîte d'un dossier de travail.</comment>
+  </data>
+  <data name="ConsumptionTitle" xml:space="preserve">
+    <value>Consommation des modules</value>
+    <comment>Titre de section, dans Paramètres.</comment>
+  </data>
+  <data name="ConsumptionHelp" xml:space="preserve">
+    <value>Ce que consomment les modules d'origine (ensemble) et chaque module complémentaire. Relu toutes les 5 secondes tant que cette section est affichée.</value>
+    <comment>Sous le titre de la consommation.</comment>
+  </data>
+  <data name="ConsumptionModule" xml:space="preserve">
+    <value>Module</value>
+    <comment>En-tête de colonne du tableau de consommation.</comment>
+  </data>
+  <data name="ConsumptionCpu" xml:space="preserve">
+    <value>Processeur</value>
+    <comment>En-tête de colonne du tableau de consommation.</comment>
+  </data>
+  <data name="ConsumptionMemory" xml:space="preserve">
+    <value>Mémoire</value>
+    <comment>En-tête de colonne du tableau de consommation.</comment>
+  </data>
+  <data name="ConsumptionHigh" xml:space="preserve">
+    <value>Consommation élevée</value>
+    <comment>Repère orange d'un module qui consomme beaucoup depuis un moment.</comment>
+  </data>
+  <data name="ConsumptionCpuValue" xml:space="preserve">
+    <value>{0} %</value>
+    <comment>Processeur d'une ligne. {0} : le pourcentage, avec la virgule.</comment>
+  </data>
+  <data name="ConsumptionMemoryValue" xml:space="preserve">
+    <value>{0} Mo</value>
+    <comment>Mémoire d'une ligne. {0} : les mégaoctets.</comment>
+  </data>
+  <data name="ConsumptionHide" xml:space="preserve">
+    <value>Masquer</value>
+    <comment>Bouton : replie le tableau de consommation (plus aucune mesure demandée).</comment>
+  </data>
+  <data name="ConsumptionShow" xml:space="preserve">
+    <value>Afficher</value>
+    <comment>Bouton : déplie le tableau de consommation.</comment>
+  </data>
+  <data name="ConsumptionFailed" xml:space="preserve">
+    <value>Impossible de lire la consommation pour le moment.</value>
+    <comment>Quand le service ne répond pas à la lecture de la consommation.</comment>
+  </data>
 </root>

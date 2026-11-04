@@ -179,7 +179,7 @@ Tout ce qui suit est marqué **(choix de Claude)** : Alex peut le revoir.
 - Un interrupteur dans les Paramètres. Allumé, il permet de charger un module **depuis son dossier de travail**, sans `.avmod`, et de le recharger d'un clic après chaque modification.
 - Un bandeau « Mode développeur actif » reste visible dans la fenêtre tant qu'il est allumé. Éteint, les modules chargés ainsi disparaissent de l'écran.
 - Ces modules tournent enfermés comme les autres et portent le point d'exclamation jaune.
-- **Permissions en mode développeur** : ajouter un dossier de travail affiche le même avertissement et les mêmes cases à cocher qu'une installation. Si le manifeste du dossier déclare une permission nouvelle, elle est redemandée. L'interrupteur et la liste des dossiers sont rangés dans la liste scellée du service (5.5) : un autre programme ne peut pas les allumer en douce.
+- **Permissions en mode développeur** : ajouter un dossier de travail affiche le même avertissement et les mêmes cases à cocher qu'une installation. Le service lit alors le manifeste du dossier sans rien lancer. Si le manifeste du dossier déclare une permission nouvelle, elle est redemandée. L'interrupteur et la liste des dossiers sont rangés dans la liste scellée du service (5.5) : un autre programme ne peut pas les allumer en douce.
 - Le module se recharge **sur un clic** (« Recharger »), pas en surveillant le dossier.
 
 ### 5.9 Consommation

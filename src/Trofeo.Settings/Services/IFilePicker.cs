@@ -21,6 +21,9 @@ public interface IFilePicker
     /// si l'utilisateur annule.
     /// </summary>
     Task<string?> SaveAsync(string title, string typeName, string extension, string suggestedName);
+
+    /// <summary>Ouvre le choix d'un dossier. Rend son chemin complet, ou <c>null</c> si l'utilisateur annule.</summary>
+    Task<string?> PickFolderAsync(string title);
 }
 
 /// <summary>Le sélecteur n'a pas pu s'ouvrir ; le message est en français, prêt à être montré.</summary>
@@ -56,6 +59,28 @@ public sealed class StorageFilePicker(TopLevel owner) : IFilePicker
         catch (OperationCanceledException)
         {
             return null; // fenêtre fermée pendant le choix : comme une annulation
+        }
+        catch (Exception ex)
+        {
+            throw new FilePickerException(string.Format(Texts.AppearancePickFailed, ex.Message), ex);
+        }
+    }
+
+    public async Task<string?> PickFolderAsync(string title)
+    {
+        var options = new FolderPickerOpenOptions { Title = title, AllowMultiple = false };
+
+        try
+        {
+            var folders = await owner.StorageProvider.OpenFolderPickerAsync(options).ConfigureAwait(true);
+            if (folders.Count != 1)
+                return null;
+            using var folder = folders[0];
+            return folder.TryGetLocalPath();
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
         }
         catch (Exception ex)
         {

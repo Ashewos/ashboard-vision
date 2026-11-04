@@ -34,6 +34,12 @@ public enum ModuleDialogMode
 
     /// <summary>Les permissions d'un module déjà validé.</summary>
     Permissions,
+
+    /// <summary>Un dossier de travail du mode développeur, à ajouter.</summary>
+    DevAdd,
+
+    /// <summary>Un module du mode développeur à recharger, dont le dossier déclare une permission qui n'est pas accordée.</summary>
+    DevReload,
 }
 
 /// <summary>
@@ -80,6 +86,7 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
         ModuleDialogMode.Install => Texts.DialogInstallTitle,
         ModuleDialogMode.Approve => Texts.DialogApproveTitle,
         ModuleDialogMode.Update => Texts.DialogUpdateTitle,
+        ModuleDialogMode.DevAdd or ModuleDialogMode.DevReload => Texts.DialogDevTitle,
         _ => Texts.DialogPermissionsTitle,
     };
 
@@ -89,6 +96,8 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
         ModuleDialogMode.Install => Texts.DialogInstall,
         ModuleDialogMode.Approve => Texts.DialogApprove,
         ModuleDialogMode.Update => Texts.CommunityUpdate,
+        ModuleDialogMode.DevAdd => Texts.DialogDevAdd,
+        ModuleDialogMode.DevReload => Texts.DeveloperReload,
         _ => Texts.DialogSave,
     };
 

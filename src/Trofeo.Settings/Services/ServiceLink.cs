@@ -182,6 +182,8 @@ public sealed class ServiceLink : IServiceLink
     public Task<ActionResult> AddDevFolderAsync(string path, IReadOnlyList<ModulePermission> granted) =>
         ChangeModulesAsync((client, ct) => client.AddDevFolderAsync(path, granted, ct));
 
+    public Task<PackageInfo> InspectDevFolderAsync(string path) => RequestAsync((client, ct) => client.InspectDevFolderAsync(path, ct));
+
     public Task<ActionResult> RemoveDevFolderAsync(string path) =>
         ChangeModulesAsync((client, ct) => client.RemoveDevFolderAsync(path, ct));
 

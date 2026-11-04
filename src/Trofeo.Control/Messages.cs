@@ -64,12 +64,13 @@ public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, T
 /// Un module complémentaire vu par la fenêtre. <paramref name="Message"/> est écrit pour être lu tel quel ; <paramref name="Declared"/>
 /// est ce que le manifeste demande, <paramref name="Granted"/> ce que l'utilisateur a accordé. Les deux dernières valeurs décrivent une
 /// mise à jour trouvée sur GitHub (<c>null</c> : aucune). Les permissions qu'elle apporte ne se connaissent qu'après sa préparation
-/// (<see cref="ModuleUpdatePreparation"/>), qui télécharge le paquet.
+/// (<see cref="ModuleUpdatePreparation"/>), qui télécharge le paquet. <paramref name="DevFolderPath"/> est le dossier de travail d'un module
+/// du mode développeur (le même texte que dans <see cref="CommunityOverview.DevFolders"/>) ; <c>null</c> pour un module installé.
 /// </summary>
 public sealed record CommunityModuleInfo(
     string Id, string Name, string Author, string Description, string? Version, LinkCommunityState State, string? Message,
     IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted, bool FromDevFolder,
-    string? UpdateVersion, string? UpdateNotes);
+    string? UpdateVersion, string? UpdateNotes, string? DevFolderPath = null);
 
 /// <summary>
 /// Ce que le service a lu dans le paquet d'une mise à jour qu'il vient de télécharger et de vérifier (clic sur « Mettre à jour »). Si
@@ -170,6 +171,12 @@ public interface IControlHandler
     /// <summary>Ajoute un dossier de développement avec les permissions accordées.</summary>
     ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted);
 
+    /// <summary>
+    /// Ce que contient un dossier de travail, avant de l'ajouter : le service lit son manifeste et n'exécute rien, n'écrit rien et ne change
+    /// aucun état. Tout refus (chemin, manifeste illisible, SDK incompatible, identifiant déjà pris) est dans <see cref="PackageInfo.Errors"/>.
+    /// </summary>
+    PackageInfo InspectDevFolder(string path);
+
     /// <summary>Retire un dossier de développement (le dossier lui-même n'est pas touché).</summary>
     ActionResult RemoveDevFolder(string path);
 
@@ -229,6 +236,7 @@ internal static class MessageTypes
     public const string SetModulesRoot = "setModulesRoot";
     public const string SetDeveloperMode = "setDeveloperMode";
     public const string AddDevFolder = "addDevFolder";
+    public const string InspectDevFolder = "inspectDevFolder";
     public const string RemoveDevFolder = "removeDevFolder";
     public const string ReloadDevModule = "reloadDevModule";
     public const string CheckModuleUpdates = "checkModuleUpdates";

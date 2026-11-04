@@ -250,6 +250,8 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
                     {
                         Action = _handler.AddDevFolder(Required(request.Path, "path"), Permissions(request)),
                     };
+                case MessageTypes.InspectDevFolder:
+                    return new Response(request.Id, request.Type) { Package = _handler.InspectDevFolder(Required(request.Path, "path")) };
                 case MessageTypes.RemoveDevFolder:
                     return new Response(request.Id, request.Type) { Action = _handler.RemoveDevFolder(Required(request.Path, "path")) };
                 case MessageTypes.ReloadDevModule:

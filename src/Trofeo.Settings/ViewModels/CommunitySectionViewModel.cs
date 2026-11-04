@@ -24,22 +24,27 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
     private IReadOnlyList<ModuleTypeInfo>? _seenTypes;
     private bool _active;
     private int _refreshes;
+    private bool _watching;
+    private bool _wasConnected;
     private string? _packageWhenConnected;
     private string? _waitingPackage;
     private string? _readFailure;
 
-    public CommunitySectionViewModel(IServiceLink link, EditSession session, Func<IFilePicker?> picker)
+    public CommunitySectionViewModel(IServiceLink link, EditSession session, Func<IFilePicker?> picker, TimeProvider? time = null)
     {
         _link = link;
         _session = session;
         _picker = picker;
+        Consumption = new ModuleConsumptionViewModel(link, time);
         _seenTypes = link.KnownTypes();
+        _wasConnected = link.State == LinkState.Connected;
         _link.Changed += OnLinkChanged;
     }
 
     public void Dispose()
     {
         _link.Changed -= OnLinkChanged;
+        Consumption.Dispose();
         // La fenêtre se ferme au milieu d'une mise à jour : le service jette le fichier de lui-même au bout de 15 minutes, on le prévient quand même.
         if (Dialog is { Mode: ModuleDialogMode.Update, IsAbandoned: false } && _updatingId is { } id)
             _ = AbandonQuietlyAsync(id);
@@ -98,6 +103,8 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
         var idle = !IsBusy && Dialog is null;
         foreach (var row in Modules)
             row.IsIdle = idle;
+        foreach (var folder in DevFolders)
+            folder.IsIdle = idle;
     }
 
     // ---- La liste ----
@@ -118,12 +125,26 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
             _ = OpenPackageAsync(path);
         }
 
+        var connected = _link.State == LinkState.Connected;
+        var justConnected = connected && !_wasConnected;
+        _wasConnected = connected;
+
         // Le service renvoie son état chaque seconde ; la liste ne se relit que si les types de modules ont changé.
         var types = _link.KnownTypes();
-        if (ReferenceEquals(types, _seenTypes))
-            return;
+        var typesChanged = !ReferenceEquals(types, _seenTypes);
         _seenTypes = types;
-        if (_active && _link.State == LinkState.Connected)
+        if (connected && (_active && typesChanged || _watching && justConnected))
+            _ = RefreshAsync();
+    }
+
+    /// <summary>
+    /// La fenêtre s'ouvre : l'état du mode développeur doit se savoir tout de suite (le bandeau « Mode développeur actif » est en haut de la
+    /// fenêtre, dans tous les onglets). Une seule lecture à chaque connexion au service, sans minuteur ; la liste complète, elle, attend toujours l'onglet.
+    /// </summary>
+    public void Watch()
+    {
+        _watching = true;
+        if (_link.State == LinkState.Connected)
             _ = RefreshAsync();
     }
 
@@ -161,6 +182,7 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
             Modules.Add(row);
         }
 
+        ReadGeneral(overview);
         StoreTampered = overview.StoreTampered;
         OnPropertyChanged(nameof(StoreTampered));
         OnPropertyChanged(nameof(HasModules));

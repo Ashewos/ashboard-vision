@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AshboardVision.Sdk;
+using Microsoft.Extensions.Time.Testing;
 using Trofeo.Control;
 using Trofeo.Core.Layout;
 using Trofeo.ModuleKit;
@@ -21,6 +22,9 @@ public sealed class CommunityFixture : IDisposable
 
     public FakeServiceLink Link { get; } = new();
     public FakeFilePicker Picker { get; } = new();
+
+    /// <summary>Le temps de la section : la consommation se relit toutes les 5 s de ce temps-là.</summary>
+    public FakeTimeProvider Time { get; } = new();
     public LayoutStore Store { get; }
     public LayoutDocument Document { get; }
     public EditSession Session { get; }
@@ -38,7 +42,7 @@ public sealed class CommunityFixture : IDisposable
         Document = new LayoutDocument(Store, Link);
         Document.Load();
         Session = new EditSession(Document);
-        Section = new CommunitySectionViewModel(Link, Session, () => Picker);
+        Section = new CommunitySectionViewModel(Link, Session, () => Picker, Time);
     }
 
     /// <summary>La dernière demande qui change quelque chose (les relectures de la liste ne comptent pas).</summary>
@@ -61,9 +65,11 @@ public sealed class CommunityFixture : IDisposable
     public static CommunityModuleInfo Module(
         string id = "alex.demo", LinkCommunityState state = LinkCommunityState.Ready, string version = "1.2.0",
         ModulePermission[]? declared = null, ModulePermission[]? granted = null, string? updateVersion = null, string? updateNotes = null,
-        string? message = null, bool fromDevFolder = false, string name = "Démo", string author = "Alex", string description = "Un module pour essayer.") => new(
+        string? message = null, bool fromDevFolder = false, string name = "Démo", string author = "Alex", string description = "Un module pour essayer.",
+        string? devFolderPath = null) => new(
         id, name, author, description, version, state, message,
-        declared ?? [ModulePermission.Internet, ModulePermission.Sensors], granted ?? [ModulePermission.Internet], fromDevFolder, updateVersion, updateNotes);
+        declared ?? [ModulePermission.Internet, ModulePermission.Sensors], granted ?? [ModulePermission.Internet], fromDevFolder, updateVersion, updateNotes,
+        devFolderPath);
 
     public CommunityFixture WithModules(params CommunityModuleInfo[] modules)
     {

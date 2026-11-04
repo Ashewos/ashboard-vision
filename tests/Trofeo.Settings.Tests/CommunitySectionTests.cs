@@ -7,7 +7,7 @@ using static Trofeo.Settings.Tests.CommunityFixture;
 namespace Trofeo.Settings.Tests;
 
 /// <summary>La section « Modules complémentaires » de l'onglet Paramètres : la liste, les boutons, la désinstallation, la mise à jour en deux temps.</summary>
-public sealed class CommunitySectionTests
+public sealed partial class CommunitySectionTests
 {
     private const string Path = @"C:\Téléchargements\alex.demo-1.0.0.avmod";
 

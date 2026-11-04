@@ -14,7 +14,7 @@ public partial class ControlChannelTests
     private static CommunityModuleInfo SampleModule() => new(
         "alex.demo", "Démo", "Alex", "Un module de démonstration", "1.2.0", LinkCommunityState.NeedsApproval, "À valider dans la fenêtre de réglage",
         Declared: [ModulePermission.Internet, ModulePermission.Sensors], Granted: [ModulePermission.Internet],
-        FromDevFolder: true, UpdateVersion: "1.3.0", UpdateNotes: "Nouveau réglage.");
+        FromDevFolder: true, UpdateVersion: "1.3.0", UpdateNotes: "Nouveau réglage.", DevFolderPath: @"C:\dev\demo");
 
     private sealed partial class FakeHandler
     {
@@ -121,6 +121,12 @@ public partial class ControlChannelTests
         {
             Record($"addDevFolder {path} {Join(granted)}");
             return ActionToReturn;
+        }
+
+        public PackageInfo InspectDevFolder(string path)
+        {
+            Record($"inspectDevFolder {path}");
+            return PackageToReturn;
         }
 
         public ActionResult RemoveDevFolder(string path)
@@ -238,9 +244,9 @@ public partial class ControlChannelTests
         var expected = SampleModule();
         Assert.Equal(
             (expected.Id, expected.Name, expected.Author, expected.Description, expected.Version, expected.State, expected.Message, expected.FromDevFolder,
-                expected.UpdateVersion, expected.UpdateNotes),
+                expected.UpdateVersion, expected.UpdateNotes, expected.DevFolderPath),
             (module.Id, module.Name, module.Author, module.Description, module.Version, module.State, module.Message, module.FromDevFolder,
-                module.UpdateVersion, module.UpdateNotes));
+                module.UpdateVersion, module.UpdateNotes, module.DevFolderPath));
         Assert.Equal(expected.Declared, module.Declared);
         Assert.Equal(expected.Granted, module.Granted);
     }
@@ -263,6 +269,23 @@ public partial class ControlChannelTests
         Assert.Equal(modules.Select(m => m.State), overview.Modules.Select(m => m.State));
         Assert.All(overview.Modules, m => Assert.Null(m.Version));
         Assert.All(overview.Modules, m => Assert.Null(m.Message));
+        Assert.All(overview.Modules, m => Assert.Null(m.DevFolderPath));
+    }
+
+    [Fact]
+    public async Task InspectDevFolder_RoundTrip()
+    {
+        var handler = new FakeHandler();
+        var (server, client) = await StartAsync(handler);
+        using var _ = server;
+        await using var __ = client;
+
+        var package = await client.InspectDevFolderAsync(@"C:\dev\demo", CancellationToken.None);
+
+        Assert.Equal(("alex.demo", "Démo", "Alex", "1.3.0"), (package.Id, package.Name, package.Author, package.Version));
+        Assert.Equal([ModulePermission.Internet], package.Declared);
+        Assert.Equal(["Une erreur."], package.Errors);
+        Assert.Equal([@"inspectDevFolder C:\dev\demo"], handler.Calls);
     }
 
     [Fact]
@@ -505,7 +528,7 @@ public partial class ControlChannelTests
         foreach (var quick in new[]
                  {
                      MessageTypes.Types, MessageTypes.Community, MessageTypes.InspectPackage, MessageTypes.ApproveModule, MessageTypes.SetModulesRoot,
-                     MessageTypes.SetDeveloperMode, MessageTypes.AddDevFolder, MessageTypes.RemoveDevFolder, MessageTypes.Consumption, MessageTypes.CancelModuleUpdate,
+                     MessageTypes.SetDeveloperMode, MessageTypes.AddDevFolder, MessageTypes.InspectDevFolder, MessageTypes.RemoveDevFolder, MessageTypes.Consumption, MessageTypes.CancelModuleUpdate,
                  })
         {
             Assert.Equal(TimeSpan.FromSeconds(10), ControlClient.TimeoutFor(quick));

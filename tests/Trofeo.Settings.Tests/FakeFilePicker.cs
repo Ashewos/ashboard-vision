@@ -28,6 +28,20 @@ public sealed class FakeFilePicker : IFilePicker
         return Task.FromResult(Result);
     }
 
+    /// <summary>Le dossier que rend « Choisir un dossier » ; <c>null</c> : l'utilisateur annule.</summary>
+    public string? FolderResult { get; set; }
+
+    public int FolderCalls { get; private set; }
+
+    public Task<string?> PickFolderAsync(string title)
+    {
+        FolderCalls++;
+        Title = title;
+        if (Failure is not null)
+            throw new FilePickerException(Failure);
+        return Task.FromResult(FolderResult);
+    }
+
     public Task<string?> SaveAsync(string title, string typeName, string extension, string suggestedName)
     {
         SaveCalls++;

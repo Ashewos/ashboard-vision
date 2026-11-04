@@ -28,9 +28,9 @@ public partial class MainWindow : Window
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        // Réduite, la fenêtre ne montre rien : l'aperçu se met en pause.
-        if (change.Property == WindowStateProperty && DataContext is MainViewModel model)
-            model.SetPreviewPaused(WindowState == WindowState.Minimized);
+        // Réduite ou cachée, la fenêtre ne montre rien : l'aperçu se met en pause, et la consommation ne se mesure plus.
+        if ((change.Property == WindowStateProperty || change.Property == IsVisibleProperty) && DataContext is MainViewModel model)
+            model.SetPreviewPaused(WindowState == WindowState.Minimized || !IsVisible);
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

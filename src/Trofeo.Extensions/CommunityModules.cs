@@ -885,16 +885,15 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         return result;
     }
 
-    /// <inheritdoc />
-    public ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted)
+    // Les refus de chemin d'un dossier de travail : les mêmes pour l'examiner (InspectDevFolder) et pour l'ajouter.
+    private static ActionResult? CheckDevFolderPath(string path, out string full)
     {
-        ArgumentNullException.ThrowIfNull(granted);
+        full = "";
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
         {
             return new ActionResult(false, "Choisis un dossier avec son chemin complet (par exemple C:\\Dev\\MonModule).");
         }
 
-        string full;
         try
         {
             full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
@@ -904,9 +903,68 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             return new ActionResult(false, $"Ce chemin n'est pas utilisable : {ex.Message}");
         }
 
-        if (!Directory.Exists(full))
+        return Directory.Exists(full) ? null : new ActionResult(false, "Ce dossier n'existe pas.");
+    }
+
+    /// <inheritdoc />
+    public PackageInspection InspectDevFolder(string path)
+    {
+        static PackageInspection Refused(string message) => new(null, [message], null, null);
+
+        if (CheckDevFolderPath(path, out var full) is { } pathRefused)
         {
-            return new ActionResult(false, "Ce dossier n'existe pas.");
+            return Refused(pathRefused.Message);
+        }
+
+        // Une lecture, rien d'écrit : ni la liste scellée, ni l'état du service, ni un hôte.
+        ApprovedLoad loaded;
+        lock (_gate)
+        {
+            loaded = _store.Load();
+        }
+
+        if (loaded.Unreadable)
+        {
+            return Refused(CommunityCatalog.ApprovalsUnreadableMessage);
+        }
+
+        if (loaded.Tampered || !loaded.Modules.DeveloperMode)
+        {
+            return Refused("Allume d'abord le mode développeur.");
+        }
+
+        var read = CommunityCatalog.ReadManifest(full);
+        if (read.Manifest is not { } manifest)
+        {
+            return Refused(read.Message ?? "Le manifeste de ce dossier est illisible.");
+        }
+
+        var errors = new List<string>();
+        var compatibility = Compatibility.Check(manifest.Sdk);
+        if (compatibility != CompatibilityKind.Compatible)
+        {
+            errors.Add(Compatibility.Message(compatibility));
+        }
+
+        // L'identifiant est pris par un module installé, ou par le manifeste d'un autre dossier de travail (pas par ce dossier lui-même).
+        var taken = new CommunityCatalog(() => loaded).Scan()
+            .Where(e => !e.FromDevFolder || (e.Manifest is not null && !SamePath(e.Directory, full)))
+            .Any(e => e.Id == manifest.Id);
+        if (taken)
+        {
+            errors.Add(CommunityCatalog.CollisionMessage);
+        }
+
+        return new PackageInspection(manifest, errors, null, null);
+    }
+
+    /// <inheritdoc />
+    public ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted)
+    {
+        ArgumentNullException.ThrowIfNull(granted);
+        if (CheckDevFolderPath(path, out var full) is { } pathRefused)
+        {
+            return pathRefused;
         }
 
         var read = CommunityCatalog.ReadManifest(full);

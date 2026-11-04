@@ -565,4 +565,58 @@ public static class Texts
     public static string DialogInvalidPackage => Get();
     /// <summary>Boîte de mise à jour : le service refuse sans dire pourquoi.</summary>
     public static string DialogPreparationFailed => Get();
+    /// <summary>Titre de la zone du dossier des modules, dans Paramètres.</summary>
+    public static string CommunityFolderTitle => Get();
+    /// <summary>Sous le dossier des modules.</summary>
+    public static string CommunityFolderHelp => Get();
+    /// <summary>Bouton : choisit le dossier des modules.</summary>
+    public static string CommunityFolderChange => Get();
+    /// <summary>Titre du sélecteur de dossier.</summary>
+    public static string CommunityFolderPickTitle => Get();
+    /// <summary>Titre de la zone du mode développeur.</summary>
+    public static string DeveloperTitle => Get();
+    /// <summary>Sous l'interrupteur du mode développeur.</summary>
+    public static string DeveloperHelp => Get();
+    /// <summary>Bandeau en haut de la fenêtre tant que le mode développeur est allumé.</summary>
+    public static string DeveloperBanner => Get();
+    /// <summary>Titre de la liste des dossiers du mode développeur.</summary>
+    public static string DeveloperFolders => Get();
+    /// <summary>Liste des dossiers de travail vide.</summary>
+    public static string DeveloperNoFolders => Get();
+    /// <summary>Ligne d'un dossier de travail dont le module n'est pas dans la liste.</summary>
+    public static string DeveloperNoModule => Get();
+    /// <summary>Bouton : choisit le dossier de travail d'un module.</summary>
+    public static string DeveloperAddFolder => Get();
+    /// <summary>Titre du sélecteur de dossier.</summary>
+    public static string DeveloperPickTitle => Get();
+    /// <summary>Bouton d'une ligne : recharge le module avec les fichiers de son dossier.</summary>
+    public static string DeveloperReload => Get();
+    /// <summary>Bouton d'une ligne : retire le dossier de la liste (le dossier lui-même n'est pas touché).</summary>
+    public static string DeveloperRemove => Get();
+    /// <summary>Titre de la boîte qui ajoute un dossier de travail ou recharge son module.</summary>
+    public static string DialogDevTitle => Get();
+    /// <summary>Bouton de confirmation de la boîte d'un dossier de travail.</summary>
+    public static string DialogDevAdd => Get();
+    /// <summary>Titre de section, dans Paramètres.</summary>
+    public static string ConsumptionTitle => Get();
+    /// <summary>Sous le titre de la consommation.</summary>
+    public static string ConsumptionHelp => Get();
+    /// <summary>En-tête de colonne du tableau de consommation.</summary>
+    public static string ConsumptionModule => Get();
+    /// <summary>En-tête de colonne du tableau de consommation.</summary>
+    public static string ConsumptionCpu => Get();
+    /// <summary>En-tête de colonne du tableau de consommation.</summary>
+    public static string ConsumptionMemory => Get();
+    /// <summary>Repère orange d'un module qui consomme beaucoup depuis un moment.</summary>
+    public static string ConsumptionHigh => Get();
+    /// <summary>Processeur d'une ligne. {0} : le pourcentage, avec la virgule.</summary>
+    public static string ConsumptionCpuValue => Get();
+    /// <summary>Mémoire d'une ligne. {0} : les mégaoctets.</summary>
+    public static string ConsumptionMemoryValue => Get();
+    /// <summary>Bouton : replie le tableau de consommation (plus aucune mesure demandée).</summary>
+    public static string ConsumptionHide => Get();
+    /// <summary>Bouton : déplie le tableau de consommation.</summary>
+    public static string ConsumptionShow => Get();
+    /// <summary>Quand le service ne répond pas à la lecture de la consommation.</summary>
+    public static string ConsumptionFailed => Get();
 }

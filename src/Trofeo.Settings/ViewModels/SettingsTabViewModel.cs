@@ -48,7 +48,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     private UpdateInfo? _seenUpdate;
 
     public SettingsTabViewModel(
-        IServiceLink link, EditSession session, PreferencesStore preferences, SystemServices system, IFilePicker? picker = null)
+        IServiceLink link, EditSession session, PreferencesStore preferences, SystemServices system, IFilePicker? picker = null, TimeProvider? time = null)
         : base(Texts.TabSettings)
     {
         _link = link;
@@ -57,7 +57,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
         _startup = system.Startup;
         _launcher = system.Launcher;
         Picker = picker;
-        Community = new CommunitySectionViewModel(link, session, () => Picker);
+        Community = new CommunitySectionViewModel(link, session, () => Picker, time);
         _locateHelper = system.LocateHelper ?? (() => AppLocator.Find("Trofeo.SensorHelper.exe"));
         _ownMemory = system.OwnMemory ?? OwnPrivateBytes;
 

@@ -99,6 +99,12 @@ public interface IServiceLink : IAsyncDisposable
     Task<ActionResult> SetDeveloperModeAsync(bool on);
     Task<ActionResult> AddDevFolderAsync(string path, IReadOnlyList<ModulePermission> granted);
     Task<ActionResult> RemoveDevFolderAsync(string path);
+
+    /// <summary>
+    /// Ce que le service lit dans le manifeste d'un dossier de travail avant qu'on l'ajoute : rien n'est lancé ni ajouté. Les refus
+    /// (chemin, manifeste illisible, identifiant déjà pris…) sont dans <see cref="PackageInfo.Errors"/>.
+    /// </summary>
+    Task<PackageInfo> InspectDevFolderAsync(string path);
     Task<ActionResult> ReloadDevModuleAsync(string id);
 
     /// <summary>Cherche les mises à jour des modules ; le résultat se lit ensuite avec <see cref="GetCommunityAsync"/>.</summary>

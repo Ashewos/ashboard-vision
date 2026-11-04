@@ -213,6 +213,95 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+
+        <!-- Le dossier des modules : le chemin, « Changer… ». -->
+        <Border Name="ModulesFolderBox" Classes="note" Padding="14,12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Grid.Column="0" Spacing="4">
+              <TextBlock Classes="name" Text="{x:Static t:Texts.CommunityFolderTitle}" />
+              <TextBlock Name="ModulesRootText" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Text="{Binding ModulesRoot}" />
+              <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.CommunityFolderHelp}" />
+            </StackPanel>
+            <Button Grid.Column="1" Name="ChangeFolderButton" VerticalAlignment="Top" Content="{x:Static t:Texts.CommunityFolderChange}"
+                    Command="{Binding ChangeModulesFolderCommand}" IsEnabled="{Binding IsIdle}" />
+          </Grid>
+        </Border>
+
+        <!-- Le mode développeur : l'interrupteur, puis (allumé) les dossiers de travail. -->
+        <Border Name="DeveloperBox" Classes="note" Padding="14,12">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Classes="name" Text="{x:Static t:Texts.DeveloperTitle}" VerticalAlignment="Center" Margin="0,0,24,0" />
+              <ToggleSwitch Grid.Column="1" Name="DeveloperSwitch" OnContent="" OffContent="" VerticalAlignment="Center"
+                            AutomationProperties.Name="{x:Static t:Texts.DeveloperTitle}"
+                            IsChecked="{Binding DeveloperMode}" IsEnabled="{Binding IsIdle}" />
+            </Grid>
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.DeveloperHelp}" />
+            <StackPanel Name="DevFoldersBox" Spacing="8" IsVisible="{Binding DeveloperMode}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Classes="section" Text="{x:Static t:Texts.DeveloperFolders}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Name="AddDevFolderButton" Classes="small" Content="{x:Static t:Texts.DeveloperAddFolder}"
+                        Command="{Binding AddDevFolderCommand}" IsEnabled="{Binding IsIdle}" />
+              </Grid>
+              <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.DeveloperNoFolders}" IsVisible="{Binding HasNoDevFolders}" />
+              <ItemsControl Name="DevFolderList" ItemsSource="{Binding DevFolders}" IsVisible="{Binding HasDevFolders}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:DevFolderRow">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,0,0,8">
+                      <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Text="{Binding PathText}" />
+                        <TextBlock Classes="muted" TextTrimming="CharacterEllipsis" Text="{Binding ModuleName}" IsVisible="{Binding HasModule}" />
+                        <TextBlock Classes="warning" TextWrapping="Wrap" Text="{Binding NoModuleText}" IsVisible="{Binding HasNoModule}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                        <Button Classes="small" Content="{x:Static t:Texts.DeveloperReload}" Command="{Binding ReloadCommand}" IsEnabled="{Binding CanReloadNow}" />
+                        <Button Classes="small" Content="{x:Static t:Texts.DeveloperRemove}" Command="{Binding RemoveCommand}" IsEnabled="{Binding CanRemoveNow}" />
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </Border>
+
+    <!-- La consommation des modules : relue toutes les 5 secondes, seulement tant que ce tableau est sous les yeux. -->
+    <Border Name="ConsumptionPanel" Classes="panel" Padding="20" DataContext="{Binding Community.Consumption}" x:DataType="vm:ModuleConsumptionViewModel">
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+          <StackPanel Grid.Column="0" Spacing="4">
+            <TextBlock Classes="section" Text="{x:Static t:Texts.ConsumptionTitle}" />
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.ConsumptionHelp}" />
+          </StackPanel>
+          <Button Grid.Column="1" Name="ConsumptionToggle" Classes="small" VerticalAlignment="Top"
+                  Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" />
+        </Grid>
+        <TextBlock Name="ConsumptionFailure" Classes="error" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
+                   Text="{Binding Failure}" IsVisible="{Binding HasFailure}" />
+        <StackPanel Name="ConsumptionTable" Spacing="6" IsVisible="{Binding IsExpanded}">
+          <Grid ColumnDefinitions="*,110,110" ColumnSpacing="12">
+            <TextBlock Grid.Column="0" Classes="muted" Text="{x:Static t:Texts.ConsumptionModule}" />
+            <TextBlock Grid.Column="1" Classes="muted" TextAlignment="Right" Text="{x:Static t:Texts.ConsumptionCpu}" />
+            <TextBlock Grid.Column="2" Classes="muted" TextAlignment="Right" Text="{x:Static t:Texts.ConsumptionMemory}" />
+          </Grid>
+          <ItemsControl Name="ConsumptionList" ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ConsumptionRow">
+                <Grid ColumnDefinitions="*,110,110" ColumnSpacing="12" Margin="0,0,0,6">
+                  <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                    <!-- Le repère orange (jeton Amber) : le service juge ce module gourmand depuis une minute. -->
+                    <TextBlock Name="HighMark" Classes="warning" FontWeight="SemiBold" Text="{Binding HighText}" IsVisible="{Binding IsHigh}" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="1" Classes="number" TextAlignment="Right" Classes.warning="{Binding IsHigh}" Text="{Binding CpuText}" />
+                  <TextBlock Grid.Column="2" Classes="number" TextAlignment="Right" Classes.warning="{Binding IsHigh}" Text="{Binding MemoryText}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
       </StackPanel>
     </Border>
     </StackPanel>

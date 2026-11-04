@@ -100,6 +100,9 @@ public sealed partial class ServiceControlHandlerTests
 
         Assert.True(overview.Modules[1].FromDevFolder);
         Assert.Null(overview.Modules[1].Message);
+        Assert.Equal(@"C:\dev\mon-module", overview.Modules[1].DevFolderPath); // le dossier de travail relie le module à la liste des dossiers
+        Assert.Null(demo.DevFolderPath);                                           // un module installé n'en a pas
+        Assert.Null(overview.Modules[2].DevFolderPath);
 
         var broken = overview.Modules[2]; // sans manifeste lisible : l'identifiant tient lieu de nom, la version vient de la validation
         Assert.Equal(("alex.casse", "", ""), (broken.Name, broken.Author, broken.Description));
@@ -206,6 +209,23 @@ public sealed partial class ServiceControlHandlerTests
         Assert.Empty(package.Declared);
         Assert.Equal(["Archive illisible."], package.Errors);
         Assert.Null(package.InstalledVersion);
+    }
+
+    [Fact]
+    public void InspectDevFolder_CopiesTheInspection_WithoutConflictOrInstalledVersion()
+    {
+        using var rig = new Rig();
+        rig.Community.DevFolderInspection = new PackageInspection(
+            Manifest("alex.dev", "0.1.0", Both), ["Un module installé porte déjà cet identifiant : désinstalle-le ou change l'identifiant."], null, null);
+
+        var package = rig.Handler.InspectDevFolder(@"C:\dev\mon-module");
+
+        Assert.Equal(("alex.dev", "Démo", "Alex", "0.1.0"), (package.Id, package.Name, package.Author, package.Version));
+        Assert.Equal(Both, package.Declared);
+        Assert.Equal(["Un module installé porte déjà cet identifiant : désinstalle-le ou change l'identifiant."], package.Errors);
+        Assert.Null(package.Conflict);
+        Assert.Null(package.InstalledVersion);
+        Assert.Equal([@"inspectDevFolder C:\dev\mon-module"], rig.Community.Calls);
     }
 
     // ---- Chaque demande passe à ICommunityModules ----

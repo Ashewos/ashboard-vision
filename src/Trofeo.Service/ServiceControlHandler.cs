@@ -303,12 +303,17 @@ public sealed class ServiceControlHandler(
             entry.Id, manifest?.Name ?? entry.Id, manifest?.Author ?? "", manifest?.Description ?? "",
             manifest?.Version ?? entry.Approval?.Version, Enum.Parse<LinkCommunityState>(entry.State.ToString()), entry.Message,
             manifest?.Permissions ?? [], community.GrantedTo(entry), entry.FromDevFolder,
-            UpdateVersion: update?.Version, UpdateNotes: update?.Notes);
+            UpdateVersion: update?.Version, UpdateNotes: update?.Notes,
+            DevFolderPath: entry.FromDevFolder ? entry.Directory : null);
     }
 
-    public PackageInfo InspectPackage(string path)
+    public PackageInfo InspectPackage(string path) => ToPackageInfo(community.Inspect(path));
+
+    // Le contenu d'un dossier de travail : le manifeste est lu, rien n'est lancé ; chaque refus est dans les erreurs.
+    public PackageInfo InspectDevFolder(string path) => ToPackageInfo(community.InspectDevFolder(path));
+
+    private static PackageInfo ToPackageInfo(PackageInspection inspection)
     {
-        var inspection = community.Inspect(path);
         var manifest = inspection.Manifest;
         return new PackageInfo(
             manifest?.Id, manifest?.Name, manifest?.Author, manifest?.Version, manifest?.Description, manifest?.Permissions ?? [],

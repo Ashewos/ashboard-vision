@@ -81,6 +81,12 @@ public class ServiceLinkTests
             return new PackageInfo("alex.demo", "Démo", "Alex", "1.0.0", "Démo", [], [], null, null);
         }
 
+        public PackageInfo InspectDevFolder(string path)
+        {
+            ModuleCalls.Enqueue("inspectDev " + path);
+            return new PackageInfo("alex.dev", "Dev", "Alex", "0.1.0", "Dev", [], [], null, null);
+        }
+
         public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
             Task.FromResult(Changing("install " + path));
 
@@ -377,6 +383,7 @@ public class ServiceLinkTests
         var calls = Volatile.Read(ref handler.TypesCalls);
         Assert.Equal(@"C:\Modules", (await link.GetCommunityAsync()).ModulesRoot);
         Assert.Equal("alex.demo", (await link.InspectPackageAsync("x.avmod")).Id);
+        Assert.Equal("alex.dev", (await link.InspectDevFolderAsync("C:")).Id); // examiner un dossier ne change rien : pas de relecture des types
         await link.CheckModuleUpdatesAsync();
         Assert.Equal("service", Assert.Single(await link.GetConsumptionAsync()).Id);
         // Préparer une mise à jour (télécharger, lire) et l'abandonner ne changent encore aucun module : rien à relire.

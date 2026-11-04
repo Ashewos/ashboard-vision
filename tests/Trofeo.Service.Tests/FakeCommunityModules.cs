@@ -90,6 +90,15 @@ internal sealed class FakeCommunityModules : ICommunityModules
 
     public ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted) => Record($"addDevFolder {path} {Join(granted)}");
 
+    /// <summary>Ce que <see cref="InspectDevFolder"/> rend.</summary>
+    public PackageInspection DevFolderInspection { get; set; } = new(null, ["Le fichier manifest.json est introuvable dans le dossier du module."], null, null);
+
+    public PackageInspection InspectDevFolder(string path)
+    {
+        Record($"inspectDevFolder {path}");
+        return DevFolderInspection;
+    }
+
     public ActionResult RemoveDevFolder(string path) => Record($"removeDevFolder {path}");
 
     public Task<ActionResult> ReloadDevModuleAsync(string id) => Task.FromResult(Record($"reloadDevModule {id}"));
