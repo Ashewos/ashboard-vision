@@ -105,9 +105,9 @@ static class Program
                 AppPaths.SettingsDir, Trofeo.Extensions.Sandbox.AppContainerProfile.Delete, vault.RemoveScope, warn: message => Trace.TraceWarning(message));
             var cleanup = new UserCleanup(
                 new RegistryRunKey(), QuotaModInstaller.CreateProduction(null),
-                (deleteSettings, _) =>
+                (erase, _) =>
                 {
-                    modules.Run(deleteSettings);
+                    modules.Run(erase);
                     return Task.CompletedTask;
                 });
             Task.Run(() => cleanup.RunAsync(

@@ -63,7 +63,7 @@ public sealed class CommunityCleanup
     {
         // La liste d'abord : plus rien ne la lira après la première suppression.
         var inspection = _store.Inspect();
-        var devFolders = DevFolderPaths(inspection);
+        var devFolders = UsableDevFolders(inspection);
         var ids = ModuleIds(inspection, devFolders);
 
         foreach (var id in ids)
@@ -86,7 +86,7 @@ public sealed class CommunityCleanup
         };
         if (folderIsKnown)
         {
-            RemoveDefaultFolder(devFolders);
+            TryDelete(() => RemoveDefaultFolder(devFolders), "Le dossier des modules n'a pas pu être parcouru");
         }
 
         foreach (var file in new[] { _listPath, _listPath + ".tmp", _keyPath, _keyPath + ".tmp" })
@@ -97,22 +97,17 @@ public sealed class CommunityCleanup
 
     // --- Ce que la liste désigne ---------------------------------------------------------------------------------------------------
 
-    /// <summary>Les dossiers de développement de la liste, avec un chemin utilisable (local si le sceau ne tient pas).</summary>
-    private static List<string> DevFolderPaths(ListInspection inspection)
+    /// <summary>
+    /// Les dossiers de développement de la liste dont le manifeste peut être lu : seulement ceux d'un disque local, même si le sceau tient.
+    /// Un dossier sur un partage réseau n'est pas ouvert (la désinstallation ne se connecte à aucune machine) : son conteneur et ses
+    /// secrets restent alors en place, puisque son identifiant ne peut pas être lu sans toucher au réseau.
+    /// </summary>
+    internal static List<string> UsableDevFolders(ListInspection inspection)
     {
         var paths = new List<string>();
-        if (inspection.Trust is not (ListTrust.Verified or ListTrust.Unverified))
+        if (inspection.Trust is ListTrust.Verified or ListTrust.Unverified)
         {
-            return paths;
-        }
-
-        foreach (var path in inspection.DevFolderPaths)
-        {
-            var usable = inspection.Trust == ListTrust.Verified ? Path.IsPathFullyQualified(path) : IsLocalAbsolutePath(path);
-            if (usable)
-            {
-                paths.Add(path);
-            }
+            paths.AddRange(inspection.DevFolderPaths.Where(IsLocalAbsolutePath));
         }
 
         return paths;
@@ -164,11 +159,29 @@ public sealed class CommunityCleanup
     private static bool IsInside(string path, string folder) =>
         path.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsLink(FileSystemInfo info) => info.Attributes.HasFlag(FileAttributes.ReparsePoint);
+    /// <summary>
+    /// Vrai pour un lien symbolique ou une jonction (ce qui redirige vraiment : on ne le traverse jamais). Un point d'analyse d'un autre
+    /// type (un dossier synchronisé par OneDrive, par exemple) n'a pas de cible : c'est un dossier normal.
+    /// </summary>
+    private static bool IsLink(FileSystemInfo info) => IsRedirecting(() => info.LinkTarget);
+
+    /// <summary>Vrai si la cible lue n'est pas nulle ; une cible illisible compte comme un lien (par prudence, rien n'est traversé).</summary>
+    internal static bool IsRedirecting(Func<string?> readLinkTarget)
+    {
+        try
+        {
+            return readLinkTarget() is not null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
 
     private void RemoveDefaultFolder(List<string> devFolders)
     {
-        if (Normalize(_defaultFolder) is not { } folder)
+        // « Documents » introuvable donnerait un dossier par défaut relatif, résolu depuis le dossier courant : on n'y touche pas.
+        if (!Path.IsPathFullyQualified(_defaultFolder) || Normalize(_defaultFolder) is not { } folder)
         {
             return;
         }
@@ -226,7 +239,13 @@ public sealed class CommunityCleanup
         var gone = true;
         if (!IsLink(folder))
         {
-            foreach (var entry in folder.EnumerateFileSystemInfos().ToList())
+            // Un dossier illisible reste en place, sans empêcher ses frères de partir.
+            if (!TryList(folder, out var entries))
+            {
+                return false;
+            }
+
+            foreach (var entry in entries)
             {
                 if (entry is DirectoryInfo child)
                 {
@@ -250,6 +269,14 @@ public sealed class CommunityCleanup
 
         // Pour un lien, Delete ne retire que le lien ; sinon le dossier est vide ici (ou il reste un fichier qui résiste, et Delete échoue).
         return gone && TryDelete(folder.Delete, $"{folder.FullName} n'a pas pu être supprimé");
+    }
+
+    private bool TryList(DirectoryInfo folder, out List<FileSystemInfo> entries)
+    {
+        var listed = new List<FileSystemInfo>();
+        var ok = TryDelete(() => listed.AddRange(folder.EnumerateFileSystemInfos()), $"{folder.FullName} n'a pas pu être parcouru");
+        entries = listed;
+        return ok;
     }
 
     // --- Étapes tentées l'une après l'autre ----------------------------------------------------------------------------------------

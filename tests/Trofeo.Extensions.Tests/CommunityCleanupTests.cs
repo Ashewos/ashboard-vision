@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.RegularExpressions;
 using Trofeo.Extensions;
 
@@ -477,5 +479,114 @@ public sealed partial class CommunityCleanupTests : IDisposable
         Cleanup().Run(deleteSettings: false);
 
         Assert.Equal(["alex.demo"], _profiles);
+    }
+
+    // --- Correctifs de la relecture --------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Cleanup_Erase_AnUnreadableSubfolderDoesNotStopTheRest()
+    {
+        // I1 : un sous-dossier dont l'énumération échoue reste en place ; ses frères, la liste et sa clé partent quand même.
+        SaveList(null, ["alex.demo"]);
+        FillDefaultFolder("alex.demo");
+        FillDefaultFolder("alex.autre");
+        var blocked = Path.Combine(DefaultFolder, "bloque");
+        Directory.CreateDirectory(blocked);
+        File.WriteAllText(Path.Combine(blocked, "Mod.dll"), "code");
+        var info = new DirectoryInfo(blocked);
+        var rule = new FileSystemAccessRule(WindowsIdentity.GetCurrent().User!, FileSystemRights.ListDirectory, AccessControlType.Deny);
+        var security = info.GetAccessControl();
+        security.AddAccessRule(rule);
+        info.SetAccessControl(security);
+        try
+        {
+            Cleanup().Run(deleteSettings: true);
+        }
+        finally
+        {
+            security.RemoveAccessRule(rule); // les droits reviennent avant le nettoyage du test
+            info.SetAccessControl(security);
+        }
+
+        Assert.False(Directory.Exists(Path.Combine(DefaultFolder, "alex.demo")));
+        Assert.False(Directory.Exists(Path.Combine(DefaultFolder, "alex.autre")));
+        Assert.True(File.Exists(Path.Combine(blocked, "Mod.dll")));
+        Assert.False(File.Exists(ListPath));
+        Assert.False(File.Exists(KeyPath));
+        Assert.Contains(_warnings, w => w.Contains(blocked, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void IsRedirecting_OnlyALinkWithATargetRedirects()
+    {
+        // I2 : un point d'analyse sans cible (dossier synchronisé par OneDrive…) se traite comme un dossier normal.
+        Assert.False(CommunityCleanup.IsRedirecting(() => null));
+        Assert.True(CommunityCleanup.IsRedirecting(() => @"D:illeurs"));
+        Assert.True(CommunityCleanup.IsRedirecting(() => throw new IOException("illisible")));
+        Assert.True(CommunityCleanup.IsRedirecting(() => throw new UnauthorizedAccessException()));
+    }
+
+    [Fact]
+    public void Cleanup_Erase_RelativeDefaultFolder_DoesNothing()
+    {
+        // M2 : « Documents » vide donnerait un dossier par défaut relatif, résolu depuis le dossier courant.
+        var relative = "av-cleanup-relatif-" + Guid.NewGuid().ToString("N");
+        var full = Path.GetFullPath(relative);
+        Directory.CreateDirectory(full);
+        File.WriteAllText(Path.Combine(full, "temoin.txt"), "à garder");
+        try
+        {
+            new CommunityCleanup(SettingsDir, _profiles.Add, _scopes.Add, relative, _warnings.Add).Run(deleteSettings: true);
+
+            Assert.True(File.Exists(Path.Combine(full, "temoin.txt")));
+        }
+        finally
+        {
+            Directory.Delete(full, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void UsableDevFolders_NeverReachTheNetwork_EvenWithASealedList()
+    {
+        // M3 : un dossier de travail sur un partage réseau n'est pas ouvert, même dans une liste dont le sceau tient ; son conteneur et
+        // ses secrets restent alors en place (son identifiant ne peut pas être lu sans toucher au réseau).
+        var inspection = new ListInspection(ListTrust.Verified, null, [], [@"\serveur\partage\module", @"D:\dev\mon-module", "relatif"]);
+
+        Assert.Equal([@"D:\dev\mon-module"], CommunityCleanup.UsableDevFolders(inspection));
+    }
+
+    [Theory]
+    [InlineData("parent")]
+    [InlineData("child")]
+    [InlineData("device")]
+    public void Cleanup_SealedRootNextToTheDefaultFolder_KeepsEverything(string form)
+    {
+        // M5 : ni le parent du dossier par défaut, ni un de ses enfants, ni sa forme « \\?\ » ne sont le dossier par défaut.
+        FillDefaultFolder();
+        var root = form switch
+        {
+            "parent" => ProductFolder,
+            "child" => Path.Combine(DefaultFolder, "alex.demo"),
+            _ => @"\\?\" + DefaultFolder,
+        };
+        SaveList(root, ["alex.demo"]);
+
+        Cleanup().Run(deleteSettings: true);
+
+        Assert.True(File.Exists(Path.Combine(DefaultFolder, "alex.demo", "1.0.0", "Mod.dll")));
+    }
+
+    [Fact]
+    public void Cleanup_DevFolderEqualToTheDefaultFolder_IsNotDeleted()
+    {
+        FillDefaultFolder();
+        File.WriteAllText(Path.Combine(DefaultFolder, "manifest.json"), CommunityRig.ManifestJson("dev.alpha", "0.1.0", [], null));
+        SaveList(null, [], new DevFolder(DefaultFolder, []));
+
+        Cleanup().Run(deleteSettings: true);
+
+        Assert.True(File.Exists(Path.Combine(DefaultFolder, "manifest.json")));
+        Assert.Equal(["dev.alpha"], _profiles);
     }
 }
