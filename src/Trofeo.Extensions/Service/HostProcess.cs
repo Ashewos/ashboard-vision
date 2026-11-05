@@ -59,12 +59,28 @@ public interface IHostProcessFactory
 [SupportedOSPlatform("windows")]
 public sealed class SandboxedHostProcessFactory : IHostProcessFactory
 {
+    private readonly Func<string, AppContainerProfile> _ensureProfile;
+    private readonly IReadOnlyList<string> _alsoGrantRead;
+
+    /// <param name="ensureProfile">Crée (ou retrouve) le profil d'un module d'après son identifiant ; par défaut <see cref="AppContainerProfile.Ensure"/>. Le banc d'essai passe son propre profil (<see cref="AppContainerProfile.EnsureForCheck"/>).</param>
+    /// <param name="alsoGrantRead">D'autres dossiers à rendre lisibles au conteneur, en plus de celui du module (le banc d'essai y met le dossier de l'hôte, qui n'est pas lisible par défaut sous le profil de l'utilisateur).</param>
+    public SandboxedHostProcessFactory(Func<string, AppContainerProfile>? ensureProfile = null, IReadOnlyList<string>? alsoGrantRead = null)
+    {
+        _ensureProfile = ensureProfile ?? AppContainerProfile.Ensure;
+        _alsoGrantRead = alsoGrantRead ?? [];
+    }
+
     /// <inheritdoc />
     public IHostProcess Start(HostStart start)
     {
         ArgumentNullException.ThrowIfNull(start);
-        var profile = AppContainerProfile.Ensure(start.ModuleId);
+        var profile = _ensureProfile(start.ModuleId);
         profile.GrantRead(start.ModuleDirectory);
+        foreach (var directory in _alsoGrantRead)
+        {
+            profile.GrantRead(directory);
+        }
+
         var job = new ModuleJob();
         try
         {

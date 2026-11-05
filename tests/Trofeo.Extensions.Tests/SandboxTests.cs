@@ -48,6 +48,7 @@ public sealed class SandboxTests : IDisposable
         foreach (var id in _profiles)
         {
             AppContainerProfile.Delete(id);
+            AppContainerProfile.DeleteForCheck(id); // le profil du banc d'essai, si un test en a créé un
         }
 
         foreach (var folder in _folders)
@@ -522,6 +523,40 @@ public sealed class SandboxTests : IDisposable
         Assert.False(Directory.Exists(dataDirectory));
         AppContainerProfile.Delete(id); // déjà supprimé : sans erreur
         Assert.Equal(profile.Sid, AppContainerProfile.Ensure(id).Sid); // le SID ne dépend que du nom
+    }
+
+    [WindowsSandboxFact]
+    public void EnsureForCheck_IsAProfileApartFromTheInstalledModule()
+    {
+        // Le banc d'essai (ashboard-module check) ne touche jamais au profil du module installé : autre nom, autre identité, autre dossier,
+        // et sa suppression laisse l'installé en place.
+        var id = NewId();
+        var installed = AppContainerProfile.Ensure(id);
+        var check = AppContainerProfile.EnsureForCheck(id);
+
+        Assert.Equal("ashboard-vision.check." + id, check.Name);
+        Assert.Equal("ashboard-vision.mod." + id, installed.Name);
+        Assert.NotEqual(installed.Sid, check.Sid);
+        Assert.NotEqual(installed.DataDirectory, check.DataDirectory);
+        Assert.Equal(check.Sid, AppContainerProfile.EnsureForCheck(id).Sid);
+
+        AppContainerProfile.DeleteForCheck(id);
+
+        Assert.False(Directory.Exists(check.DataDirectory));
+        Assert.True(Directory.Exists(installed.DataDirectory));
+        AppContainerProfile.DeleteForCheck(id); // déjà supprimé : sans erreur
+    }
+
+    [Fact]
+    public void CheckNameFor_UsesItsOwnPrefixAndTheSameRules()
+    {
+        Assert.Equal("ashboard-vision.check.alex.demo", AppContainerProfile.CheckNameFor("alex.demo"));
+        Assert.StartsWith(AppContainerProfile.NamePrefix, AppContainerProfile.NameFor("alex.demo"), StringComparison.Ordinal);
+        Assert.NotEqual(AppContainerProfile.NameFor("alex.demo"), AppContainerProfile.CheckNameFor("alex.demo"));
+        Assert.True(AppContainerProfile.CheckNameFor(new string('a', 19) + "." + new string('b', 20)).Length <= 64); // l'identifiant le plus long (40) tient
+        Assert.Throws<ArgumentException>(() => AppContainerProfile.CheckNameFor(""));
+        Assert.Throws<ArgumentException>(() => AppContainerProfile.CheckNameFor("a b.c"));
+        Assert.Throws<ArgumentException>(() => AppContainerProfile.CheckNameFor(new string('a', 50) + ".b"));
     }
 
     [WindowsSandboxFact]

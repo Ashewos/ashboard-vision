@@ -18,6 +18,12 @@ public sealed partial class AppContainerProfile
     /// <summary>Début du nom de tous les profils de modules.</summary>
     public const string NamePrefix = "ashboard-vision.mod.";
 
+    /// <summary>
+    /// Début du nom des profils du banc d'essai (<c>ashboard-module check</c>) : un profil à part, pour que l'essai d'un module que le
+    /// créateur a aussi installé ne touche jamais au profil de l'installation (ni à son nettoyage, qui ne connaît que <see cref="NamePrefix"/>).
+    /// </summary>
+    public const string CheckNamePrefix = "ashboard-vision.check.";
+
     // Windows tronque ou refuse au-delà de 64 caractères et n'accepte que lettres, chiffres, point, tiret et soulignement.
     private const int MaxNameLength = 64;
 
@@ -31,7 +37,7 @@ public sealed partial class AppContainerProfile
         DataDirectory = dataDirectory;
     }
 
-    /// <summary>Le nom du profil (<c>ashboard-vision.mod.&lt;id&gt;</c>).</summary>
+    /// <summary>Le nom du profil (<c>ashboard-vision.mod.&lt;id&gt;</c>, ou <c>ashboard-vision.check.&lt;id&gt;</c> pour le banc d'essai).</summary>
     public string Name { get; }
 
     /// <summary>L'identité du conteneur.</summary>
@@ -43,9 +49,14 @@ public sealed partial class AppContainerProfile
     public string DataDirectory { get; }
 
     /// <summary>Le nom du profil d'un module.</summary>
-    public static string NameFor(string moduleId)
+    public static string NameFor(string moduleId) => NameFor(NamePrefix, moduleId);
+
+    /// <summary>Le nom du profil du banc d'essai pour un module.</summary>
+    public static string CheckNameFor(string moduleId) => NameFor(CheckNamePrefix, moduleId);
+
+    private static string NameFor(string prefix, string moduleId)
     {
-        var name = NamePrefix + moduleId;
+        var name = prefix + moduleId;
         if (moduleId.Length == 0 || name.Length > MaxNameLength || !ValidName().IsMatch(name))
         {
             throw new ArgumentException($"« {moduleId} » ne peut pas servir de nom de conteneur.", nameof(moduleId));
@@ -55,11 +66,16 @@ public sealed partial class AppContainerProfile
     }
 
     /// <summary>Crée le profil du module, ou retrouve celui qui existe déjà.</summary>
-    public static AppContainerProfile Ensure(string moduleId)
+    public static AppContainerProfile Ensure(string moduleId) =>
+        EnsureNamed(NameFor(moduleId), "Ashboard Vision - " + moduleId, "Module complémentaire d'Ashboard Vision : " + moduleId);
+
+    /// <summary>Crée le profil du banc d'essai pour ce module (<see cref="CheckNamePrefix"/>), ou retrouve celui qui existe déjà.</summary>
+    public static AppContainerProfile EnsureForCheck(string moduleId) =>
+        EnsureNamed(CheckNameFor(moduleId), "Ashboard Vision (essai) - " + moduleId, "Essai d'un module avec le banc d'essai d'Ashboard Vision : " + moduleId);
+
+    private static AppContainerProfile EnsureNamed(string name, string displayName, string description)
     {
-        var name = NameFor(moduleId);
-        var hr = Native.CreateAppContainerProfile(name, "Ashboard Vision - " + moduleId, "Module complémentaire d'Ashboard Vision : " + moduleId,
-            IntPtr.Zero, 0, out var sidPointer);
+        var hr = Native.CreateAppContainerProfile(name, displayName, description, IntPtr.Zero, 0, out var sidPointer);
         if (hr == Native.ErrorAlreadyExistsHResult)
         {
             hr = Native.DeriveAppContainerSidFromAppContainerName(name, out sidPointer);
@@ -78,9 +94,14 @@ public sealed partial class AppContainerProfile
     }
 
     /// <summary>Supprime le profil du module et son dossier de données. Sans erreur si le profil n'existe pas.</summary>
-    public static void Delete(string moduleId)
+    public static void Delete(string moduleId) => DeleteNamed(NameFor(moduleId));
+
+    /// <summary>Supprime le profil du banc d'essai pour ce module et son dossier de données. Sans erreur si le profil n'existe pas.</summary>
+    public static void DeleteForCheck(string moduleId) => DeleteNamed(CheckNameFor(moduleId));
+
+    private static void DeleteNamed(string name)
     {
-        var hr = Native.DeleteAppContainerProfile(NameFor(moduleId));
+        var hr = Native.DeleteAppContainerProfile(name);
         if (hr != Native.ErrorNotFoundHResult)
         {
             Marshal.ThrowExceptionForHR(hr);

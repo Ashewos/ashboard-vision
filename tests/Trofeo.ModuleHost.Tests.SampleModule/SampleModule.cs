@@ -132,6 +132,15 @@ public sealed class SampleModule : CommunityModule
 
             case "throwStart":
                 throw new InvalidOperationException("boom au démarrage");
+            case "crashWithoutSensors":
+                if (!Services.Has(ModulePermission.Sensors))
+                {
+                    // Un module qui n'a pas prévu qu'on lui refuse sa permission : l'exception se perd sur un fil sans personne pour la rattraper,
+                    // et le processus de l'hôte s'arrête (banc d'essai : « l'hôte ne doit pas s'arrêter »).
+                    new Thread(() => throw new InvalidOperationException("Sans capteurs, je ne sais pas faire")) { IsBackground = true }.Start();
+                }
+
+                break;
         }
     }
 

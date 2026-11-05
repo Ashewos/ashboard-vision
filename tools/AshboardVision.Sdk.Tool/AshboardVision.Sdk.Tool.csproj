@@ -1,0 +1,103 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Le banc d'essai des modules de la communauté : la commande « ashboard-module » (check et pack). Un outil .NET (dotnet tool), dans le
+       paquet local « AshboardVision.Sdk.Tool » (jamais poussé sur nuget.org : il est joint aux versions GitHub et posé par l'installateur,
+       comme le SDK ; voir la conception, 5.6). Même ligne de numéros que le SDK : 1.0.0, AssemblyVersion 1.0.0.0 pour toute la ligne 1.x. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>ashboard-module</AssemblyName>
+    <RootNamespace>AshboardVision.Sdk.Tool</RootNamespace>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <SatelliteResourceLanguages>en;fr</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>ashboard-module</ToolCommandName>
+    <PackageId>AshboardVision.Sdk.Tool</PackageId>
+    <Authors>Ashewos</Authors>
+    <Description>Le banc d'essai des modules de la communauté d'Ashboard Vision : la commande ashboard-module vérifie un module comme le logiciel le lance (enfermé, avec ses limites) et fabrique son paquet .avmod.</Description>
+    <PackageTags>ashboard-vision;thermalright;trofeo-vision;module;sdk;tool</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Ashewos/ashboard-vision</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Les assemblages net10.0 du logiciel, référencés normalement. -->
+    <ProjectReference Include="..\..\src\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\Trofeo.Core\Trofeo.Core.csproj" />
+    <ProjectReference Include="..\..\src\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
+    <!-- Trofeo.Extensions (le manifeste, le paquet .avmod, l'enfermement, le superviseur : une seule implémentation, celle du logiciel) et l'hôte de
+         module visent net10.0-windows, et un outil .NET (PackAsTool) ne peut pas viser une plateforme : « net10.0 » ici. Un projet net10.0 ne peut pas
+         référencer un projet net10.0-windows (NU1201) ; avec ReferenceOutputAssembly=false, la construction du projet est seulement exigée avant la
+         nôtre, et les cibles plus bas ajoutent à la main la référence à Trofeo.Extensions.dll et la copie de l'hôte. -->
+    <ProjectReference Include="..\..\src\Trofeo.Extensions\Trofeo.Extensions.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" UndefineProperties="TargetFramework" />
+    <ProjectReference Include="..\..\src\Trofeo.ModuleHost\Trofeo.ModuleHost.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" UndefineProperties="TargetFramework" />
+    <PackageReference Include="System.CommandLine" Version="2.0.14" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <!-- Core embarque les polices du logiciel (Barlow, Manrope, Pixelify Sans, VT323, sous licence OFL) : leurs textes de licence suivent. -->
+    <None Include="..\..\src\Trofeo.Core\Assets\Fonts\OFL-*.txt" Pack="true" PackagePath="licenses\" Link="licenses\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Trofeo.Extensions.dll, tel que sa construction l'a déposé, comme référence copiée à côté de l'outil (donc aussi listée dans son .deps.json). -->
+  <Target Name="ReferenceExtensions" BeforeTargets="ResolveAssemblyReferences" DependsOnTargets="ResolveProjectReferences">
+    <MSBuild Projects="..\..\src\Trofeo.Extensions\Trofeo.Extensions.csproj" Targets="GetTargetPath" RemoveProperties="TargetFramework">
+      <Output TaskParameter="TargetOutputs" ItemName="ExtensionsTargetPath" />
+    </MSBuild>
+    <ItemGroup>
+      <Reference Include="Trofeo.Extensions" HintPath="@(ExtensionsTargetPath)" Private="true" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Le dossier de sortie de l'hôte (celui où la construction de Trofeo.ModuleHost dépose Trofeo.ModuleHost.exe et ses dépendances), quel que
+       soit l'endroit où la construction écrit (y compris avec une autre racine d'artefacts) : on le demande à MSBuild plutôt que de le deviner. -->
+  <Target Name="ResolveHostDirectory" DependsOnTargets="ResolveProjectReferences">
+    <MSBuild Projects="..\..\src\Trofeo.ModuleHost\Trofeo.ModuleHost.csproj" Targets="GetTargetPath" RemoveProperties="TargetFramework">
+      <Output TaskParameter="TargetOutputs" ItemName="HostTargetPath" />
+    </MSBuild>
+    <PropertyGroup>
+      <HostOutputDirectory>@(HostTargetPath->'%(RootDir)%(Directory)')</HostOutputDirectory>
+      <!-- Ce que l'hôte embarqué laisse de côté : les symboles de débogage (ceux de SkiaSharp pèsent 80 Mo chacun) et les bibliothèques natives des
+           autres plateformes que Windows 64 bits, la seule où le logiciel et son enfermement tournent. -->
+      <HostExcludes>$(HostOutputDirectory)**\*.pdb;$(HostOutputDirectory)runtimes\win-arm64\**;$(HostOutputDirectory)runtimes\win-x86\**;$(HostOutputDirectory)runtimes\osx\**</HostExcludes>
+    </PropertyGroup>
+  </Target>
+
+  <!-- Le SDK .NET copie à côté de l'outil trois fichiers de l'hôte (son .exe, son .deps.json et son .runtimeconfig.json), parce que c'est un projet
+       exécutable référencé : sans la DLL de l'hôte, ils ne servent à rien et prêtent à confusion. On les retire, à la construction et à la
+       publication ; l'hôte complet est dans « host ». -->
+  <Target Name="DropLooseHostFilesFromBuild" AfterTargets="GetCopyToOutputDirectoryItems" DependsOnTargets="ResolveHostDirectory">
+    <ItemGroup>
+      <_SourceItemsToCopyToOutputDirectory Remove="@(_SourceItemsToCopyToOutputDirectory)" Condition="$([System.String]::Copy('%(FullPath)').StartsWith('$(HostOutputDirectory)'))" />
+      <_SourceItemsToCopyToOutputDirectoryAlways Remove="@(_SourceItemsToCopyToOutputDirectoryAlways)" Condition="$([System.String]::Copy('%(FullPath)').StartsWith('$(HostOutputDirectory)'))" />
+      <_SourceItemsToCopyToOutputDirectoryIfDifferent Remove="@(_SourceItemsToCopyToOutputDirectoryIfDifferent)" Condition="$([System.String]::Copy('%(FullPath)').StartsWith('$(HostOutputDirectory)'))" />
+    </ItemGroup>
+  </Target>
+
+  <!-- À la construction : l'hôte est copié dans « host » à côté de l'outil (l'outil lancé depuis son dossier de sortie le trouve aussi). -->
+  <Target Name="CopyHostToOutput" AfterTargets="Build" DependsOnTargets="ResolveHostDirectory">
+    <ItemGroup>
+      <HostFile Include="$(HostOutputDirectory)**\*" Exclude="$(HostExcludes)" />
+    </ItemGroup>
+    <!-- Le SDK dépose aussi l'.exe de l'hôte à la racine (projet exécutable référencé) : ce n'est qu'un doublon sans sa DLL, on l'enlève. -->
+    <Delete Files="$(OutDir)Trofeo.ModuleHost.exe" />
+    <Copy SourceFiles="@(HostFile)" DestinationFiles="@(HostFile->'$(OutDir)host\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- À la publication (donc dans le paquet de l'outil) : l'hôte et tout ce dont il a besoin sont dans « host ». -->
+  <Target Name="IncludeHostInPublish" AfterTargets="ComputeResolvedFilesToPublishList" DependsOnTargets="ResolveHostDirectory">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(FullPath)').StartsWith('$(HostOutputDirectory)'))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish->WithMetadataValue('RelativePath', 'Trofeo.ModuleHost.exe'))" />
+      <!-- Les bibliothèques natives de SkiaSharp de l'outil lui-même : Windows 64 bits seulement, sans symboles. -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(RelativePath)').StartsWith('runtimes\')) And '%(RelativePath)' != 'runtimes\win-x64\native\libSkiaSharp.dll'" />
+      <HostPublishFile Include="$(HostOutputDirectory)**\*" Exclude="$(HostExcludes)" />
+      <ResolvedFileToPublish Include="@(HostPublishFile)" RelativePath="host\%(RecursiveDir)%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
+</Project>

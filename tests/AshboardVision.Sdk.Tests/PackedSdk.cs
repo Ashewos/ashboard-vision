@@ -16,8 +16,11 @@ public class PackedSdk : IDisposable
     {
     }
 
-    /// <summary>Fabrique le paquet du projet <paramref name="projectName"/> (un dossier de <c>src</c>), par exemple <c>AshboardVision.Sdk.Testing</c>.</summary>
-    protected PackedSdk(string projectName)
+    /// <summary>
+    /// Fabrique le paquet du projet <paramref name="projectName"/>, par exemple <c>AshboardVision.Sdk.Testing</c>, dans le dossier
+    /// <paramref name="projectFolder"/> de la racine du dépôt (<c>src</c>, ou <c>tools</c> pour le banc d'essai).
+    /// </summary>
+    protected PackedSdk(string projectName, string projectFolder = "src")
     {
         try
         {
@@ -25,7 +28,7 @@ public class PackedSdk : IDisposable
             var artifacts = Path.Combine(_workDirectory, "artifacts");
             Directory.CreateDirectory(output);
 
-            var project = Path.Combine(RepositoryRoot.Find(), "src", projectName, projectName + ".csproj");
+            var project = Path.Combine(RepositoryRoot.Find(), projectFolder, projectName, projectName + ".csproj");
             var start = new ProcessStartInfo("dotnet")
             {
                 RedirectStandardOutput = true,
@@ -75,7 +78,7 @@ public class PackedSdk : IDisposable
     /// <summary>Le chemin du fichier <c>.nupkg</c> fabriqué.</summary>
     public string PackagePath { get; }
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         try
         {

@@ -43,6 +43,7 @@ public sealed class RemoteModule : IModule
     private ModuleStatus _status = new(ModuleHealth.Online);
     private bool _disposed;
     private long _messageVersion = -1;
+    private long _framesReceived;
     private DateTimeOffset _statusWindowStart;
     private int _statusChanges;
     private ModuleStatus? _pendingHostStatus;
@@ -88,6 +89,12 @@ public sealed class RemoteModule : IModule
 
     /// <inheritdoc />
     public event EventHandler? StatusChanged;
+
+    /// <summary>
+    /// Le nombre d'images que l'hôte a livrées à cette case depuis son ouverture (une image de l'ancienne taille, jetée, ne compte pas).
+    /// Le banc d'essai (<c>ashboard-module check</c>) s'en sert pour savoir qu'une image neuve est arrivée.
+    /// </summary>
+    public long FramesReceived => Interlocked.Read(ref _framesReceived);
 
     /// <summary>Ce que la fabrique a reçu pour créer la case (identifiant d'instance, réglages, journal…).</summary>
     internal ModuleContext Context { get; }
@@ -198,6 +205,7 @@ public sealed class RemoteModule : IModule
 
             replaced = _front;
             _front = image;
+            Interlocked.Increment(ref _framesReceived);
             _animating = animating;
             _awaiting = false;
             _notResponding = false;

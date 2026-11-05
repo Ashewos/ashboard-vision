@@ -152,6 +152,26 @@ public sealed class RemoteModuleTests : IAsyncLifetime
     }
 
     [WindowsHostFact]
+    public async Task FramesReceived_CountsEachImageTheHostDelivers()
+    {
+        var factory = new FakeHostFactory();
+        var rig = FakeRig(factory);
+        var module = rig.Open();
+        using (rig.Draw(module))
+        {
+        }
+
+        var host = await factory.WaitForStartAsync();
+        var open = await host.WaitAsync<Open>();
+        Assert.Equal(0, module.FramesReceived); // l'ouverture n'est pas une image
+
+        await host.SendFrameAsync(open, 0, SKColors.Red);
+        await TestWait.UntilAsync(() => module.FramesReceived == 1);
+        await host.SendFrameAsync(open, 1, SKColors.Green);
+        await TestWait.UntilAsync(() => module.FramesReceived == 2);
+    }
+
+    [WindowsHostFact]
     public async Task HostKilledMidFrame_RenderDoesNotThrowAndKeepsLastImage()
     {
         var (rig, factory) = RealRig();
