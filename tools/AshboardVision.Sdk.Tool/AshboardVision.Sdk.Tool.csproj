@@ -43,6 +43,9 @@
     <None Include="..\..\src\Trofeo.Core\Assets\Fonts\OFL-*.txt" Pack="true" PackagePath="licenses\" Link="licenses\%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- Attention : les dépendances d'Extensions (Control, Distribution, Modules.Agents, ProtectedData…) ne sont pas déclarées ici : elles n'arrivent
+       dans l'outil que parce que la construction découvre et copie les DLL voisines de Trofeo.Extensions.dll. Le test ToolPackageTests
+       (Pack_ContainsTheCommandTheEmbeddedHostAndWhatTheyNeed) liste ces DLL pour qu'on le voie si cela cesse d'être vrai. -->
   <!-- Trofeo.Extensions.dll, tel que sa construction l'a déposé, comme référence copiée à côté de l'outil (donc aussi listée dans son .deps.json). -->
   <Target Name="ReferenceExtensions" BeforeTargets="ResolveAssemblyReferences" DependsOnTargets="ResolveProjectReferences">
     <MSBuild Projects="..\..\src\Trofeo.Extensions\Trofeo.Extensions.csproj" Targets="GetTargetPath" RemoveProperties="TargetFramework">
@@ -65,6 +68,9 @@
            autres plateformes que Windows 64 bits, la seule où le logiciel et son enfermement tournent. -->
       <HostExcludes>$(HostOutputDirectory)**\*.pdb;$(HostOutputDirectory)runtimes\win-arm64\**;$(HostOutputDirectory)runtimes\win-x86\**;$(HostOutputDirectory)runtimes\osx\**</HostExcludes>
     </PropertyGroup>
+    <!-- Garde : sans dossier de sortie de l'hôte, les filtres plus bas (StartsWith sur une chaîne vide) retireraient tout. -->
+    <Error Condition="'$(HostOutputDirectory)' == '' Or !Exists('$(HostOutputDirectory)Trofeo.ModuleHost.exe')"
+           Text="Le dossier de sortie de Trofeo.ModuleHost est introuvable ou vide ('$(HostOutputDirectory)') : l'hôte de module ne peut pas être embarqué dans l'outil." />
   </Target>
 
   <!-- Le SDK .NET copie à côté de l'outil trois fichiers de l'hôte (son .exe, son .deps.json et son .runtimeconfig.json), parce que c'est un projet

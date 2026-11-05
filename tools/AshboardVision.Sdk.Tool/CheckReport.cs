@@ -47,9 +47,6 @@ internal sealed class CheckReport(TextWriter output)
         _failures.Add(Trim(reason ?? text));
     }
 
-    /// <summary>Une ligne d'explication sous la vérification précédente.</summary>
-    public void Detail(string text) => output.WriteLine("    " + text);
-
     /// <summary>Ajoute des lignes du journal du module, qui seront montrées avec une conclusion négative.</summary>
     public void AddJournal(IEnumerable<string> lines) => _journal.AddRange(lines);
 

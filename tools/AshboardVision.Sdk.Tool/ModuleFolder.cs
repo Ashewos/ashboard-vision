@@ -15,6 +15,29 @@ internal static class ModuleFolder
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory?.FullName ?? Directory.GetCurrentDirectory()));
 
     /// <summary>
+    /// Prépare un dossier de sortie : chemin complet, dossier créé s'il manque, et vérifié inscriptible (un fichier d'essai écrit puis supprimé).
+    /// Rend <c>null</c> et la raison en français si le dossier est inutilisable (un fichier de ce nom, un dossier protégé, un chemin invalide).
+    /// </summary>
+    public static string? PrepareOutputFolder(string path, out string? error)
+    {
+        try
+        {
+            var folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+            Directory.CreateDirectory(folder);
+            var probe = Path.Combine(folder, ".ashboard-module-" + Guid.NewGuid().ToString("N"));
+            File.WriteAllBytes(probe, []);
+            File.Delete(probe);
+            error = null;
+            return folder;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            error = $"le dossier de sortie « {path} » ne peut pas servir ({ex.Message})";
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Lit et valide <c>manifest.json</c> avec les règles du logiciel (<see cref="ManifestReader"/>). Si le manifeste est refusé,
     /// <c>Manifest</c> est <c>null</c> et <c>Errors</c> dit pourquoi, en français.
     /// </summary>

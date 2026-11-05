@@ -30,10 +30,20 @@ internal static class PackCommand
             return 1;
         }
 
-        var outputFolder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(output?.FullName ?? DefaultOutputFolder));
-        if (IsInside(folder, outputFolder))
+        // Le refus « dans le dossier du module » passe avant la création du dossier : un refus ne laisse rien derrière lui.
+        var requested = output?.FullName ?? DefaultOutputFolder;
+        if (FullPathOrNull(requested) is { } full && IsInside(folder, full))
         {
             writer.WriteLine("✖ Le paquet serait rangé dans le dossier du module, et il y serait repris au prochain essai : choisis un autre dossier avec --out.");
+            return 1;
+        }
+
+        var outputFolder = ModuleFolder.PrepareOutputFolder(requested, out var outputError);
+        if (outputFolder is null)
+        {
+            writer.WriteLine("✖ Paquet : " + outputError);
+            writer.WriteLine();
+            writer.WriteLine("Pas de paquet : le dossier de sortie (--out) n'est pas utilisable.");
             return 1;
         }
 
@@ -58,6 +68,18 @@ internal static class PackCommand
         writer.WriteLine();
         writer.WriteLine($"Joins ces deux fichiers à ta version GitHub (étiquette v{manifest.Version}).");
         return 0;
+    }
+
+    private static string? FullPathOrNull(string path)
+    {
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null; // PrepareOutputFolder dira pourquoi
+        }
     }
 
     private static bool IsInside(string folder, string candidate) =>

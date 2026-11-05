@@ -73,29 +73,16 @@ internal sealed class SampleDataBroker : IServiceDataBroker
 }
 
 /// <summary>
-/// Lance les hôtes par la fabrique de production, en notant ce qui compte pour l'essai : combien de lancements, si le processus s'est
+/// Lance les hôtes par la fabrique de production, en notant ce qui compte pour l'essai : si le processus s'est
 /// arrêté sans qu'on l'ait demandé (et avec quel code).
 /// </summary>
 internal sealed class HostProcessRecorder(IHostProcessFactory inner) : IHostProcessFactory
 {
     private readonly object _gate = new();
-    private int _launches;
     private bool _stopRequested;
     private int? _unexpectedExit;
     private readonly TaskCompletionSource<int> _stopExit = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly List<Task> _ends = [];
-
-    /// <summary>Le nombre d'hôtes lancés (plus d'un : le superviseur en a relancé un après un arrêt).</summary>
-    public int Launches
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _launches;
-            }
-        }
-    }
 
     /// <summary>Le code de sortie d'un hôte qui s'est arrêté tout seul, avant qu'on le demande ; <c>null</c> si aucun ne l'a fait.</summary>
     public int? UnexpectedExitCode
@@ -122,11 +109,6 @@ internal sealed class HostProcessRecorder(IHostProcessFactory inner) : IHostProc
     public IHostProcess Start(HostStart start)
     {
         var process = inner.Start(start);
-        lock (_gate)
-        {
-            _launches++;
-        }
-
         var ended = process.Exited.ContinueWith(task =>
         {
             if (!task.IsCompletedSuccessfully)

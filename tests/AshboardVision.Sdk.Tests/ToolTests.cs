@@ -207,6 +207,98 @@ public sealed class ToolTests(PackedTool packed) : IDisposable
         Assert.False(Directory.Exists(Path.Combine(module.Folder, "paquets")));
     }
 
+    [WindowsToolFact]
+    public void Check_OutputThatIsAFile_ConcludesInFrenchWithoutRunningTheModule()
+    {
+        var module = NewModule(permissions: "\"capteurs\"");
+        var file = Path.Combine(NewFolder(), "pas-un-dossier");
+        File.WriteAllText(file, "x");
+
+        var run = packed.Run("check", module.Folder, "--out", file, "--mesure", "2");
+
+        Assert.True(run.ExitCode == 1, run.Output);
+        Assert.Contains("✖ Images : le dossier de sortie", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Pas compatible : le dossier des images (--out) n'est pas utilisable.", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("Démarrage enfermé", run.Output, StringComparison.Ordinal); // aucun hôte lancé
+        Assert.DoesNotContain("   at ", run.Output, StringComparison.Ordinal); // pas de trace
+        Assert.Equal("x", File.ReadAllText(file));
+    }
+
+    [WindowsToolFact]
+    public void Pack_OutputThatIsAFile_ConcludesInFrench()
+    {
+        var module = NewModule();
+        var file = Path.Combine(NewFolder(), "pas-un-dossier");
+        File.WriteAllText(file, "x");
+
+        var run = packed.Run("pack", module.Folder, "--out", file);
+
+        Assert.True(run.ExitCode == 1, run.Output);
+        Assert.Contains("✖ Paquet : le dossier de sortie", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Pas de paquet : le dossier de sortie (--out) n'est pas utilisable.", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("   at ", run.Output, StringComparison.Ordinal);
+    }
+
+    [WindowsToolFact]
+    public void Check_ModuleThatStopsSlowly_IsNotCompatible()
+    {
+        var module = NewModule(
+            settings: """[ { "kind": "choice", "key": "mode", "label": "Mode", "options": [ { "value": "slowStop", "label": "Lent" } ], "default": "slowStop" } ]""");
+
+        var run = packed.Run("check", module.Folder, "--out", NewFolder(), "--mesure", "2");
+
+        Assert.True(run.ExitCode == 1, run.Output);
+        Assert.Contains("✖ Arrêt : ", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Pas compatible : le module ne s'arrête pas proprement en 5 s.", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("✔ Arrêt propre", run.Output, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(ContainerFolder(module.Id)), "Le conteneur d'essai n'a pas été supprimé.");
+    }
+
+    [WindowsToolFact]
+    public void ContainerCleanup_NeverLetsAnExceptionOut_AndAlwaysSaysSo()
+    {
+        // La suppression du conteneur peut échouer de bien des façons (Marshal.ThrowExceptionForHR rend un COMException, un
+        // UnauthorizedAccessException ou un IOException) : ni Dispose ni le gestionnaire de sortie du processus ne doivent laisser sortir quoi que ce soit.
+        var context = new FolderLoadContext(packed.ToolFolder);
+        try
+        {
+            var type = context.LoadFromAssemblyName(new AssemblyName("ashboard-module")).GetType("AshboardVision.Sdk.Tool.ContainerCleanup", throwOnError: true)!;
+            var failures = new Exception[]
+            {
+                new COMException("com"), new UnauthorizedAccessException("acces"), new IOException("partage"),
+                new System.ComponentModel.Win32Exception(5), new InvalidOperationException("autre"),
+            };
+            foreach (var failure in failures)
+            {
+                foreach (var viaProcessExit in new[] { false, true })
+                {
+                    var output = new StringWriter();
+                    var cleanup = (IDisposable)Activator.CreateInstance(type, "alex.demo", output, (Action<string>)(_ => throw failure))!;
+                    if (viaProcessExit)
+                    {
+                        type.GetMethod("OnExit", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(cleanup, [null, EventArgs.Empty]);
+                    }
+
+                    cleanup.Dispose();
+                    cleanup.Dispose(); // une seconde fois : rien de plus
+
+                    var lines = output.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+                    Assert.Single(lines);
+                    Assert.StartsWith("! Nettoyage : le conteneur d'essai « ashboard-vision.check.alex.demo » n'a pas pu être supprimé", lines[0], StringComparison.Ordinal);
+                }
+            }
+
+            // Une console déjà fermée ne fait pas non plus sortir d'exception.
+            var closed = new StreamWriter(Stream.Null);
+            closed.Dispose();
+            ((IDisposable)Activator.CreateInstance(type, "alex.demo", closed, (Action<string>)(_ => throw new IOException("x")))!).Dispose();
+        }
+        finally
+        {
+            context.Unload();
+        }
+    }
+
     // ---- aides --------------------------------------------------------------------------------------------------------------------
 
     private sealed record NewModuleInfo(string Id, string Folder);

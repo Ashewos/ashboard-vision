@@ -84,7 +84,14 @@ internal static class CheckCommand
             return report.Conclude();
         }
 
-        var outputFolder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(output?.FullName ?? DefaultOutputFolder));
+        // Le dossier des images est vérifié (et créé) avant tout lancement : un --out qui résiste donne une conclusion, pas une trace.
+        var outputFolder = ModuleFolder.PrepareOutputFolder(output?.FullName ?? DefaultOutputFolder, out var outputError);
+        if (outputFolder is null)
+        {
+            report.Failure($"Images : {outputError}", "le dossier des images (--out) n'est pas utilisable");
+            return report.Conclude();
+        }
+
         using var cleanup = new ContainerCleanup(manifest.Id, writer);
         try
         {
@@ -108,7 +115,8 @@ internal static class CheckCommand
         {
             AppContainerProfile.EnsureForCheck(manifest.Id);
         }
-        catch (Exception ex) when (ex is COMException or Win32Exception or ArgumentException or PlatformNotSupportedException)
+        catch (Exception ex) when (ex is COMException or Win32Exception or ArgumentException or PlatformNotSupportedException
+                                       or UnauthorizedAccessException or IOException)
         {
             report.Failure($"Enfermement : le conteneur d'essai ne se crée pas ({ex.Message})", "le conteneur d'essai ne se crée pas");
             return;
@@ -179,7 +187,6 @@ internal static class CheckCommand
         Plan plan, CheckSession session, System.Text.Json.JsonElement settings, IReadOnlyList<GridSize> sizes, ThemeDefinition[] themes,
         CheckReport report, CancellationToken ct)
     {
-        Directory.CreateDirectory(plan.OutputFolder);
         var written = 0;
         foreach (var theme in themes)
         {
@@ -413,44 +420,4 @@ internal static class CheckCommand
     private static string Seconds(TimeSpan time) => time.TotalSeconds.ToString("0.0", CheckReport.French);
 
     private static string Number(double value) => value.ToString("0.#", CheckReport.French);
-
-    /// <summary>Supprime le conteneur d'essai à la fin, ou à la sortie du processus (Ctrl+C, fermeture de la console) si on n'y est pas arrivé.</summary>
-    private sealed class ContainerCleanup : IDisposable
-    {
-        private readonly string _id;
-        private readonly TextWriter _writer;
-        private int _done;
-
-        public ContainerCleanup(string id, TextWriter writer)
-        {
-            _id = id;
-            _writer = writer;
-            AppDomain.CurrentDomain.ProcessExit += OnExit;
-        }
-
-        public void Dispose()
-        {
-            AppDomain.CurrentDomain.ProcessExit -= OnExit;
-            Run();
-        }
-
-        private void OnExit(object? sender, EventArgs e) => Run();
-
-        private void Run()
-        {
-            if (Interlocked.Exchange(ref _done, 1) != 0)
-            {
-                return;
-            }
-
-            try
-            {
-                AppContainerProfile.DeleteForCheck(_id);
-            }
-            catch (Exception ex) when (ex is COMException or Win32Exception or ArgumentException)
-            {
-                _writer.WriteLine($"! Nettoyage : le conteneur d'essai « {AppContainerProfile.CheckNamePrefix}{_id} » n'a pas pu être supprimé ({ex.Message}).");
-            }
-        }
-    }
 }

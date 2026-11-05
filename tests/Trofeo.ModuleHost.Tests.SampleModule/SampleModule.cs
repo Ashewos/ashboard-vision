@@ -210,6 +210,12 @@ public sealed class SampleModule : CommunityModule
             Services.Log.Info("disposed");
         }
 
+        if (_mode == "slowStop")
+        {
+            // Un module qui met plus de 5 secondes à se fermer (banc d'essai : « arrêt propre en moins de 5 s »).
+            return new ValueTask(Task.Delay(TimeSpan.FromSeconds(30)));
+        }
+
         return ValueTask.CompletedTask;
     }
 }
