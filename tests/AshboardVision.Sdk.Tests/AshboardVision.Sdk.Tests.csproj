@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Comme le SDK testé, ces tests ne dépendent pas de Windows : ils tournent aussi sous Linux. Ils vérifient le paquet
+       (PackageTests : un vrai « dotnet pack » dans un dossier temporaire) et le gel de l'API publique (PublicApiTests). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
+  </ItemGroup>
+
+</Project>

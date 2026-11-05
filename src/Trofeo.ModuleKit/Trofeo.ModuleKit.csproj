@@ -1,5 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- ModuleKit part dans le paquet AshboardVision.Sdk (embarqué, voir ce projet) : sa documentation XML l'accompagne. -->
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Une cinquantaine de membres publics (paramètres de records, valeurs d'enums) n'ont pas encore de commentaire XML : l'avertissement CS1591
+         n'est pas une erreur ici. Les types principaux sont documentés ; le reste vient avec la documentation du SDK (tâche 19). -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
