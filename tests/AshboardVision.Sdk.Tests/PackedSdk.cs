@@ -8,11 +8,16 @@ namespace AshboardVision.Sdk.Tests;
 /// sont dans un dossier temporaire, pour ne jamais se heurter à une construction de la solution qui tourne en parallèle.
 /// Rien n'est publié : le paquet reste un fichier local.
 /// </summary>
-public sealed class PackedSdk : IDisposable
+public class PackedSdk : IDisposable
 {
     private readonly string _workDirectory = Path.Combine(Path.GetTempPath(), "ashboard-sdk-pack-" + Guid.NewGuid().ToString("N"));
 
-    public PackedSdk()
+    public PackedSdk() : this("AshboardVision.Sdk")
+    {
+    }
+
+    /// <summary>Fabrique le paquet du projet <paramref name="projectName"/> (un dossier de <c>src</c>), par exemple <c>AshboardVision.Sdk.Testing</c>.</summary>
+    protected PackedSdk(string projectName)
     {
         try
         {
@@ -20,7 +25,7 @@ public sealed class PackedSdk : IDisposable
             var artifacts = Path.Combine(_workDirectory, "artifacts");
             Directory.CreateDirectory(output);
 
-            var project = Path.Combine(RepositoryRoot.Find(), "src", "AshboardVision.Sdk", "AshboardVision.Sdk.csproj");
+            var project = Path.Combine(RepositoryRoot.Find(), "src", projectName, projectName + ".csproj");
             var start = new ProcessStartInfo("dotnet")
             {
                 RedirectStandardOutput = true,
@@ -83,5 +88,13 @@ public sealed class PackedSdk : IDisposable
         catch (UnauthorizedAccessException)
         {
         }
+    }
+}
+
+/// <summary>Le paquet <c>AshboardVision.Sdk.Testing</c>, fabriqué comme celui du SDK (un seul <c>dotnet pack</c> pour tous les tests qui le lisent).</summary>
+public sealed class PackedSdkTesting : PackedSdk
+{
+    public PackedSdkTesting() : base("AshboardVision.Sdk.Testing")
+    {
     }
 }

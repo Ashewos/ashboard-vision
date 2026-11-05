@@ -8,6 +8,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\AshboardVision.Sdk.Testing\AshboardVision.Sdk.Testing.csproj" />
+    <!-- Les tests des aides de test lisent les thèmes et la géométrie du damier de Core (qui n'est pas transmis par le paquet de test). -->
+    <ProjectReference Include="..\..\src\Trofeo.Core\Trofeo.Core.csproj" />
     <ProjectReference Include="..\..\src\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
   </ItemGroup>
 

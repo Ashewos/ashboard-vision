@@ -101,6 +101,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trofeo.ModuleHost", "src\Tr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AshboardVision.Sdk.Tests", "tests\AshboardVision.Sdk.Tests\AshboardVision.Sdk.Tests.csproj", "{13A70ED2-6D94-43AB-A235-CCDEF3271BF7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AshboardVision.Sdk.Testing", "src\AshboardVision.Sdk.Testing\AshboardVision.Sdk.Testing.csproj", "{5993D420-16E8-4618-B490-38D985166202}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -663,6 +665,18 @@ Global
 		{13A70ED2-6D94-43AB-A235-CCDEF3271BF7}.Release|x64.Build.0 = Release|Any CPU
 		{13A70ED2-6D94-43AB-A235-CCDEF3271BF7}.Release|x86.ActiveCfg = Release|Any CPU
 		{13A70ED2-6D94-43AB-A235-CCDEF3271BF7}.Release|x86.Build.0 = Release|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Debug|x64.Build.0 = Debug|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Debug|x86.Build.0 = Debug|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Release|x64.ActiveCfg = Release|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Release|x64.Build.0 = Release|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Release|x86.ActiveCfg = Release|Any CPU
+		{5993D420-16E8-4618-B490-38D985166202}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -714,5 +728,6 @@ Global
 		{16B5858E-0152-475E-849E-9D1EAC4A0F56} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{33B803C3-0D0B-4AE3-B92A-C69ABBE3B7D5} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{13A70ED2-6D94-43AB-A235-CCDEF3271BF7} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{5993D420-16E8-4618-B490-38D985166202} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

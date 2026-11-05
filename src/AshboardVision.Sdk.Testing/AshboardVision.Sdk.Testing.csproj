@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Les aides de test des créateurs de modules : un module s'exécute dans le processus du test, sans enfermement, avec de faux services
+       (capteurs, musique, coffre à secrets, horloge) et les vrais thèmes du logiciel. Même ligne de numéros que le SDK (1.0.0, AssemblyVersion
+       1.0.0.0 pour toute la ligne 1.x) : le paquet dépend du paquet AshboardVision.Sdk 1.0.0. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <!-- Le paquet NuGet local « AshboardVision.Sdk.Testing » (jamais poussé sur nuget.org : joint aux versions GitHub et posé par l'installateur,
+       comme le SDK ; voir la conception, 5.6). -->
+  <PropertyGroup>
+    <PackageId>AshboardVision.Sdk.Testing</PackageId>
+    <Authors>Ashewos</Authors>
+    <Description>Les aides de test des modules de la communauté d'Ashboard Vision : exécute un module dans le processus du test, avec de faux services (capteurs, musique, secrets, horloge) et les thèmes du logiciel, et le dessine dans une image.</Description>
+    <PackageTags>ashboard-vision;thermalright;trofeo-vision;module;sdk;test</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Ashewos/ashboard-vision</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Trofeo.Core est embarqué dans le paquet (voir la cible plus bas), pas déclaré comme dépendance : un paquet « Trofeo.Core » n'existe pas (décision R8). -->
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeCoreInPackage</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Le paquet AshboardVision.Sdk (qui embarque Trofeo.ModuleKit) : dépendance normale. -->
+    <ProjectReference Include="..\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+    <!-- ModuleKit vient avec le paquet du SDK : référence de compilation seulement, ni embarquée ni déclarée. -->
+    <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" PrivateAssets="all" />
+    <!-- Core (les thèmes et leurs polices, la géométrie du damier) est privé pour le paquet : embarqué par IncludeCoreInPackage, aucune de ses
+         dépendances (System.Security.Cryptography.ProtectedData, qui ne sert qu'au coffre à secrets du logiciel) n'est reprise. -->
+    <ProjectReference Include="..\Trofeo.Core\Trofeo.Core.csproj" PrivateAssets="all" />
+    <!-- Le type FakeTimeProvider de Microsoft : c'est celui que le dépôt utilise déjà pour ses propres tests, et celui que les créateurs connaissent. -->
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.0.0" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <!-- Core embarque les polices du logiciel (Barlow, Manrope, Pixelify Sans, VT323, sous licence OFL) : leurs textes de licence suivent. -->
+    <None Include="..\Trofeo.Core\Assets\Fonts\OFL-*.txt" Pack="true" PackagePath="licenses\" Link="licenses\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Met Trofeo.Core.dll à côté d'AshboardVision.Sdk.Testing.dll dans lib/<cible>/ du paquet (on prend la copie déposée dans le dossier de
+       sortie, comme pour ModuleKit dans le paquet du SDK). -->
+  <Target Name="IncludeCoreInPackage">
+    <ItemGroup>
+      <BuildOutputInPackage Include="$(OutDir)Trofeo.Core.dll" />
+    </ItemGroup>
+  </Target>
+
+</Project>
