@@ -19,6 +19,8 @@ Seule dépendance : SkiaSharp 3.119.4.
 
 La ligne 1.x du SDK ne retire rien : un module compilé contre la 1.0 continue de se charger avec toute version 1.x du logiciel.
 
+Quelques types de `Trofeo.ModuleKit` (par exemple `IModule`, `IModuleFactory`, `ModuleContext`, `ModuleDescriptor`, `SettingsDocument`, `CertificatePinning`) et `ModulePermissions` sont publics parce que les modules d'origine du logiciel s'en servent : ils ne font pas partie du contrat des modules complémentaires et n'ont aucune garantie de compatibilité. N'en dépends pas.
+
 ## Licence
 
 GPL-3.0-or-later.

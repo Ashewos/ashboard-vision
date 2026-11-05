@@ -14,45 +14,54 @@ public sealed class PackedSdk : IDisposable
 
     public PackedSdk()
     {
-        var output = Path.Combine(_workDirectory, "out");
-        var artifacts = Path.Combine(_workDirectory, "artifacts");
-        Directory.CreateDirectory(output);
+        try
+        {
+            var output = Path.Combine(_workDirectory, "out");
+            var artifacts = Path.Combine(_workDirectory, "artifacts");
+            Directory.CreateDirectory(output);
 
-        var project = Path.Combine(RepositoryRoot.Find(), "src", "AshboardVision.Sdk", "AshboardVision.Sdk.csproj");
-        var start = new ProcessStartInfo("dotnet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        foreach (var argument in new[] { "pack", project, "-c", "Debug", "-o", output, "--artifacts-path", artifacts, "-nodeReuse:false", "--nologo" })
-        {
-            start.ArgumentList.Add(argument);
+            var project = Path.Combine(RepositoryRoot.Find(), "src", "AshboardVision.Sdk", "AshboardVision.Sdk.csproj");
+            var start = new ProcessStartInfo("dotnet")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            foreach (var argument in new[] { "pack", project, "-c", "Debug", "-o", output, "--artifacts-path", artifacts, "-nodeReuse:false", "--nologo" })
+            {
+                start.ArgumentList.Add(argument);
+            }
+
+            start.Environment["MSBUILDDISABLENODEREUSE"] = "1";
+            start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+
+            using var process = Process.Start(start) ?? throw new InvalidOperationException("dotnet pack n'a pas démarré.");
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(TimeSpan.FromMinutes(5)))
+            {
+                process.Kill(entireProcessTree: true);
+                throw new TimeoutException("dotnet pack a dépassé 5 minutes.");
+            }
+
+            Log = stdout.Result + stderr.Result;
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException("dotnet pack a échoué (code " + process.ExitCode + ") :\n" + Log);
+            }
+
+            var packages = Directory.GetFiles(output, "*.nupkg");
+            PackagePath = packages.Length == 1
+                ? packages[0]
+                : throw new InvalidOperationException("Un seul .nupkg attendu dans " + output + ", trouvé : " + string.Join(", ", packages));
         }
-
-        start.Environment["MSBUILDDISABLENODEREUSE"] = "1";
-        start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-
-        using var process = Process.Start(start) ?? throw new InvalidOperationException("dotnet pack n'a pas démarré.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        if (!process.WaitForExit(TimeSpan.FromMinutes(5)))
+        catch
         {
-            process.Kill(entireProcessTree: true);
-            throw new TimeoutException("dotnet pack a dépassé 5 minutes.");
+            // Le constructeur a échoué : xunit n'appellera pas Dispose, le dossier temporaire se supprime ici.
+            Dispose();
+            throw;
         }
-
-        Log = stdout.Result + stderr.Result;
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException("dotnet pack a échoué (code " + process.ExitCode + ") :\n" + Log);
-        }
-
-        var packages = Directory.GetFiles(output, "*.nupkg");
-        PackagePath = packages.Length == 1
-            ? packages[0]
-            : throw new InvalidOperationException("Un seul .nupkg attendu dans " + output + ", trouvé : " + string.Join(", ", packages));
     }
 
     /// <summary>La sortie de <c>dotnet pack</c> (pour les messages d'échec).</summary>

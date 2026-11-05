@@ -25,13 +25,126 @@ internal static class ApiSurface
         [typeof(decimal)] = "decimal", [typeof(char)] = "char", [typeof(string)] = "string", [typeof(object)] = "object",
     };
 
+    /// <summary>
+    /// Les types publics qui ne font PAS partie du contrat des modules de la communauté (décision R31) : ils restent publics parce que les six
+    /// modules d'origine et le service les utilisent, mais ils ne sont ni gelés ni garantis. Une ligne de raison chacun. Si un type du contrat
+    /// en exposait un dans une signature, <see cref="FindExposures"/> le signalerait et il faudrait le sortir de cette liste.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> Excluded = new Dictionary<string, string>
+    {
+        ["Trofeo.ModuleKit.IModule"] = "Module en processus des six modules d'origine ; un module de la communauté dérive de CommunityModule.",
+        ["Trofeo.ModuleKit.IModuleFactory"] = "Fabrique des modules d'origine, dans le service.",
+        ["Trofeo.ModuleKit.ICommandableModule"] = "Commandes (raccourcis clavier) des modules d'origine.",
+        ["Trofeo.ModuleKit.ModuleContext"] = "Contexte de création des modules d'origine ; le SDK a ModuleServices.",
+        ["Trofeo.ModuleKit.ModuleDescriptor"] = "Descripteur des modules d'origine ; un module de la communauté a son manifeste.",
+        ["Trofeo.ModuleKit.ModuleCommand"] = "Commande des modules d'origine (raccourcis clavier).",
+        ["Trofeo.ModuleKit.ModuleCommandKind"] = "Genre de ModuleCommand.",
+        ["Trofeo.ModuleKit.ModuleStatus"] = "État des modules d'origine ; le SDK a SetStatus et ModuleHealth.",
+        ["Trofeo.ModuleKit.IConfigurableModuleFactory"] = "Fabrique configurable des modules d'origine (schéma, recherche, actions).",
+        ["Trofeo.ModuleKit.IModuleNotices"] = "Avertissements des modules d'origine affichés dans la fenêtre de réglage.",
+        ["Trofeo.ModuleKit.SettingsDocument"] = "Aide interne de la fenêtre de réglage et du service ; un module lit ModuleServices.Settings.",
+        ["Trofeo.ModuleKit.CertificatePinning"] = "Aide interne du module UniFi ; PinnedHttpClient a son propre contrat.",
+        ["AshboardVision.Sdk.ModulePermissions"] = "Noms des permissions dans le manifeste, utilisés par Trofeo.Extensions seulement.",
+    };
+
+    private static IEnumerable<Type> ContractTypes(Assembly assembly) =>
+        assembly.GetExportedTypes().Where(type => !Excluded.ContainsKey(type.FullName!));
+
+    /// <summary>
+    /// Les endroits où un type du contrat expose, dans une signature publique ou protégée (type de base, interface, constructeur, méthode,
+    /// propriété, événement, champ, génériques compris), un type de <see cref="Excluded"/>. Doit être vide.
+    /// </summary>
+    public static IReadOnlyList<string> FindExposures(params Assembly[] assemblies)
+    {
+        var found = new List<string>();
+        foreach (var type in assemblies.SelectMany(ContractTypes))
+        {
+            foreach (var (where, referenced) in SignatureTypes(type))
+            {
+                foreach (var constituent in Constituents(referenced).Where(candidate => Excluded.ContainsKey(candidate.FullName ?? "")))
+                {
+                    found.Add(TypeName(type) + " expose " + constituent.FullName + " (" + where + ")");
+                }
+            }
+        }
+
+        found.Sort(StringComparer.Ordinal);
+        return found;
+    }
+
+    private static IEnumerable<(string Where, Type Type)> SignatureTypes(Type type)
+    {
+        if (type.BaseType is not null)
+        {
+            yield return ("type de base", type.BaseType);
+        }
+
+        foreach (var contract in type.GetInterfaces())
+        {
+            yield return ("interface", contract);
+        }
+
+        foreach (var constructor in type.GetConstructors(AllDeclared).Where(c => Access(c) is not null))
+        {
+            foreach (var parameter in constructor.GetParameters())
+            {
+                yield return ("paramètre " + parameter.Name + " d'un constructeur", parameter.ParameterType);
+            }
+        }
+
+        foreach (var method in type.GetMethods(AllDeclared).Where(m => Access(m) is not null))
+        {
+            yield return ("retour de " + method.Name, method.ReturnType);
+            foreach (var parameter in method.GetParameters())
+            {
+                yield return ("paramètre " + parameter.Name + " de " + method.Name, parameter.ParameterType);
+            }
+        }
+
+        foreach (var property in type.GetProperties(AllDeclared).Where(p => (p.GetMethod ?? p.SetMethod) is { } m && Access(m) is not null))
+        {
+            yield return ("propriété " + property.Name, property.PropertyType);
+        }
+
+        foreach (var @event in type.GetEvents(AllDeclared).Where(e => e.AddMethod is { } m && Access(m) is not null))
+        {
+            yield return ("événement " + @event.Name, @event.EventHandlerType!);
+        }
+
+        foreach (var field in type.GetFields(AllDeclared).Where(f => Access(f) is not null))
+        {
+            yield return ("champ " + field.Name, field.FieldType);
+        }
+    }
+
+    // Le type lui-même et tous ceux qui le composent (élément de tableau, références, arguments génériques).
+    private static IEnumerable<Type> Constituents(Type type)
+    {
+        yield return type;
+        if (type.HasElementType)
+        {
+            foreach (var inner in Constituents(type.GetElementType()!))
+            {
+                yield return inner;
+            }
+        }
+
+        if (type.IsGenericType)
+        {
+            foreach (var inner in type.GetGenericArguments().SelectMany(Constituents))
+            {
+                yield return inner;
+            }
+        }
+    }
+
     public static IReadOnlyList<string> Describe(params Assembly[] assemblies)
     {
         var lines = new List<string>();
         foreach (var assembly in assemblies)
         {
             var prefix = "[" + assembly.GetName().Name + "] ";
-            foreach (var type in assembly.GetExportedTypes())
+            foreach (var type in ContractTypes(assembly))
             {
                 var owner = prefix + TypeName(type);
                 lines.Add(owner + " :: " + TypeHeader(type));

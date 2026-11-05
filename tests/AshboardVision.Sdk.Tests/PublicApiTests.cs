@@ -9,6 +9,7 @@ namespace AshboardVision.Sdk.Tests;
 /// version 1.x du logiciel. Le test échoue donc si une ligne de l'instantané disparaît (membre retiré, signature changée, type ou
 /// interface en moins), et aussi si un membre <b>abstrait</b> (ou d'interface) est ajouté à un type qui existait déjà : cela casserait
 /// toute classe qui en hérite ou qui l'implémente. Tout autre ajout (type, membre non abstrait, valeur d'enum) passe sans toucher à l'instantané.
+/// L'instantané ne couvre que le contrat des modules de la communauté : les types de <see cref="ApiSurface.Excluded"/> (décision R31) en sont exclus.
 /// </summary>
 public sealed class PublicApiTests
 {
@@ -34,7 +35,7 @@ public sealed class PublicApiTests
         if (Environment.GetEnvironmentVariable(UpdateVariable) == "1")
         {
             File.WriteAllText(SnapshotPath, Header + string.Join('\n', actual) + "\n", new UTF8Encoding(false));
-            return;
+            Assert.Fail("Instantané régénéré : relis le diff (il ne doit montrer que des lignes ajoutées) et relance sans la variable " + UpdateVariable + ".");
         }
 
         var expected = SnapshotLines();
@@ -50,6 +51,36 @@ public sealed class PublicApiTests
             .ToArray();
         Assert.True(breakingAdditions.Length == 0,
             "Ces membres abstraits (ou d'interface) ajoutés à un type déjà publié casseraient les modules existants :\n" + string.Join('\n', breakingAdditions));
+    }
+
+    [Fact]
+    public void PublicApi_Contract_ExposesNoExcludedType()
+    {
+        // Un type du contrat qui laisserait voir un type exclu (paramètre, retour, propriété, base, interface) le gèlerait de fait.
+        Assert.Empty(ApiSurface.FindExposures(typeof(CommunityModule).Assembly, typeof(Theme).Assembly));
+    }
+
+    [Fact]
+    public void PublicApi_Excluded_TypesExistAndAreAbsentFromSnapshot()
+    {
+        var exported = new[] { typeof(CommunityModule).Assembly, typeof(Theme).Assembly }
+            .SelectMany(assembly => assembly.GetExportedTypes())
+            .Select(type => type.FullName!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Une faute de frappe dans la liste n'exclurait rien sans le dire.
+        Assert.All(ApiSurface.Excluded.Keys, name => Assert.Contains(name, exported));
+        Assert.DoesNotContain(Current(), line => ApiSurface.Excluded.Keys.Any(name => line.Contains("] " + name + " ::", StringComparison.Ordinal)));
+        Assert.DoesNotContain(SnapshotLines(), line => ApiSurface.Excluded.Keys.Any(name => line.Contains("] " + name + " ::", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void AssemblyVersions_AreFrozenAt1_0_0_0()
+    {
+        // Une version d'assemblage qui suivrait le logiciel ferait demander à un module compilé plus tard une version plus haute que celle d'un hôte plus ancien.
+        var expected = new Version(1, 0, 0, 0);
+        Assert.Equal(expected, typeof(CommunityModule).Assembly.GetName().Version);
+        Assert.Equal(expected, typeof(Theme).Assembly.GetName().Version);
     }
 
     [Fact]

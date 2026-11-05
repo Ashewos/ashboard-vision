@@ -2,6 +2,10 @@
 
   <!-- ModuleKit part dans le paquet AshboardVision.Sdk (embarqué, voir ce projet) : sa documentation XML l'accompagne. -->
   <PropertyGroup>
+    <!-- Comme le SDK (voir AshboardVision.Sdk.csproj) : AssemblyVersion reste 1.0.0.0 pour toute la ligne 1.x, quelle que soit la version du logiciel
+         (FileVersion et InformationalVersion, elles, suivent <Version>). Sans cela, un module compilé plus tard contre ce paquet demanderait une
+         version d'assemblage plus haute que celle d'un hôte plus ancien. -->
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Une cinquantaine de membres publics (paramètres de records, valeurs d'enums) n'ont pas encore de commentaire XML : l'avertissement CS1591
          n'est pas une erreur ici. Les types principaux sont documentés ; le reste vient avec la documentation du SDK (tâche 19). -->

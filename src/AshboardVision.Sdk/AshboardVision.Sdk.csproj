@@ -35,11 +35,10 @@
 
   <ItemGroup>
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
-    <!-- Dans la solution, ModuleKit se transmet normalement aux projets qui référencent le SDK (les modules d'essai et d'exemple en ont besoin).
-         Pendant « dotnet pack » (_IsPacking), il devient privé : il n'est alors PAS déclaré comme dépendance dans le .nuspec (il n'existe aucun
-         paquet Trofeo.ModuleKit), seulement embarqué par la cible IncludeModuleKitInPackage. -->
-    <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" Condition="'$(_IsPacking)' != 'true'" />
-    <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" PrivateAssets="all" Condition="'$(_IsPacking)' == 'true'" />
+    <!-- ModuleKit est privé pour le paquet : il n'est PAS déclaré comme dépendance dans le .nuspec (il n'existe aucun paquet Trofeo.ModuleKit),
+         seulement embarqué par la cible IncludeModuleKitInPackage. Conséquence : la référence ne se transmet pas aux projets qui référencent
+         ce projet ; ceux qui utilisent des types de ModuleKit (les modules d'essai, par exemple) le référencent eux-mêmes. -->
+    <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" PrivateAssets="all" />
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 

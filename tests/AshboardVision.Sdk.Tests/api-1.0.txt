@@ -47,9 +47,6 @@
 [AshboardVision.Sdk] AshboardVision.Sdk.ModulePermission :: implements System.IFormattable
 [AshboardVision.Sdk] AshboardVision.Sdk.ModulePermission :: implements System.ISpanFormattable
 [AshboardVision.Sdk] AshboardVision.Sdk.ModulePermission :: type public enum int
-[AshboardVision.Sdk] AshboardVision.Sdk.ModulePermissions :: method public static bool TryParse(string? text, out AshboardVision.Sdk.ModulePermission permission)
-[AshboardVision.Sdk] AshboardVision.Sdk.ModulePermissions :: method public static string ToManifest(AshboardVision.Sdk.ModulePermission permission)
-[AshboardVision.Sdk] AshboardVision.Sdk.ModulePermissions :: type public static class
 [AshboardVision.Sdk] AshboardVision.Sdk.ModuleServices :: method public System.Net.Http.HttpClient CreateHttpClient(string? certificateKey = null)
 [AshboardVision.Sdk] AshboardVision.Sdk.ModuleServices :: method public System.Threading.Tasks.Task<AshboardVision.Sdk.DataResult<AshboardVision.Sdk.NowPlayingInfo>> GetNowPlayingAsync(System.Threading.CancellationToken ct)
 [AshboardVision.Sdk] AshboardVision.Sdk.ModuleServices :: method public System.Threading.Tasks.Task<AshboardVision.Sdk.DataResult<AshboardVision.Sdk.SensorReading>> GetSensorsAsync(System.Threading.CancellationToken ct)
@@ -119,8 +116,6 @@
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ActionResult :: property public bool Ok { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ActionResult :: property public string Message { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ActionResult :: type public sealed class
-[Trofeo.ModuleKit] Trofeo.ModuleKit.CertificatePinning :: method public static System.ValueTuple<bool, string?> Check(string? pinnedSha256, string presentedSha256, System.Net.Security.SslPolicyErrors errors)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.CertificatePinning :: type public static class
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ChoiceField :: constructor public (string Key, string Label, System.Collections.Generic.IReadOnlyList<Trofeo.ModuleKit.SettingOption> Options, string Default)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ChoiceField :: extends Trofeo.ModuleKit.SettingField
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ChoiceField :: implements System.IEquatable<Trofeo.ModuleKit.ChoiceField>
@@ -162,31 +157,10 @@
 [Trofeo.ModuleKit] Trofeo.ModuleKit.GridSize :: property public int Columns { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.GridSize :: property public int Rows { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.GridSize :: type public struct
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ICommandableModule :: method public abstract bool HandleCommand(Trofeo.ModuleKit.ModuleCommand command)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ICommandableModule :: type public interface
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IConfigurableModuleFactory :: implements Trofeo.ModuleKit.IModuleFactory
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IConfigurableModuleFactory :: method public virtual System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Trofeo.ModuleKit.LookupResult>> LookupAsync(string fieldKey, string query, System.Threading.CancellationToken ct)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IConfigurableModuleFactory :: method public virtual System.Threading.Tasks.Task<Trofeo.ModuleKit.ActionResult> RunActionAsync(string actionKey, System.Text.Json.JsonElement settings, Trofeo.ModuleKit.ISecretStore secrets, System.Threading.CancellationToken ct)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IConfigurableModuleFactory :: property public abstract Trofeo.ModuleKit.SettingsSchema Schema { public get; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IConfigurableModuleFactory :: type public interface
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModule :: event public abstract System.EventHandler? Invalidated
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModule :: event public abstract System.EventHandler? StatusChanged
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModule :: implements System.IDisposable
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModule :: method public abstract System.Threading.Tasks.Task StartAsync(System.Threading.CancellationToken ct)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModule :: method public abstract void Render(SkiaSharp.SKCanvas canvas, Trofeo.ModuleKit.ModuleRenderContext ctx)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModule :: property public abstract Trofeo.ModuleKit.ModuleDescriptor Descriptor { public get; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModule :: property public abstract Trofeo.ModuleKit.ModuleStatus Status { public get; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModule :: property public abstract bool IsAnimating { public get; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModule :: type public interface
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModuleFactory :: method public abstract Trofeo.ModuleKit.IModule Create(Trofeo.ModuleKit.ModuleContext context)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModuleFactory :: property public abstract Trofeo.ModuleKit.ModuleDescriptor Descriptor { public get; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModuleFactory :: type public interface
 [Trofeo.ModuleKit] Trofeo.ModuleKit.IModuleLog :: method public abstract void Error(string message)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.IModuleLog :: method public abstract void Info(string message)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.IModuleLog :: method public abstract void Warning(string message)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.IModuleLog :: type public interface
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModuleNotices :: property public abstract System.Collections.Generic.IReadOnlyList<string> Notices { public get; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.IModuleNotices :: type public interface
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ISecretStore :: method public abstract string? Get(string key)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ISecretStore :: method public abstract void Set(string key, string? value)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ISecretStore :: type public interface
@@ -238,56 +212,6 @@
 [Trofeo.ModuleKit] Trofeo.ModuleKit.LookupResult :: property public System.Text.Json.JsonElement Value { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.LookupResult :: property public string Label { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.LookupResult :: type public sealed class
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: constructor public (Trofeo.ModuleKit.ModuleCommandKind Kind, int Index = 0)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: implements System.IEquatable<Trofeo.ModuleKit.ModuleCommand>
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: method public bool Equals(Trofeo.ModuleKit.ModuleCommand other)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: method public override bool Equals(object obj)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: method public override int GetHashCode()
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: method public override string ToString()
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: method public static bool op_Equality(Trofeo.ModuleKit.ModuleCommand left, Trofeo.ModuleKit.ModuleCommand right)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: method public static bool op_Inequality(Trofeo.ModuleKit.ModuleCommand left, Trofeo.ModuleKit.ModuleCommand right)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: method public void Deconstruct(out Trofeo.ModuleKit.ModuleCommandKind Kind, out int Index)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: property public Trofeo.ModuleKit.ModuleCommandKind Kind { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: property public int Index { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommand :: type public struct
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommandKind :: field public const Trofeo.ModuleKit.ModuleCommandKind NextTab = 1
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommandKind :: field public const Trofeo.ModuleKit.ModuleCommandKind PreviousTab = 0
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommandKind :: field public const Trofeo.ModuleKit.ModuleCommandKind SelectTab = 2
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommandKind :: implements System.IComparable
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommandKind :: implements System.IConvertible
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommandKind :: implements System.IFormattable
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommandKind :: implements System.ISpanFormattable
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleCommandKind :: type public enum int
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: constructor public (System.Guid InstanceId, System.Text.Json.JsonElement Settings, System.TimeProvider Time, Trofeo.ModuleKit.IModuleLog Log, Trofeo.ModuleKit.ISecretStore Secrets)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: implements System.IEquatable<Trofeo.ModuleKit.ModuleContext>
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: method public bool Equals(Trofeo.ModuleKit.ModuleContext? other)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: method public override bool Equals(object? obj)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: method public override int GetHashCode()
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: method public override string ToString()
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: method public static bool op_Equality(Trofeo.ModuleKit.ModuleContext? left, Trofeo.ModuleKit.ModuleContext? right)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: method public static bool op_Inequality(Trofeo.ModuleKit.ModuleContext? left, Trofeo.ModuleKit.ModuleContext? right)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: method public void Deconstruct(out System.Guid InstanceId, out System.Text.Json.JsonElement Settings, out System.TimeProvider Time, out Trofeo.ModuleKit.IModuleLog Log, out Trofeo.ModuleKit.ISecretStore Secrets)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: property public System.Guid InstanceId { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: property public System.Text.Json.JsonElement Settings { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: property public System.TimeProvider Time { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: property public Trofeo.ModuleKit.IModuleLog Log { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: property public Trofeo.ModuleKit.ISecretStore Secrets { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleContext :: type public sealed class
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: constructor public (string TypeId, string DisplayName, Trofeo.ModuleKit.GridSize MinSize, System.Collections.Generic.IReadOnlyDictionary<Trofeo.ModuleKit.SizePreset, Trofeo.ModuleKit.GridSize> Presets, bool AcceptsCommands = false)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: implements System.IEquatable<Trofeo.ModuleKit.ModuleDescriptor>
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: method public bool Equals(Trofeo.ModuleKit.ModuleDescriptor? other)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: method public override bool Equals(object? obj)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: method public override int GetHashCode()
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: method public override string ToString()
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: method public static bool op_Equality(Trofeo.ModuleKit.ModuleDescriptor? left, Trofeo.ModuleKit.ModuleDescriptor? right)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: method public static bool op_Inequality(Trofeo.ModuleKit.ModuleDescriptor? left, Trofeo.ModuleKit.ModuleDescriptor? right)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: method public void Deconstruct(out string TypeId, out string DisplayName, out Trofeo.ModuleKit.GridSize MinSize, out System.Collections.Generic.IReadOnlyDictionary<Trofeo.ModuleKit.SizePreset, Trofeo.ModuleKit.GridSize> Presets, out bool AcceptsCommands)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: property public System.Collections.Generic.IReadOnlyDictionary<Trofeo.ModuleKit.SizePreset, Trofeo.ModuleKit.GridSize> Presets { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: property public Trofeo.ModuleKit.GridSize MinSize { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: property public bool AcceptsCommands { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: property public string DisplayName { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: property public string TypeId { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDescriptor :: type public sealed class
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDrawing :: method public static SkiaSharp.SKFont Font(Trofeo.ModuleKit.Theme theme, float size, bool subpixel = false)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDrawing :: method public static SkiaSharp.SKRect BarRect(SkiaSharp.SKRect rect, Trofeo.ModuleKit.Theme theme)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDrawing :: method public static System.Collections.Generic.IReadOnlyList<string> Wrap(string text, SkiaSharp.SKFont font, float maxWidth, int maxLines)
@@ -322,18 +246,6 @@
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleRenderContext :: property public Trofeo.ModuleKit.Theme Theme { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleRenderContext :: property public float TextScale { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleRenderContext :: type public sealed class
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: constructor public (Trofeo.ModuleKit.ModuleHealth Health, string? ActionMessage = null)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: implements System.IEquatable<Trofeo.ModuleKit.ModuleStatus>
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: method public bool Equals(Trofeo.ModuleKit.ModuleStatus? other)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: method public override bool Equals(object? obj)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: method public override int GetHashCode()
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: method public override string ToString()
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: method public static bool op_Equality(Trofeo.ModuleKit.ModuleStatus? left, Trofeo.ModuleKit.ModuleStatus? right)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: method public static bool op_Inequality(Trofeo.ModuleKit.ModuleStatus? left, Trofeo.ModuleKit.ModuleStatus? right)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: method public void Deconstruct(out Trofeo.ModuleKit.ModuleHealth Health, out string? ActionMessage)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: property public Trofeo.ModuleKit.ModuleHealth Health { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: property public string? ActionMessage { public get; public init; }
-[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleStatus :: type public sealed class
 [Trofeo.ModuleKit] Trofeo.ModuleKit.NumberField :: constructor public (string Key, string Label, int Min, int Max, int Default)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.NumberField :: extends Trofeo.ModuleKit.SettingField
 [Trofeo.ModuleKit] Trofeo.ModuleKit.NumberField :: implements System.IEquatable<Trofeo.ModuleKit.NumberField>
@@ -412,13 +324,6 @@
 [Trofeo.ModuleKit] Trofeo.ModuleKit.SettingOption :: property public string Label { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.SettingOption :: property public string Value { public get; public init; }
 [Trofeo.ModuleKit] Trofeo.ModuleKit.SettingOption :: type public sealed class
-[Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsDocument :: method public static System.Collections.Generic.IReadOnlyList<string> GetStrings(System.Text.Json.JsonElement settings, string key)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsDocument :: method public static System.Text.Json.JsonElement Set(System.Text.Json.JsonElement settings, string key, System.Text.Json.JsonElement? value)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsDocument :: method public static System.Text.Json.JsonElement? Get(System.Text.Json.JsonElement settings, string key)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsDocument :: method public static bool IsVisible(Trofeo.ModuleKit.SettingField field, System.Text.Json.JsonElement settings, Trofeo.ModuleKit.SettingsSchema schema)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsDocument :: method public static bool? GetBool(System.Text.Json.JsonElement settings, string key)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsDocument :: method public static string? GetString(System.Text.Json.JsonElement settings, string key)
-[Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsDocument :: type public static class
 [Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsSchema :: constructor public (System.Collections.Generic.IReadOnlyList<Trofeo.ModuleKit.SettingField> Fields)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsSchema :: implements System.IEquatable<Trofeo.ModuleKit.SettingsSchema>
 [Trofeo.ModuleKit] Trofeo.ModuleKit.SettingsSchema :: method public bool Equals(Trofeo.ModuleKit.SettingsSchema? other)
