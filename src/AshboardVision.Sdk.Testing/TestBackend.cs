@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using Trofeo.ModuleKit;
+using Trofeo.Shared;
 
 namespace AshboardVision.Sdk.Testing;
 
@@ -86,7 +87,7 @@ internal sealed class TestBackend(IReadOnlyList<PortField> portFields, JsonEleme
     {
         // Comme le service : un port qui n'est pas celui d'un champ « port » des réglages est refusé, et un port où rien n'écoute aussi
         // (le relais répond « refusé », l'hôte en fait Denied).
-        if (!IsAllowedPort(portFields, settings, port))
+        if (!PortRule.IsAllowed(portFields, settings, port))
         {
             return new DataResult<Stream>(DataStatus.Denied, null);
         }
@@ -109,34 +110,5 @@ internal sealed class TestBackend(IReadOnlyList<PortField> portFields, JsonEleme
             socket.Dispose();
             throw;
         }
-    }
-
-    /// <summary>
-    /// Vrai si <paramref name="port"/> est la valeur d'un champ <c>port</c> de ces réglages (ou, quand le réglage n'est pas écrit, la valeur
-    /// proposée par le champ). Un réglage qui n'est pas un nombre entier ne compte pas. Même règle que le relais du logiciel.
-    /// </summary>
-    internal static bool IsAllowedPort(IReadOnlyList<PortField> portFields, JsonElement settings, int port)
-    {
-        if (port is < 1 or > 65535)
-        {
-            return false;
-        }
-
-        foreach (var field in portFields)
-        {
-            var current = field.Default;
-            if (SettingsDocument.Get(settings, field.Key) is { } written
-                && (written.ValueKind != JsonValueKind.Number || !written.TryGetInt32(out current)))
-            {
-                continue;
-            }
-
-            if (current == port)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

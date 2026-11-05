@@ -4,6 +4,7 @@ using AshboardVision.Sdk;
 using SkiaSharp;
 using Trofeo.Extensions.Protocol;
 using Trofeo.ModuleKit;
+using Trofeo.Shared;
 
 namespace Trofeo.Extensions.Service;
 
@@ -16,8 +17,6 @@ public sealed partial class ModuleHostSupervisor
     private const int MaxLogLinesPerSecond = 50;
     private const int MaxLogLineLength = 500;
     private const int MaxLookupResults = 100;
-    private const int MaxSecretKeyLength = 200;
-    private const int MaxSecretValueLength = 64 * 1024;
 
     private static readonly TimeSpan LookupTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ActionTimeout = TimeSpan.FromSeconds(30);
@@ -252,13 +251,13 @@ public sealed partial class ModuleHostSupervisor
         string? result = null;
         try
         {
-            if (key.Length is > 0 and <= MaxSecretKeyLength)
+            if (key.Length is > 0 and <= SecretLimits.MaxKeyLength)
             {
                 if (!write)
                 {
                     result = _secrets.Get(key);
                 }
-                else if (value is null || value.Length <= MaxSecretValueLength)
+                else if (value is null || value.Length <= SecretLimits.MaxValueLength)
                 {
                     _secrets.Set(key, value);
                 }

@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Reflection;
 using System.Xml.Linq;
 
 namespace AshboardVision.Sdk.Tests;
@@ -83,9 +84,25 @@ public sealed class TestingPackageTests(PackedSdkTesting packed) : IClassFixture
     }
 
     [Fact]
-    public void Pack_AssemblyVersions_AreFrozenAt1_0_0_0()
+    public void Pack_TestingDll_HasAssemblyVersion1_0_0_0()
     {
-        Assert.Equal(new Version(1, 0, 0, 0), typeof(Testing.FakeSecrets).Assembly.GetName().Version);
+        // La DLL du paquet elle-même (extraite dans un dossier temporaire), pas celle que la solution a construite.
+        var directory = Path.Combine(Path.GetTempPath(), "ashboard-sdk-testing-dll-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            using var archive = ZipFile.OpenRead(packed.PackagePath);
+            var dll = Path.Combine(directory, "AshboardVision.Sdk.Testing.dll");
+            archive.GetEntry("lib/net10.0/AshboardVision.Sdk.Testing.dll")!.ExtractToFile(dll);
+
+            var name = AssemblyName.GetAssemblyName(dll);
+            Assert.Equal("AshboardVision.Sdk.Testing", name.Name);
+            Assert.Equal(new Version(1, 0, 0, 0), name.Version);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     private XDocument ReadNuspec()

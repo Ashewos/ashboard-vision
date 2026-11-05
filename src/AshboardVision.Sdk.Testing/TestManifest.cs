@@ -13,7 +13,17 @@ internal sealed record TestManifest(IReadOnlyList<ModulePermission> Permissions,
     public static TestManifest Read(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(File.ReadAllText(path));
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException($"Le manifeste « {path} » n'est pas un JSON valide : {ex.Message}", ex);
+        }
+
+        using var _ = document;
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object)
         {

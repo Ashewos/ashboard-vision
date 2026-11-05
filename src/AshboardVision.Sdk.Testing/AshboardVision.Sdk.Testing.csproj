@@ -39,6 +39,13 @@
     <None Include="..\Trofeo.Core\Assets\Fonts\OFL-*.txt" Pack="true" PackagePath="licenses\" Link="licenses\%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- Sources partagées avec le service (Trofeo.Extensions) : la règle des ports du relais et les limites du coffre à secrets, pour que le
+       faux applique exactement celles du vrai. Ce sont des types internes : rien de plus dans l'API publique. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\PortRule.cs" Link="Shared\PortRule.cs" />
+    <Compile Include="..\Shared\SecretLimits.cs" Link="Shared\SecretLimits.cs" />
+  </ItemGroup>
+
   <!-- Met Trofeo.Core.dll à côté d'AshboardVision.Sdk.Testing.dll dans lib/<cible>/ du paquet (on prend la copie déposée dans le dossier de
        sortie, comme pour ModuleKit dans le paquet du SDK). -->
   <Target Name="IncludeCoreInPackage">

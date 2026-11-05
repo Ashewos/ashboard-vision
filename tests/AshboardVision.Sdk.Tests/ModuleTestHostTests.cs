@@ -63,9 +63,13 @@ public sealed class ModuleTestHostTests : IDisposable
         using var pixel = host.Render(new GridSize(4, 2), "pixel");
         Assert.NotEqual((classic.Width, classic.Height), (pixel.Width, pixel.Height));
 
-        // Le module a dessiné avec le thème demandé : un aplat de la couleur d'accent, sur toute l'image, sur un fond transparent.
+        // Le module a dessiné avec le thème demandé : un aplat de la couleur d'accent sur toute l'image, coins compris (le canevas partait transparent).
         Assert.Equal(Themes.Pixel.Theme.Accent, pixel.GetPixel(pixel.Width / 2, pixel.Height / 2));
+        Assert.Equal(Themes.Pixel.Theme.Accent, pixel.GetPixel(0, 0));
+        Assert.Equal(Themes.Pixel.Theme.Accent, pixel.GetPixel(pixel.Width - 1, pixel.Height - 1));
         Assert.Equal(Themes.ClassiqueDefinition.Theme.Accent, classic.GetPixel(classic.Width / 2, classic.Height / 2));
+        Assert.Equal(Themes.ClassiqueDefinition.Theme.Accent, classic.GetPixel(0, 0));
+        Assert.Equal(Themes.ClassiqueDefinition.Theme.Accent, classic.GetPixel(classic.Width - 1, classic.Height - 1));
         Assert.Equal(new GridSize(4, 2), Probe.LastContext!.Size);
         Assert.Equal(new SKRect(0, 0, pixel.Width, pixel.Height), Probe.LastContext.Bounds);
     }
@@ -131,13 +135,12 @@ public sealed class ModuleTestHostTests : IDisposable
     }
 
     [Fact]
-    public async Task GrantedPermission_NotDeclaredInManifest_Throws()
+    public void GrantedPermission_NotDeclaredInManifest_Throws()
     {
         var exception = Assert.Throws<ArgumentException>(() =>
             new ModuleTestHost<ProbeModule>(WriteManifest(), granted: [ModulePermission.Internet]));
 
         Assert.Contains("internet", exception.Message, StringComparison.Ordinal);
-        await Task.CompletedTask;
     }
 
     [Fact]
@@ -318,6 +321,42 @@ public sealed class ModuleTestHostTests : IDisposable
         Assert.Throws<InvalidDataException>(() => new ModuleTestHost<ProbeModule>(bad));
     }
 
+    [Fact]
+    public void Manifest_BrokenJson_ThrowsInvalidData()
+    {
+        var broken = Path.Combine(_directory, "casse.json");
+        File.WriteAllText(broken, """{ "permissions": [ """);
+        var notAnObject = Path.Combine(_directory, "tableau.json");
+        File.WriteAllText(notAnObject, "[]");
+
+        Assert.Throws<InvalidDataException>(() => new ModuleTestHost<ProbeModule>(broken));
+        Assert.Throws<InvalidDataException>(() => new ModuleTestHost<ProbeModule>(notAnObject));
+    }
+
+    [Fact]
+    public void Secrets_FollowTheServiceLimits()
+    {
+        var secrets = new FakeSecrets();
+        secrets.Set("jeton", "abc");
+
+        // Les limites du superviseur : clé de 1 à 200 caractères, valeur de 65 536 caractères au plus. Hors limites : ignoré, lu comme null.
+        secrets.Set("", "vide");
+        Assert.Null(secrets.Get(""));
+        var longestKey = new string('k', 200);
+        secrets.Set(longestKey, "ok");
+        Assert.Equal("ok", secrets.Get(longestKey));
+        secrets.Set(new string('k', 201), "trop");
+        Assert.Null(secrets.Get(new string('k', 201)));
+
+        var biggest = new string('v', 64 * 1024);
+        secrets.Set("grand", biggest);
+        Assert.Equal(biggest, secrets.Get("grand"));
+        secrets.Set("jeton", new string('v', 64 * 1024 + 1)); // trop grande : l'ancienne valeur reste
+        Assert.Equal("abc", secrets.Get("jeton"));
+        secrets.Set("jeton", null);
+        Assert.Null(secrets.Get("jeton"));
+    }
+
     // Le module créé par le dernier StartAsync : les tests d'une même classe s'exécutent l'un après l'autre, et seule cette classe se sert de ProbeModule.
     private static ProbeModule Probe => ProbeModule.Last ?? throw new InvalidOperationException("Aucun module n'a été créé.");
 
@@ -331,8 +370,12 @@ public sealed class ModuleTestHostTests : IDisposable
     }
 }
 
-/// <summary>Un module d'essai qui remplit sa case de la couleur d'accent du thème et garde ce que le logiciel lui a donné.</summary>
-public sealed class ProbeModule : CommunityModule
+/// <summary>
+/// Un module d'essai qui remplit sa case de la couleur d'accent du thème et garde ce que le logiciel lui a donné.
+/// <b>Réservé à cette classe de tests</b> : <c>Last</c> est statique (c'est le seul moyen d'atteindre le module, que l'hôte ne montre pas),
+/// donc deux classes de tests qui s'en serviraient en parallèle se marcheraient dessus.
+/// </summary>
+internal sealed class ProbeModule : CommunityModule
 {
     public ProbeModule() => Last = this;
 

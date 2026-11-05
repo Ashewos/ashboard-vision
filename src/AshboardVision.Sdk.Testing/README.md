@@ -17,6 +17,17 @@ Tu disposes aussi de faux services : les capteurs (`SetSensors`), la musique (`S
 
 Ce que ces aides ne font pas : elles n'enferment pas ton module. Pour l'essayer comme le logiciel le lance (enfermé, avec ses limites de mémoire et de processeur), utilise le banc d'essai.
 
+Elles ne vérifient pas non plus tout ton manifeste : elles n'en lisent que les permissions et les champs `port`. C'est le banc d'essai, `ashboard-module`, qui le valide en entier.
+
+## Limites du faux
+
+- Les capteurs et la musique que tu poses sont rendus tels quels au module, sans passer par le JSON du vrai service.
+- Le message d'état (`SetStatus`) n'est pas tronqué, alors que le logiciel le raccourcit.
+- Il n'y a pas de plafond de 16 connexions simultanées pour `ConnectLocalAsync`.
+- `Invalidate` ne redessine rien : c'est toi qui appelles `Render`.
+- La taille minimale (`minSize`) n'est pas vérifiée : `Render` accepte n'importe quelle taille du damier.
+- L'heure du `FakeTimeProvider` est en UTC et ne bouge que si tu la fais avancer.
+
 ## Où le trouver
 
 Ce paquet **n'est pas sur nuget.org**. C'est un fichier `.nupkg` joint à chaque version d'Ashboard Vision sur GitHub, et posé sur ton PC par l'installateur du logiciel, à côté de `AshboardVision.Sdk`. Tu l'ajoutes à ton projet de tests comme source locale NuGet.

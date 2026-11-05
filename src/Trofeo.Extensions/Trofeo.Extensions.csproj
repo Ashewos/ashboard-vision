@@ -16,6 +16,12 @@
     <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
   </ItemGroup>
 
+  <!-- Sources partagées avec les aides de test des créateurs (AshboardVision.Sdk.Testing) : le faux applique les règles du vrai relais. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\PortRule.cs" Link="Shared\PortRule.cs" />
+    <Compile Include="..\Shared\SecretLimits.cs" Link="Shared\SecretLimits.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Trofeo.Extensions.Tests" />
   </ItemGroup>

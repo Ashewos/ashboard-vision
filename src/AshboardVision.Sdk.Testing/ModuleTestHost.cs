@@ -36,7 +36,8 @@ public sealed class ModuleTestHost<TModule> : IAsyncDisposable
     /// <param name="settings">Les réglages de la case, tels que l'utilisateur les aurait saisis (un objet JSON) ; absent : un objet vide.</param>
     /// <param name="granted">Les permissions que l'utilisateur accorde, parmi celles que le manifeste déclare ; absent : toutes celles qu'il déclare.</param>
     /// <exception cref="ArgumentException">Une permission accordée n'est pas déclarée dans le manifeste.</exception>
-    /// <exception cref="InvalidDataException">Le manifeste est illisible (JSON cassé, permission inconnue).</exception>
+    /// <exception cref="InvalidDataException">Le manifeste n'est pas un JSON valide, n'est pas un objet ou cite une permission inconnue. Les autres champs ne sont pas vérifiés ici : c'est le travail du banc d'essai.</exception>
+    /// <exception cref="FileNotFoundException">Le fichier du manifeste n'existe pas.</exception>
     public ModuleTestHost(string manifestPath, JsonElement? settings = null, IReadOnlyList<ModulePermission>? granted = null)
     {
         var manifest = TestManifest.Read(manifestPath);

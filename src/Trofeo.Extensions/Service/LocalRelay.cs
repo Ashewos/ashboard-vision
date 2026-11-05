@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Trofeo.Extensions.Protocol;
 using Trofeo.ModuleKit;
+using Trofeo.Shared;
 
 namespace Trofeo.Extensions.Service;
 
@@ -63,33 +64,10 @@ public sealed class LocalRelay : IDisposable
 
     /// <summary>
     /// Vrai si <paramref name="port"/> est la valeur d'un champ « port » de ces réglages (ou, quand le réglage n'est pas écrit,
-    /// la valeur proposée par le champ). Un réglage qui n'est pas un nombre entier ne compte pas.
+    /// la valeur proposée par le champ). Un réglage qui n'est pas un nombre entier ne compte pas.  La règle vit dans <c>src/Shared/PortRule.cs</c>, partagée avec les aides de test des créateurs.
     /// </summary>
     public static bool IsAllowedPort(IReadOnlyList<PortField> portFields, JsonElement settings, int port)
-    {
-        ArgumentNullException.ThrowIfNull(portFields);
-        if (port is < 1 or > 65535)
-        {
-            return false;
-        }
-
-        foreach (var field in portFields)
-        {
-            var current = field.Default;
-            if (SettingsDocument.Get(settings, field.Key) is { } written
-                && (written.ValueKind != JsonValueKind.Number || !written.TryGetInt32(out current)))
-            {
-                continue;
-            }
-
-            if (current == port)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => PortRule.IsAllowed(portFields, settings, port);
 
     /// <summary>
     /// Traite une demande de connexion. <paramref name="settings"/> sont les réglages de l'instance qui la fait (ou, pendant une
