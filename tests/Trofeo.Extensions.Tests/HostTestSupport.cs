@@ -193,9 +193,13 @@ internal sealed class PlainHostProcess : IHostProcess
         {
             _process.Kill(entireProcessTree: true);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or AggregateException)
+        catch (InvalidOperationException)
         {
-            // déjà fini, ou en train de finir (Windows refuse alors l'arrêt de l'arbre) : c'est ce qu'on voulait
+            // déjà fini
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or AggregateException && _process.HasExited)
+        {
+            // en train de finir : Windows refuse l'arrêt de l'arbre d'un processus qui s'éteint ; si l'hôte vit encore, le refus remonte
         }
     }
 
@@ -607,7 +611,7 @@ internal sealed class ModuleSandbox : IDisposable
 
     /// <summary>
     /// Une copie du module d'essai de l'hôte (DLL, SkiaSharp, SDK…), sans les symboles (<c>*.pdb</c>) ni les bibliothèques des autres
-    /// plateformes que <c>win-x64</c> : l'hôte tourne en x64, et ces fichiers pèsent plus de 200 Mo.
+    /// plateformes que <c>win-x64</c> (les assemblies propres à Windows, <c>runtimes/win</c>, restent) : l'hôte tourne en x64, et ces fichiers pèsent plus de 200 Mo.
     /// </summary>
     public string SampleCopy()
     {
@@ -618,7 +622,8 @@ internal sealed class ModuleSandbox : IDisposable
             var parts = relative.Split(Path.DirectorySeparatorChar);
             if (file.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase)
                 || (parts.Length > 2 && parts[0].Equals("runtimes", StringComparison.OrdinalIgnoreCase)
-                    && !parts[1].Equals("win-x64", StringComparison.OrdinalIgnoreCase)))
+                    && !parts[1].Equals("win-x64", StringComparison.OrdinalIgnoreCase)
+                    && !parts[1].Equals("win", StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }

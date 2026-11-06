@@ -420,28 +420,22 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
 
         await WaitQuietlyAsync(_launchTask, ShutdownGrace).ConfigureAwait(false);
 
-        // Un lancement qui finissait pendant l'attente a pu créer une connexion neuve (arrêtée par Install) : on attend aussi toutes celles-là,
-        // pour que plus aucun fichier du module ne soit tenu quand on rend la main.
+        // Un lancement qui finissait pendant l'attente a pu créer une connexion neuve (arrêtée par Install) : on la prend aussi, avec les
+        // « autres » de tout à l'heure (elles ont pu finir leur processus sans avoir encore libéré leurs fichiers). Une seule attente pour
+        // l'ensemble, au plus ShutdownGrace : plus aucun fichier du module ne doit être tenu quand on rend la main.
         HostConnection[] remaining;
         lock (_gate)
         {
             remaining = [.. _connections];
         }
 
-        foreach (var connection in remaining)
+        HostConnection[] pending = [.. others.Union(remaining)];
+        foreach (var connection in pending)
         {
             connection.KillQuietly();
         }
 
-        foreach (var connection in remaining)
-        {
-            await WaitQuietlyAsync(connection.Done, ShutdownGrace).ConfigureAwait(false);
-        }
-
-        foreach (var connection in others)
-        {
-            await WaitQuietlyAsync(connection.Done, ShutdownGrace).ConfigureAwait(false);
-        }
+        await WaitQuietlyAsync(Task.WhenAll(pending.Select(connection => connection.Done)), ShutdownGrace).ConfigureAwait(false);
 
         foreach (var slot in _slots.Values)
         {
