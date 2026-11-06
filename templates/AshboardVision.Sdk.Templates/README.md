@@ -8,7 +8,7 @@ dotnet new ashboard-module -n MonModule --id moi.mon-module --param:author "Ton 
 
 Tu obtiens un module qui affiche « Bonjour » et l'heure, suit le thème du logiciel, ne demande aucune permission et propose un réglage « Message » ; avec son `manifest.json`, un projet de tests (`ModuleTestHost`) et un `README.md` qui explique la suite : construire, tester, essayer avec `ashboard-module check`, puis publier avec `ashboard-module pack`.
 
-- `-n` : le nom du projet et de la DLL du module (sans espace).
+- `-n` : le nom du projet et de la DLL du module (sans espace). Le nom de la classe et l'espace de noms en sont tirés : un point reste dans l'espace de noms, et les caractères qui ne vont pas dans un identifiant C# (point, tiret) deviennent « _ » dans le nom de la classe.
 - `--id` : l'identifiant du module, de la forme `auteur.module` (minuscules, chiffres et tirets, avec un point au milieu, 40 caractères au plus). Le modèle ne le vérifie pas : c'est le banc d'essai (`ashboard-module check`) qui refuse un identifiant mal formé, en disant pourquoi.
 - `--param:author` (ou `-au`) : ton nom, tel qu'il s'affichera dans la fenêtre de réglage. L'option `--author` n'existe pas : `dotnet new` la réserve à ses recherches (`dotnet new search --author`), il préfixe donc le nom de ce paramètre par `param:`.
 

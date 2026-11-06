@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using SkiaSharp;
+using Xunit.Abstractions;
 
 namespace AshboardVision.Sdk.Tests;
 
@@ -30,9 +31,14 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
     private readonly PackedSdk _sdk;
     private readonly PackedSdkTesting _testing;
     private readonly PackedTemplates _templates;
+    private readonly ITestOutputHelper _output;
 
-    public TemplateTests(PackedTool tool, PackedSdk sdk, PackedSdkTesting testing, PackedTemplates templates)
+    // L'identifiant du module généré, connu dès que l'essai le choisit : Dispose en déduit le conteneur d'essai à supprimer.
+    private string? _containerId;
+
+    public TemplateTests(PackedTool tool, PackedSdk sdk, PackedSdkTesting testing, PackedTemplates templates, ITestOutputHelper output)
     {
+        _output = output;
         _tool = tool;
         _sdk = sdk;
         _testing = testing;
@@ -41,6 +47,25 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
 
     public void Dispose()
     {
+        // Filet de sécurité, comme celui de ToolTests : l'outil supprime déjà son conteneur d'essai, mais un essai qui échoue en route, ou dont
+        // l'outil est tué sur délai, ne doit rien laisser dans le profil de l'utilisateur (profil AppContainer et son dossier). Jamais d'exception.
+        if (_containerId is not null)
+        {
+            try
+            {
+                DeleteAppContainerProfile("ashboard-vision.check." + _containerId);
+                var container = ContainerFolder(_containerId);
+                if (Directory.Exists(container))
+                {
+                    Directory.Delete(container, recursive: true);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Report("Le conteneur d'essai « ashboard-vision.check." + _containerId + " » n'a pas pu être supprimé : " + ex.Message);
+            }
+        }
+
         // Le dossier contient le module construit, les paquets restaurés et l'outil installé : ne rien laisser, même après un échec.
         for (var attempt = 0; attempt < 5; attempt++)
         {
@@ -62,26 +87,30 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
                 Thread.Sleep(300);
             }
         }
+
+        Report("Le dossier temporaire « " + _root + " » n'a pas pu être supprimé (un fichier est encore tenu) : à effacer à la main.");
+    }
+
+    /// <summary>Écrit dans la sortie du test (Dispose ne doit jamais lever, même si le test est déjà fini).</summary>
+    private void Report(string message)
+    {
+        try
+        {
+            _output.WriteLine(message);
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     [WindowsToolFact]
     public void NewModule_BuildsTestsAndChecks()
     {
         var id = "test.tpl" + Guid.NewGuid().ToString("N")[..10];
+        _containerId = id;
         var author = "Moi \"le Grand\"";
         var paths = Prepare();
-
-        // 1. Le modèle s'installe depuis son paquet, dans un dossier de modèles à part.
-        var install = Dotnet(paths, paths.Work, "new", "install", _templates.PackagePath, "--debug:custom-hive", paths.Hive);
-        Assert.True(install.ExitCode == 0, install.Output);
-
-        // 2. Un module en sort. « --author » est réservé par « dotnet new » (c'est un filtre de « dotnet new search ») : le paramètre s'écrit « --param:author ».
-        var create = Dotnet(paths, paths.Work, "new", "ashboard-module", "-n", "Essai", "--id", id, "--param:author", author, "--debug:custom-hive", paths.Hive);
-        Assert.True(create.ExitCode == 0, create.Output);
-        var project = Path.Combine(paths.Work, "Essai");
-        Assert.True(File.Exists(Path.Combine(project, "Essai", "Essai.csproj")), create.Output);
-        Assert.True(File.Exists(Path.Combine(project, "Essai.Tests", "Essai.Tests.csproj")), create.Output);
-        Assert.True(File.Exists(Path.Combine(project, "README.md")), create.Output);
+        var project = CreateModule(paths, "Essai", id, author);
 
         // Le manifeste porte l'identifiant et l'auteur donnés (le guillemet de l'auteur est échappé : le JSON reste valide), et rien d'autre à remplacer.
         using (var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(project, "Essai", "manifest.json"))))
@@ -93,7 +122,7 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
             Assert.Empty(manifest.RootElement.GetProperty("permissions").EnumerateArray());
         }
 
-        Assert.DoesNotContain(Directory.EnumerateFiles(project, "*", SearchOption.AllDirectories), file => File.ReadAllText(file).Contains("MonModule", StringComparison.Ordinal));
+        Assert.DoesNotContain(Directory.EnumerateFiles(project, "*", SearchOption.AllDirectories), file => new[] { "MonModule", "ModuleClassName", "ModuleNamespace" }.Any(token => File.ReadAllText(file).Contains(token, StringComparison.Ordinal)));
 
         // 3. Il se construit et ses tests passent (hors ligne : les paquets viennent de la source locale).
         var build = Dotnet(paths, project, "build", "-c", "Debug", "-nodeReuse:false", "-p:UseSharedCompilation=false", "--nologo");
@@ -129,9 +158,43 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
         Assert.Empty(HostsRunningFrom(paths.ToolPath));
     }
 
+    [WindowsToolFact]
+    public void NewModule_WithADottedName_Builds()
+    {
+        // Un nom avec un point ne peut pas servir tel quel de nom de classe : le modèle en tire un identifiant C# valide (Moi_Essai) et un
+        // espace de noms (Moi.Essai), le projet et la DLL gardent le nom donné.
+        var paths = Prepare();
+        var project = CreateModule(paths, "Moi.Essai", "test.tpl" + Guid.NewGuid().ToString("N")[..10], "Moi");
+
+        var source = File.ReadAllText(Path.Combine(project, "Moi.Essai", "Moi.Essai.cs"));
+        Assert.Contains("namespace Moi.Essai;", source, StringComparison.Ordinal);
+        Assert.Contains("class Moi_Essai :", source, StringComparison.Ordinal);
+
+        var build = Dotnet(paths, project, "build", "-c", "Debug", "-nodeReuse:false", "-p:UseSharedCompilation=false", "--nologo");
+        Assert.True(build.ExitCode == 0, build.Output);
+        Assert.True(File.Exists(Path.Combine(project, "Moi.Essai", "bin", "Debug", "net10.0", "Moi.Essai.dll")));
+    }
+
     // ---- aides --------------------------------------------------------------------------------------------------------------------
 
     private sealed record Paths(string Feed, string Packages, string Hive, string ToolPath, string Work, string CheckOut, string NuGetConfig, string Home);
+
+    /// <summary>Installe le paquet du modèle (dossier de modèles à part) puis crée un module de ce nom ; rend le dossier du projet créé.</summary>
+    private string CreateModule(Paths paths, string name, string id, string author)
+    {
+        // 1. Le modèle s'installe depuis son paquet, dans un dossier de modèles à part.
+        var install = Dotnet(paths, paths.Work, "new", "install", _templates.PackagePath, "--debug:custom-hive", paths.Hive);
+        Assert.True(install.ExitCode == 0, install.Output);
+
+        // 2. Un module en sort. « --author » est réservé par « dotnet new » (c'est un filtre de « dotnet new search ») : le paramètre s'écrit « --param:author ».
+        var create = Dotnet(paths, paths.Work, "new", "ashboard-module", "-n", name, "--id", id, "--param:author", author, "--debug:custom-hive", paths.Hive);
+        Assert.True(create.ExitCode == 0, create.Output);
+        var project = Path.Combine(paths.Work, name);
+        Assert.True(File.Exists(Path.Combine(project, name, name + ".csproj")), create.Output);
+        Assert.True(File.Exists(Path.Combine(project, name + ".Tests", name + ".Tests.csproj")), create.Output);
+        Assert.True(File.Exists(Path.Combine(project, "README.md")), create.Output);
+        return project;
+    }
 
     /// <summary>Les dossiers temporaires, le dossier des paquets fraîchement fabriqués et le <c>nuget.config</c> à deux sources locales.</summary>
     private Paths Prepare()
@@ -247,6 +310,11 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
         start.Environment["DOTNET_NOLOGO"] = "1";
         start.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
         start.Environment["MSBUILDDISABLENODEREUSE"] = "1";
+        // Garde-fou : rien ne doit sortir vers le réseau (les sources sont des dossiers). Un accès involontaire à nuget.org ou ailleurs échouerait
+        // franchement, vers un port où personne n'écoute, au lieu de réussir en silence quand l'ordinateur est connecté.
+        start.Environment["HTTP_PROXY"] = "http://127.0.0.1:9";
+        start.Environment["HTTPS_PROXY"] = "http://127.0.0.1:9";
+        start.Environment["NO_PROXY"] = "";
 
         using var process = Process.Start(start) ?? throw new InvalidOperationException(fileName + " n'a pas démarré.");
         var stdout = process.StandardOutput.ReadToEndAsync();
@@ -263,6 +331,9 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
     }
 
     private sealed record CommandResult(int ExitCode, string Output);
+
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode)]
+    private static extern int DeleteAppContainerProfile(string appContainerName);
 
     private static string ContainerFolder(string id) =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Packages", "ashboard-vision.check." + id);

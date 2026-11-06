@@ -4,7 +4,7 @@ using AshboardVision.Sdk;
 using SkiaSharp;
 using Trofeo.ModuleKit;
 
-namespace MonModule;
+namespace ModuleNamespace;
 
 /// <summary>
 /// Ton premier module : il affiche un message (« Bonjour » tant que le réglage « Message » est vide) et l'heure, aux couleurs et
@@ -14,7 +14,7 @@ namespace MonModule;
 /// <see cref="Render"/> dessine chaque fois qu'une image est nécessaire.
 /// </para>
 /// </summary>
-public sealed class MonModule : CommunityModule
+public sealed class ModuleClassName : CommunityModule
 {
     private const string DefaultMessage = "Bonjour";
     private const float Padding = 16f;

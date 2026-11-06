@@ -29,10 +29,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Le dossier « content » entier, avec son arborescence (RecursiveDir) : sans elle, NuGet rangerait tous les fichiers à plat. -->
+    <!-- Le dossier « content » entier, avec son arborescence (RecursiveDir) : sans elle, NuGet rangerait tous les fichiers à plat. Ses .cs et .csproj sont des textes à copier : EnableDefaultItems=false, donc jamais compilés. -->
     <Content Include="content\**\*" Exclude="content\**\bin\**;content\**\obj\**" Pack="true" PackagePath="content\%(RecursiveDir)%(Filename)%(Extension)" />
-    <!-- Les .cs et .csproj du modèle sont des textes à copier : jamais compilés, ni par ce projet ni par la solution du dépôt. -->
-    <Compile Remove="content\**" />
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 

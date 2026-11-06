@@ -40,6 +40,26 @@
       "valueSource": "author",
       "valueTransform": "jsonEncode",
       "replaces": "\"Ton nom\""
+    },
+    "className": {
+      "type": "derived",
+      "valueSource": "name",
+      "valueTransform": "identifiantCsharp",
+      "replaces": "ModuleClassName"
+    },
+    "namespaceName": {
+      "type": "derived",
+      "valueSource": "name",
+      "valueTransform": "espaceDeNoms",
+      "replaces": "ModuleNamespace"
+    }
+  },
+  "forms": {
+    "identifiantCsharp": {
+      "identifier": "safe_name"
+    },
+    "espaceDeNoms": {
+      "identifier": "safe_namespace"
     }
   }
 }
