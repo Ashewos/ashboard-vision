@@ -66,6 +66,12 @@ internal sealed class FakeMinecraftServer : IAsyncDisposable
     /// <summary>Un serveur qui lit la demande et raccroche sans répondre.</summary>
     public static FakeMinecraftServer HangingUp() => new(Behaviors.HangingUp);
 
+    /// <summary>Un serveur qui répond à l'état, puis au ping après <paramref name="pingDelay"/>, avec le bon jeton ou (<paramref name="echoToken"/> faux) un autre.</summary>
+    public static FakeMinecraftServer AnsweringPing(string json, TimeSpan pingDelay, bool echoToken) => new(Behaviors.AnsweringPing(json, pingDelay, echoToken));
+
+    /// <summary>Un serveur qui envoie sa réponse d'état un octet à la fois, avec <paramref name="delay"/> entre deux, puis attend que le client parte.</summary>
+    public static FakeMinecraftServer Dripping(string json, TimeSpan delay) => new(Behaviors.Dripping(json, delay));
+
     /// <summary>Un serveur qui répond à la demande d'état mais ne renvoie jamais le ping.</summary>
     public static FakeMinecraftServer IgnoringPings(string json) => new(Behaviors.IgnoringPings(json));
 
@@ -157,14 +163,38 @@ internal sealed class ServerConnection(FakeMinecraftServer server, Stream stream
         Assert.Equal([0x00], await ReadPacketAsync(ct));
     }
 
-    /// <summary>Lit le ping du client et le lui renvoie tel quel.</summary>
-    public async Task AnswerPingAsync(CancellationToken ct)
+    /// <summary>
+    /// Lit le ping du client et le lui renvoie, après <paramref name="delay"/> : tel quel, ou (si <paramref name="echoToken"/> est faux) avec un
+    /// autre jeton, comme un serveur qui ne répond pas à ce ping-là.
+    /// </summary>
+    public async Task AnswerPingAsync(CancellationToken ct, TimeSpan delay = default, bool echoToken = true)
     {
         var ping = await ReadPacketAsync(ct);
         Assert.Equal(9, ping.Length);
         Assert.Equal(0x01, ping[0]);
-        server.RecordPing(BinaryPrimitives.ReadInt64BigEndian(ping.AsSpan(1)));
+        var token = BinaryPrimitives.ReadInt64BigEndian(ping.AsSpan(1));
+        server.RecordPing(token);
+        if (delay > TimeSpan.Zero)
+        {
+            await Task.Delay(delay, ct);
+        }
+
+        if (!echoToken)
+        {
+            BinaryPrimitives.WriteInt64BigEndian(ping.AsSpan(1), token + 1);
+        }
+
         await WritePacketAsync(ping, ct);
+    }
+
+    /// <summary>Écrit ces octets un par un, avec <paramref name="delay"/> entre deux : un serveur « goutte à goutte ».</summary>
+    public async Task DripAsync(byte[] bytes, TimeSpan delay, CancellationToken ct)
+    {
+        foreach (var value in bytes)
+        {
+            await WriteRawAsync([value], ct);
+            await Task.Delay(delay, ct);
+        }
     }
 
     public async Task<byte[]> ReadPacketAsync(CancellationToken ct)
@@ -260,6 +290,20 @@ internal static class Behaviors
         {
             await connection.AnswerPingAsync(ct);
         }
+    };
+
+    public static Func<ServerConnection, CancellationToken, Task> AnsweringPing(string json, TimeSpan pingDelay, bool echoToken) => async (connection, ct) =>
+    {
+        await connection.ReadHandshakeAndStatusRequestAsync(ct);
+        await connection.WritePacketAsync(Packets.StatusResponse(json), ct);
+        await connection.AnswerPingAsync(ct, pingDelay, echoToken);
+    };
+
+    public static Func<ServerConnection, CancellationToken, Task> Dripping(string json, TimeSpan delay) => async (connection, ct) =>
+    {
+        await connection.ReadHandshakeAndStatusRequestAsync(ct);
+        await connection.DripAsync(Packets.Frame(Packets.StatusResponse(json)), delay, ct);
+        await connection.WaitForTheClientAsync(ct);
     };
 
     public static Func<ServerConnection, CancellationToken, Task> Replying(byte[] bytes) => async (connection, ct) =>

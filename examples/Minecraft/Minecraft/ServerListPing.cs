@@ -171,7 +171,8 @@ public static class ServerListPing
         {
             using var ping = new MemoryStream();
             var token = new byte[8];
-            BinaryPrimitives.WriteInt64BigEndian(token, Environment.TickCount64);
+            var sent = Environment.TickCount64;
+            BinaryPrimitives.WriteInt64BigEndian(token, sent);
             ping.WriteByte(0x01);
             ping.Write(token);
             using var framed = new MemoryStream();
@@ -183,8 +184,11 @@ public static class ServerListPing
             var reply = await ReadPacketAsync(connection, ct).ConfigureAwait(false);
             var elapsed = Stopwatch.GetElapsedTime(started);
 
+            // Le serveur doit renvoyer le jeton envoyé, tel quel : sinon ce n'est pas la réponse à notre ping, et la latence mesurée ne veut rien dire.
             var offset = 0;
-            return ReadVarInt(reply, ref offset) == 0x01 && reply.Length - offset == 8 ? elapsed : fallback;
+            var echoed = ReadVarInt(reply, ref offset) == 0x01 && reply.Length - offset == 8
+                         && BinaryPrimitives.ReadInt64BigEndian(reply.AsSpan(offset)) == sent;
+            return echoed ? elapsed : fallback;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or ObjectDisposedException or OperationCanceledException)
         {
@@ -395,15 +399,20 @@ public static class ServerListPing
     }
 
     /// <summary>
-    /// Retire les codes de mise en forme (<c>§a</c>…), les retours à la ligne et les caractères de contrôle, ramène les espaces à un seul, et
-    /// coupe à <paramref name="maxChars"/>.
+    /// Retire les codes de mise en forme (<c>§a</c>…), les caractères de contrôle et ceux qui changent le sens de lecture (un serveur peut en glisser
+    /// dans son message pour retourner le texte qui suit), ramène les espaces et retours à la ligne à un seul espace, et coupe à
+    /// <paramref name="maxChars"/>.
     /// </summary>
     internal static string Clean(string text, int maxChars)
     {
         var plain = FormattingCode.Replace(text, "");
-        plain = Whitespace.Replace(string.Concat(plain.Select(c => char.IsControl(c) && !char.IsWhiteSpace(c) ? ' ' : c)), " ").Trim();
+        plain = string.Concat(plain.Where(c => char.IsWhiteSpace(c) || !(char.IsControl(c) || IsBidiControl(c))));
+        plain = Whitespace.Replace(plain, " ").Trim();
         return plain.Length > maxChars ? plain[..maxChars].TrimEnd() : plain;
     }
+
+    /// <summary>U+202A à U+202E et U+2066 à U+2069 (embeddings, overrides et isolats), plus les marques U+200E, U+200F et U+061C.</summary>
+    private static bool IsBidiControl(char c) => c is (>= '‪' and <= '‮') or (>= '⁦' and <= '⁩') or '‎' or '‏' or '؜';
 
     /// <summary>L'icône : <c>data:image/png;base64,…</c>. Trop grosse, mal codée ou autre chose qu'un PNG : on l'ignore, sans faire échouer l'état.</summary>
     private static byte[]? DecodeFavicon(string value)

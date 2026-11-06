@@ -200,6 +200,29 @@ public sealed class ServerListPingTests
         Assert.Equal(2, status.Online);
     }
 
+    [Fact]
+    public async Task Query_PingTokenEchoed_MeasuresThePing()
+    {
+        // Le serveur met 300 ms à renvoyer le ping : la latence est celle du ping, pas celle de la demande d'état (quasi immédiate).
+        await using var server = FakeMinecraftServer.AnsweringPing("""{ "description": "x" }""", TimeSpan.FromMilliseconds(300), echoToken: true);
+
+        var status = await QueryAsync(server);
+
+        Assert.True(status.Latency >= TimeSpan.FromMilliseconds(250), $"Latence {status.Latency.TotalMilliseconds} ms : le ping n'a pas été mesuré.");
+    }
+
+    [Fact]
+    public async Task Query_PingTokenNotEchoed_FallsBackOnTheStatusRoundTrip()
+    {
+        // Le serveur renvoie un autre jeton (donc pas la réponse à notre ping) : sa latence ne veut rien dire, on garde celle de la demande d'état.
+        await using var server = FakeMinecraftServer.AnsweringPing("""{ "description": "x" }""", TimeSpan.FromMilliseconds(300), echoToken: false);
+
+        var status = await QueryAsync(server);
+
+        Assert.Equal("x", status.Motd);
+        Assert.True(status.Latency < TimeSpan.FromMilliseconds(250), $"Latence {status.Latency.TotalMilliseconds} ms : le jeton qui ne correspond pas a été pris pour le ping.");
+    }
+
     // ---- Un serveur cassé ou malveillant ----
 
     [Theory]
@@ -289,6 +312,46 @@ public sealed class ServerListPingTests
         await using var server = FakeMinecraftServer.SendingThenHangingUp([.. Packets.VarInt(100), .. new byte[10]]);
 
         await Assert.ThrowsAnyAsync<IOException>(() => QueryAsync(server));
+    }
+
+    [Fact]
+    public async Task Query_ServerDrippingOneByteAtATime_StopsAtTheDeadline()
+    {
+        // Un octet toutes les 200 ms : la réponse mettrait plusieurs secondes. Le délai est global : l'interrogation s'arrête à l'échéance.
+        await using var server = FakeMinecraftServer.Dripping("""{ "description": "lent" }""", TimeSpan.FromMilliseconds(200));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        await Assert.ThrowsAsync<TimeoutException>(() => QueryAsync(server, TimeSpan.FromMilliseconds(600)));
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"L'interrogation a duré {clock.Elapsed.TotalSeconds:0.0} s pour un délai de 0,6 s.");
+    }
+
+    [Fact]
+    public async Task Query_InvalidUtf8InAString_Throws()
+    {
+        // Un octet 0xFF n'existe pas en UTF-8 : le JSON est bien formé pour l'analyseur, mais la chaîne ne se lit pas.
+        byte[] json = [.. "{\"description\":\""u8, 0xFF, .. "\"}"u8];
+        await using var server = FakeMinecraftServer.Replying(Packets.Frame([0x00, .. Packets.VarInt(json.Length), .. json]));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => QueryAsync(server));
+    }
+
+    [Fact]
+    public async Task Query_LoneSurrogateEscape_Throws()
+    {
+        // Un \ud800 seul (une moitié de paire) ne se lit pas comme du texte : une erreur claire, pas une exception qui s'échappe.
+        await Assert.ThrowsAsync<InvalidDataException>(() => QueryJsonAsync(WithDescription(@"""Bonjour \ud800 !""")));
+    }
+
+    [Fact]
+    public async Task Query_BidiAndControlCharacters_AreRemoved()
+    {
+        // U+202E (inverse le sens de lecture), U+2066 et U+2069 (isolats) et un caractère de contrôle (U+0001) : retirés du message et des pseudos.
+        // Le JSON les écrit par leurs échappements, comme un serveur les envoie.
+        var status = await QueryJsonAsync("{ \"description\": \"A" + @"\u202Eb\u0001c\u2066d\u2069e" + "\", \"players\": { \"online\": 1, \"max\": 2, \"sample\": [ { \"name\": \"Al" + @"\u202Eex" + "\" } ] } }");
+
+        Assert.Equal("Abcde", status.Motd);
+        Assert.Equal(["Alex"], status.SamplePlayers);
     }
 
     // ---- L'icône ----

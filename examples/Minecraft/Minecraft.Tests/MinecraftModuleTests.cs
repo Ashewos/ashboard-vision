@@ -127,11 +127,26 @@ public sealed class MinecraftModuleTests
 
     // ---- Un serveur de ce PC, ou un autre ----
 
+    /// <summary>Toutes les écritures de « ce PC » que le module reconnaît : l'adresse écrite dans le champ, et celle que la poignée de main annonce (sans crochets).</summary>
+    public static TheoryData<string, string> ThisComputerForms => new()
+    {
+        { "localhost", "localhost" },
+        { "LocalHost", "LocalHost" },
+        { "LOCALHOST", "LOCALHOST" },
+        { "localhost.", "localhost." },
+        { "127.0.0.1", "127.0.0.1" },
+        { "127.0.0.2", "127.0.0.2" },
+        { "127.1", "127.1" },
+        { "0.0.0.0", "0.0.0.0" },
+        { "::1", "::1" },
+        { "[::1]", "::1" },
+        { "::ffff:127.0.0.1", "::ffff:127.0.0.1" },
+        { "0:0:0:0:0:0:0:1", "0:0:0:0:0:0:0:1" },
+        { "::", "::" },
+    };
+
     [Theory]
-    [InlineData("localhost", "localhost")]
-    [InlineData("LocalHost", "LocalHost")]
-    [InlineData("127.0.0.1", "127.0.0.1")]
-    [InlineData("[::1]", "::1")]
+    [MemberData(nameof(ThisComputerForms))]
     public async Task Module_ThisComputerAddresses_GoThroughTheRelay(string address, string announced)
     {
         await using var server = FakeMinecraftServer.Answering(StatusJson());
@@ -143,6 +158,37 @@ public sealed class MinecraftModuleTests
         Assert.Equal([new Handshake(-1, announced, server.Port, 1)], server.Handshakes);
         Assert.Empty(running.Probe.RemoteCalls);
         Assert.NotNull(running.Module.Status);
+    }
+
+    [Theory]
+    [MemberData(nameof(ThisComputerForms))]
+    public async Task Module_ThisComputerAddresses_WithoutThisComputer_SaysPermissionMissing(string address, string announced)
+    {
+        // Chaque écriture de ce PC demande la permission « Cet ordinateur » : sans elle, le module le dit (il ne tente pas une connexion directe,
+        // que l'enfermement bloquerait, ce qui donnerait un « injoignable » trompeur).
+        Assert.NotEmpty(announced);
+        await using var running = await StartAsync(Settings(address, 25565), granted: [ModulePermission.LocalNetwork, ModulePermission.Internet]);
+
+        Assert.Equal(ModuleHealth.Offline, running.Host.Health);
+        Assert.Contains("Cet ordinateur", running.Host.StatusMessage);
+        running.Host.Time.Advance(TimeSpan.FromMinutes(2));
+        Assert.Empty(running.Probe.RemoteCalls);
+    }
+
+    [Theory]
+    [InlineData("mc.example.org")]
+    [InlineData("192.168.1.20")]
+    [InlineData("8.8.8.8")]
+    [InlineData("127.example.org")]
+    [InlineData("my-localhost")]
+    public async Task Module_AddressesThatAreNotThisComputer_UseTheDirectConnection(string address)
+    {
+        await using var server = FakeMinecraftServer.Answering(StatusJson());
+        await using var running = await StartAsync(Settings(address, 25570), prepare: probe => probe.RedirectTo = server.Port);
+
+        await running.Refreshed;
+
+        Assert.Equal([(address, 25570)], running.Probe.RemoteCalls);
     }
 
     [Theory]
@@ -210,6 +256,20 @@ public sealed class MinecraftModuleTests
         Assert.Equal("Serveur injoignable", running.Host.StatusMessage);
     }
 
+    [Fact]
+    public async Task Module_RelayUnavailable_SaysTheSoftwareDoesNotAnswer()
+    {
+        // Le service d'Ashboard Vision n'a pas répondu : ce n'est pas le serveur qui est en cause, et le message le dit (autrement que « injoignable »).
+        await using var running = await StartAsync(
+            Settings("localhost", 25565), prepare: probe => probe.LocalResult = new DataResult<Stream>(DataStatus.Unavailable, null));
+
+        await running.Refreshed;
+
+        Assert.Equal(ModuleHealth.Offline, running.Host.Health);
+        Assert.Contains("Ashboard Vision ne répond pas", running.Host.StatusMessage);
+        Assert.DoesNotContain("injoignable", running.Host.StatusMessage);
+    }
+
     [Theory]
     [MemberData(nameof(ConnectionFailures))]
     public async Task Module_OtherServerUnreachable_IsOffline(Exception failure)
@@ -217,8 +277,10 @@ public sealed class MinecraftModuleTests
         await using var running = await StartAsync(Settings("mc.example.org", 25565), prepare: probe => probe.RemoteFailure = failure);
         await running.Refreshed;
 
+        // Pour un serveur qui n'est pas sur ce PC, le message ajoute l'aide qui sort le plus souvent d'embarras.
         Assert.Equal(ModuleHealth.Offline, running.Host.Health);
-        Assert.Equal("Serveur injoignable", running.Host.StatusMessage);
+        Assert.StartsWith("Serveur injoignable", running.Host.StatusMessage, StringComparison.Ordinal);
+        Assert.Contains("Si le serveur tourne sur ce PC, écris localhost", running.Host.StatusMessage);
     }
 
     public static TheoryData<Exception> ConnectionFailures => new()
@@ -265,11 +327,18 @@ public sealed class MinecraftModuleTests
         Assert.Contains("illisible", running.Host.StatusMessage);
     }
 
+    private static byte[] InvalidUtf8Answer()
+    {
+        byte[] json = [.. "{\"description\":\""u8, 0xFF, .. "\"}"u8];
+        return Packets.Frame([0x00, .. Packets.VarInt(json.Length), .. json]);
+    }
+
     public static TheoryData<byte[]> UnreadableAnswers => new()
     {
         Packets.Frame(Packets.StatusResponse("pas du JSON")),
         Packets.VarInt(int.MaxValue), // un paquet de 2 Gio annoncé
         new byte[] { 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01 }, // un VarInt de 7 octets
+        InvalidUtf8Answer(), // un JSON dont une chaîne contient l'octet 0xFF
     };
 
     [Theory]
@@ -297,6 +366,20 @@ public sealed class MinecraftModuleTests
 
         Assert.Equal(ModuleHealth.NotConfigured, running.Host.Health);
         Assert.Contains(expected, running.Host.StatusMessage);
+        Assert.Empty(running.Probe.RemoteCalls);
+    }
+
+    [Theory]
+    [InlineData("mc.example.org:25565")]
+    [InlineData("localhost:25565")]
+    [InlineData("127.0.0.1:25565")]
+    [InlineData("[::1]:25565")]
+    public async Task Module_AddressWithAPort_SaysToUseThePortField(string address)
+    {
+        await using var running = await StartAsync(Settings(address, 25565));
+
+        Assert.Equal(ModuleHealth.NotConfigured, running.Host.Health);
+        Assert.Contains("champ « Port »", running.Host.StatusMessage);
         Assert.Empty(running.Probe.RemoteCalls);
     }
 
@@ -385,7 +468,7 @@ public sealed class MinecraftModuleTests
         try
         {
             await using var server = FakeMinecraftServer.Silent();
-            var running = await StartAsync(Settings("localhost", server.Port));
+            await using var running = await StartAsync(Settings("localhost", server.Port)); // libéré aussi si une assertion échoue avant la fermeture
             for (var i = 0; i < 500 && server.Handshakes.Count == 0; i++)
             {
                 await Task.Delay(10); // la demande est partie (le serveur l'a lue) et ne recevra pas de réponse
@@ -429,6 +512,9 @@ internal sealed class MinecraftProbe
     /// <summary>Si elle est posée, la connexion « ordinaire » échoue avec cette exception.</summary>
     public Exception? RemoteFailure { get; set; }
 
+    /// <summary>Si elle est posée, la réponse du relais vers ce PC (au lieu de celle du faux relais de <c>ModuleTestHost</c>).</summary>
+    public DataResult<Stream>? LocalResult { get; set; }
+
     /// <summary>Le délai d'interrogation que le module doit prendre (le sien sinon).</summary>
     public TimeSpan? QueryTimeout { get; set; }
 
@@ -459,6 +545,9 @@ internal sealed class TestableMinecraftModule : MinecraftModule
     private readonly MinecraftProbe _probe = Current.Value ?? throw new InvalidOperationException("Pose TestableMinecraftModule.Current avant StartAsync.");
 
     public TestableMinecraftModule() => _probe.Module = this;
+
+    internal override Task<DataResult<Stream>> ConnectLocalAsync(int port, CancellationToken ct) =>
+        _probe.LocalResult is { } result ? Task.FromResult(result) : base.ConnectLocalAsync(port, ct);
 
     internal override TimeSpan QueryTimeout => _probe.QueryTimeout ?? base.QueryTimeout;
 

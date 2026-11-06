@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AshboardVision.Sdk;
@@ -25,11 +26,20 @@ public class MinecraftModule : CommunityModule
     private const int DefaultPort = 25565;
     private const string Unreachable = "Serveur injoignable";
 
+    /// <summary>
+    /// Pour un serveur qui n'est pas sur ce PC : l'erreur la plus courante est d'avoir écrit autre chose que « localhost » pour joindre ce PC (une
+    /// adresse que le module ne peut pas reconnaître, comme le nom de la machine), que l'enfermement du module bloque.
+    /// </summary>
+    private const string UnreachableRemote = Unreachable + ". Si le serveur tourne sur ce PC, écris localhost dans le champ « Adresse du serveur ».";
+
+    private const string RelayUnavailable = "Ashboard Vision ne répond pas pour joindre le serveur de ce PC : le module réessaiera dans 30 secondes.";
+
     /// <summary>Une icône de serveur fait 64 × 64 ; au-delà de ce côté, l'image est ignorée (un PNG minuscule peut décompresser en gigaoctets).</summary>
     private const int MaxIconSide = 256;
 
-    // Un nom de machine ou une adresse (IPv4, ou IPv6 entre crochets), sans espace ni caractère étrange.
-    private static readonly Regex Address = new(@"^[\p{L}\p{N}._:\[\]-]{1,100}$", RegexOptions.CultureInvariant);
+    // Un nom de machine, une adresse IPv4, ou une adresse IPv6 (nue ou entre crochets), sans espace ni caractère étrange. Les deux points ne sont admis
+    // que pour une adresse IPv6 : « machine:25565 » est refusé dans StartAsync, avec un message qui renvoie au champ « Port ».
+    private static readonly Regex Address = new(@"^(?:\[[0-9A-Fa-f:.]{2,45}\]|[\p{L}\p{N}._:-]{1,100})$", RegexOptions.CultureInvariant);
 
     private readonly CancellationTokenSource _stop = new();
     private string _host = "";
@@ -56,6 +66,9 @@ public class MinecraftModule : CommunityModule
     /// <summary>Le délai d'une interrogation du serveur ; les tests le raccourcissent pour ne pas attendre cinq secondes un serveur muet.</summary>
     internal virtual TimeSpan QueryTimeout => TimeSpan.FromSeconds(5);
 
+    /// <summary>Ouvre le relais du logiciel vers un serveur de ce PC. Point d'entrée des tests, comme <see cref="ConnectRemoteAsync"/> : ils y glissent un relais qui ne répond pas.</summary>
+    internal virtual Task<DataResult<Stream>> ConnectLocalAsync(int port, CancellationToken ct) => Services.ConnectLocalAsync(port, ct);
+
     /// <summary>
     /// Ouvre la connexion vers un serveur qui n'est pas sur ce PC. C'est le point d'entrée des tests : une sous-classe du projet de tests (qui voit ce
     /// membre grâce à <c>InternalsVisibleTo</c>) le redéfinit pour joindre un faux serveur. Le module n'ouvre jamais de connexion vers <c>127.0.0.1</c>
@@ -75,11 +88,17 @@ public class MinecraftModule : CommunityModule
         var address = ReadText(settings, "adresse");
         if (!Address.IsMatch(address))
         {
-            SetStatus(ModuleHealth.NotConfigured, "Indique l'adresse du serveur (un nom ou une adresse, sans espace ; localhost pour un serveur de ce PC) dans les réglages du module.");
+            SetStatus(ModuleHealth.NotConfigured, "Indique l'adresse du serveur (un nom ou une adresse, sans espace ni port ; localhost pour un serveur de ce PC) dans les réglages du module. Le port va dans le champ « Port ».");
             return Task.CompletedTask;
         }
 
         _host = address.Trim('[', ']'); // une adresse IPv6 s'écrit [::1] ; le protocole veut ::1
+        if (_host.Contains(':') && !IPAddress.TryParse(_host, out _))
+        {
+            SetStatus(ModuleHealth.NotConfigured, "Écris seulement le nom ou l'adresse du serveur dans le champ « Adresse du serveur » : le port va dans le champ « Port ».");
+            return Task.CompletedTask;
+        }
+
         if (!TryReadPort(settings, out _port))
         {
             SetStatus(ModuleHealth.NotConfigured, "Indique le port du serveur, un nombre entre 1 et 65535, dans les réglages du module.");
@@ -210,8 +229,32 @@ public class MinecraftModule : CommunityModule
         return written.ValueKind == JsonValueKind.Number && written.TryGetInt32(out port) && port is >= 1 and <= 65535;
     }
 
-    private static bool IsThisComputer(string host) =>
-        host.Equals("localhost", StringComparison.OrdinalIgnoreCase) || host is "127.0.0.1" or "::1";
+    /// <summary>
+    /// Vrai pour toutes les écritures de « ce PC » qu'on peut reconnaître sans interroger un DNS : <c>localhost</c> (avec ou sans point final, en
+    /// majuscules ou non), toute adresse de la boucle locale (<c>127.0.0.1</c>, <c>127.0.0.2</c>, <c>127.1</c>, <c>::1</c>, <c>::ffff:127.0.0.1</c>…) et
+    /// les adresses « n'importe laquelle » (<c>0.0.0.0</c>, <c>::</c>). Un nom qui résout vers 127.0.0.1, ou l'adresse du réseau local du PC, ne se
+    /// reconnaît pas : le message d'échec le dit.
+    /// </summary>
+    internal static bool IsThisComputer(string host)
+    {
+        var name = host.TrimEnd('.');
+        if (name.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!IPAddress.TryParse(name, out var address))
+        {
+            return false;
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        return IPAddress.IsLoopback(address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any);
+    }
 
     /// <summary>
     /// Lance une actualisation, sauf si la précédente dure encore (serveur lent) : il n'y en a jamais deux en même temps. Appelée par la
@@ -289,16 +332,22 @@ public class MinecraftModule : CommunityModule
                 return await ConnectRemoteAsync(_host, _port, ct).ConfigureAwait(false);
             }
 
-            // « Refusé » veut dire ici que rien n'écoute sur ce port : la permission, elle, a déjà été vérifiée au démarrage.
+            // « Refusé » veut dire ici que rien n'écoute sur ce port : la permission, elle, a déjà été vérifiée au démarrage. « Indisponible » veut
+            // dire que le logiciel lui-même n'a pas répondu : ce n'est pas le serveur qui est en cause, on le dit à part.
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
             limit.CancelAfter(ConnectTimeout);
-            var result = await Services.ConnectLocalAsync(_port, limit.Token).ConfigureAwait(false);
-            return result.Status == DataStatus.Ok && result.Value is { } stream ? stream : throw new ServerProblem(Unreachable);
+            var result = await ConnectLocalAsync(_port, limit.Token).ConfigureAwait(false);
+            return result switch
+            {
+                { Status: DataStatus.Ok, Value: { } stream } => stream,
+                { Status: DataStatus.Unavailable } => throw new ServerProblem(RelayUnavailable),
+                _ => throw new ServerProblem(Unreachable),
+            };
         }
         catch (Exception ex) when (ex is System.Net.Sockets.SocketException or TimeoutException or IOException or ObjectDisposedException
                                    || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
-            throw new ServerProblem(Unreachable, ex);
+            throw new ServerProblem(_local ? Unreachable : UnreachableRemote, ex);
         }
     }
 
