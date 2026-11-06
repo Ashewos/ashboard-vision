@@ -36,9 +36,10 @@ public sealed class DemoTests
     }
 
     [Fact]
-    public async Task Demo_AnimateSettingOff_StopsAnimating()
+    public async Task Demo_AnimateSettingOff_FreezesDrawing()
     {
-        // Le réglage « Animer » décoché ne se lit qu'au démarrage : on le voit à ce que le dessin ne bouge plus d'un pas à l'autre.
+        // ModuleTestHost n'expose pas l'instance du module : on ne peut pas lire IsAnimating après StartAsync. Ce test vérifie ce qu'on voit du
+        // réglage « Animer » décoché : le dessin ne bouge plus d'un pas à l'autre (Render_MovesAtTwelveStepsPerSecond montre qu'il bouge sinon).
         await using var host = await StartedAsync("""{ "animate": false }""");
 
         host.Time.SetUtcNow(Start);

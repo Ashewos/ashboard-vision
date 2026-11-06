@@ -7,16 +7,20 @@ namespace GitHubRepo;
 /// Ce que le module affiche d'un dépôt : ses étoiles, sa dernière version et le total des téléchargements des fichiers de toutes ses versions.
 /// Cette classe ne connaît que le JSON de l'API GitHub et le français : elle ne dessine rien et n'appelle pas le réseau.
 /// </summary>
-internal sealed record RepoStats(int Stars, string? ReleaseTag, DateTimeOffset? ReleaseDate, long Downloads)
+internal sealed record RepoStats(int Stars, string? ReleaseTag, DateTimeOffset? ReleaseDate, long Downloads, int? ReleasesCap = null)
 {
-    /// <summary>Lit la réponse de <c>GET /repos/{dépôt}</c> et celle de <c>GET /repos/{dépôt}/releases</c> (les plus récentes d'abord).</summary>
-    public static RepoStats Parse(JsonElement repository, JsonElement releases)
+    /// <summary>
+    /// Lit la réponse de <c>GET /repos/{dépôt}</c> et les versions de <c>GET /repos/{dépôt}/releases</c> (les plus récentes d'abord, toutes pages
+    /// mises bout à bout). <paramref name="releasesCap"/> : le nombre de versions au-delà duquel on s'est arrêté, s'il y en avait davantage.
+    /// Une réponse qui n'a pas la forme attendue lève <see cref="KeyNotFoundException"/>, <see cref="InvalidOperationException"/> ou <see cref="FormatException"/>.
+    /// </summary>
+    public static RepoStats Parse(JsonElement repository, IEnumerable<JsonElement> releases, int? releasesCap = null)
     {
         long downloads = 0;
         string? tag = null;
         DateTimeOffset? date = null;
 
-        foreach (var release in releases.EnumerateArray())
+        foreach (var release in releases)
         {
             // Un brouillon n'est visible que de son auteur : il ne compte pour rien.
             if (release.GetProperty("draft").GetBoolean())
@@ -37,14 +41,14 @@ internal sealed record RepoStats(int Stars, string? ReleaseTag, DateTimeOffset? 
             }
         }
 
-        return new RepoStats(repository.GetProperty("stargazers_count").GetInt32(), tag, date, downloads);
+        return new RepoStats(repository.GetProperty("stargazers_count").GetInt32(), tag, date, downloads, releasesCap);
     }
 
     /// <summary>« 1 234 étoiles ».</summary>
     public string StarsText => Counted(Stars, "étoile");
 
-    /// <summary>« 5 678 téléchargements ».</summary>
-    public string DownloadsText => Counted(Downloads, "téléchargement");
+    /// <summary>« 5 678 téléchargements », suivi de « (500+ versions) » quand le total ne couvre pas toutes les versions du dépôt.</summary>
+    public string DownloadsText => Counted(Downloads, "téléchargement") + (ReleasesCap is { } cap ? $" ({Number(cap)}+ versions)" : "");
 
     /// <summary>« v1.2.0 · 01/11/2026 » (la date dans le fuseau donné), ou « Aucune version publiée ».</summary>
     public string ReleaseText(TimeZoneInfo zone) =>
@@ -53,6 +57,7 @@ internal sealed record RepoStats(int Stars, string? ReleaseTag, DateTimeOffset? 
             : $"{ReleaseTag} · {TimeZoneInfo.ConvertTime(date, zone).ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}";
 
     // Les milliers sont séparés par une espace ordinaire : la police du thème n'a pas forcément l'espace fine insécable du français.
-    private static string Counted(long count, string noun) =>
-        count.ToString("N0", CultureInfo.InvariantCulture).Replace(',', ' ') + " " + noun + (count > 1 ? "s" : "");
+    private static string Number(long value) => value.ToString("N0", CultureInfo.InvariantCulture).Replace(',', ' ');
+
+    private static string Counted(long count, string noun) => Number(count) + " " + noun + (count > 1 ? "s" : "");
 }
