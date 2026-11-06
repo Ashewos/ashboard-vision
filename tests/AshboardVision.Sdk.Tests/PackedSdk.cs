@@ -101,3 +101,11 @@ public sealed class PackedSdkTesting : PackedSdk
     {
     }
 }
+
+/// <summary>Le paquet <c>AshboardVision.Sdk.Templates</c> (le modèle <c>dotnet new ashboard-module</c>), fabriqué comme celui du SDK.</summary>
+public sealed class PackedTemplates : PackedSdk
+{
+    public PackedTemplates() : base("AshboardVision.Sdk.Templates", "templates")
+    {
+    }
+}

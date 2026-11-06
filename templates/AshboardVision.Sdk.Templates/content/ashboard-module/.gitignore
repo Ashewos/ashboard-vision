@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+*.user
+check-out/
+pack-out/
+*.avmod
+*.avmod.sha256

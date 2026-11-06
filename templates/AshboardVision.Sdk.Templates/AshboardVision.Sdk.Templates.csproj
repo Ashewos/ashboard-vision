@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Le modèle de projet « dotnet new ashboard-module » : un module de la communauté prêt à construire, avec son projet de tests. Un paquet NuGet
+       local « AshboardVision.Sdk.Templates » (jamais poussé sur nuget.org : joint aux versions GitHub et posé par l'installateur, comme le SDK ;
+       voir la conception, 5.6). Même ligne de numéros que le SDK : 1.0.0.
+       Ce projet ne compile rien : il ne fait que ranger le dossier « content » dans le paquet. Les .cs et .csproj du modèle sont des textes à
+       copier, avec leurs mots-clés (MonModule…) : ils ne sont ni construits ni testés avec la solution du dépôt. C'est le test
+       tests/AshboardVision.Sdk.Tests/TemplateTests.cs qui crée un module à partir du modèle, puis le construit, le teste et le vérifie. -->
+  <PropertyGroup>
+    <PackageType>Template</PackageType>
+    <PackageId>AshboardVision.Sdk.Templates</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Ashewos</Authors>
+    <Title>Modèle de module pour Ashboard Vision</Title>
+    <Description>Le modèle « dotnet new ashboard-module » : un module de la communauté d'Ashboard Vision, prêt à construire, avec son manifeste et son projet de tests.</Description>
+    <PackageTags>ashboard-vision;thermalright;trofeo-vision;module;sdk;template;dotnet-new</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Ashewos/ashboard-vision</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- Rien à compiler, et aucune bibliothèque dans le paquet (NU5128 : « pas de dépendances ni de lib »). -->
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <!-- Les exclusions par défaut de NuGet écartent les dossiers et fichiers cachés : or .template.config et .gitignore doivent partir dans le paquet. -->
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Le dossier « content » entier, avec son arborescence (RecursiveDir) : sans elle, NuGet rangerait tous les fichiers à plat. -->
+    <Content Include="content\**\*" Exclude="content\**\bin\**;content\**\obj\**" Pack="true" PackagePath="content\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Les .cs et .csproj du modèle sont des textes à copier : jamais compilés, ni par ce projet ni par la solution du dépôt. -->
+    <Compile Remove="content\**" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
