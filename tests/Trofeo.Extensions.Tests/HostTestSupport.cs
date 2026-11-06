@@ -193,9 +193,9 @@ internal sealed class PlainHostProcess : IHostProcess
         {
             _process.Kill(entireProcessTree: true);
         }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or AggregateException)
         {
-            // déjà fini
+            // déjà fini, ou en train de finir (Windows refuse alors l'arrêt de l'arbre) : c'est ce qu'on voulait
         }
     }
 
@@ -453,6 +453,48 @@ internal sealed class FakeHostFactory : IHostProcessFactory
     }
 }
 
+/// <summary>
+/// Lance de faux hôtes dont <b>le premier</b> n'annonce sa fin qu'un moment après son arrêt (comme l'image d'un vrai processus, qui
+/// reste tenue un instant) ; les suivants s'arrêtent tout de suite.
+/// </summary>
+internal sealed class SlowExitHostFactory(FakeHostFactory inner, TimeSpan firstDelay) : IHostProcessFactory
+{
+    private int _started;
+
+    public IHostProcess Start(HostStart start) =>
+        new SlowExitHostProcess((FakeHostProcess)inner.Start(start), Interlocked.Increment(ref _started) == 1 ? firstDelay : TimeSpan.Zero);
+}
+
+internal sealed class SlowExitHostProcess : IHostProcess
+{
+    private readonly FakeHostProcess _inner;
+
+    public SlowExitHostProcess(FakeHostProcess inner, TimeSpan delay)
+    {
+        _inner = inner;
+        Exited = Task.Run(async () =>
+        {
+            var code = await inner.Exited.ConfigureAwait(false);
+            await Task.Delay(delay).ConfigureAwait(false);
+            return code;
+        });
+    }
+
+    public Task<int> Exited { get; }
+
+    public string DataDirectory => _inner.DataDirectory;
+
+    public long DuplicateInto(SafeHandle source) => _inner.DuplicateInto(source);
+
+    public void Kill() => _inner.Kill();
+
+    public JobUsage? ReadUsage() => _inner.ReadUsage();
+
+    public long? ReadPrivateBytes() => _inner.ReadPrivateBytes();
+
+    public void Dispose() => _inner.Dispose();
+}
+
 internal static class TestWait
 {
     public static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
@@ -498,16 +540,49 @@ internal sealed class ModuleSandbox : IDisposable
 
     public static string SampleFolder => Path.Combine(AppContext.BaseDirectory, "sample");
 
+    /// <summary>
+    /// Supprime les dossiers. L'image du vrai hôte reste tenue un instant après la fin du processus : on réessaie jusqu'à 2 s. Si un
+    /// dossier résiste, le test échoue en le nommant (une fuite ne doit pas remplir %TEMP% en silence).
+    /// </summary>
     public void Dispose()
     {
+        var stuck = new List<string>();
         foreach (var folder in _folders)
+        {
+            if (!TryDelete(folder))
+            {
+                stuck.Add(folder);
+            }
+        }
+
+        if (stuck.Count > 0)
+        {
+            throw new IOException("Dossier(s) de test impossible(s) à supprimer (fichiers encore tenus) : " + string.Join(", ", stuck));
+        }
+    }
+
+    private static bool TryDelete(string folder)
+    {
+        var clock = Stopwatch.StartNew();
+        while (true)
         {
             try
             {
-                Directory.Delete(folder, true);
+                if (Directory.Exists(folder))
+                {
+                    Directory.Delete(folder, true);
+                }
+
+                return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                if (clock.Elapsed > TimeSpan.FromSeconds(2))
+                {
+                    return false;
+                }
+
+                Thread.Sleep(50);
             }
         }
     }
@@ -530,13 +605,25 @@ internal sealed class ModuleSandbox : IDisposable
         return folder;
     }
 
-    /// <summary>Une copie du module d'essai de l'hôte (DLL, SkiaSharp, SDK…).</summary>
+    /// <summary>
+    /// Une copie du module d'essai de l'hôte (DLL, SkiaSharp, SDK…), sans les symboles (<c>*.pdb</c>) ni les bibliothèques des autres
+    /// plateformes que <c>win-x64</c> : l'hôte tourne en x64, et ces fichiers pèsent plus de 200 Mo.
+    /// </summary>
     public string SampleCopy()
     {
         var folder = NewFolder();
         foreach (var file in Directory.EnumerateFiles(SampleFolder, "*", SearchOption.AllDirectories))
         {
-            var target = Path.Combine(folder, Path.GetRelativePath(SampleFolder, file));
+            var relative = Path.GetRelativePath(SampleFolder, file);
+            var parts = relative.Split(Path.DirectorySeparatorChar);
+            if (file.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase)
+                || (parts.Length > 2 && parts[0].Equals("runtimes", StringComparison.OrdinalIgnoreCase)
+                    && !parts[1].Equals("win-x64", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var target = Path.Combine(folder, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target);
         }

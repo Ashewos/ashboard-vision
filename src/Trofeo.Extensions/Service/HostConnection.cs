@@ -53,8 +53,13 @@ internal sealed class HostConnection
     /// <summary>Le relais « Cet ordinateur » de cet hôte, créé à l'installation.</summary>
     public LocalRelay? Relay { get; set; }
 
-    /// <summary>Se termine quand le processus est fini et tout nettoyé.</summary>
-    public Task Done { get; set; } = Task.CompletedTask;
+    private readonly TaskCompletionSource _done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Se termine quand le processus est fini et tout nettoyé (verrou des fichiers compris). Existe dès la création de la connexion.</summary>
+    public Task Done => _done.Task;
+
+    /// <summary>Annonce que le processus est fini et tout nettoyé.</summary>
+    public void MarkDone() => _done.TrySetResult();
 
     // Les champs qui suivent ne se touchent que sous le verrou du superviseur.
     public DateTimeOffset StartedAt { get; set; }

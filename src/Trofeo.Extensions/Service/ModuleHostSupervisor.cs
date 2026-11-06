@@ -84,6 +84,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     private readonly Dictionary<Guid, JsonElement> _actionSettings = [];
     private readonly List<(DateTimeOffset At, bool Memory)> _stops = [];
     private HostConnection? _session;
+    private readonly List<HostConnection> _connections = [];
     private bool _launching;
     private int _launchGeneration;
     private Task _launchTask = Task.CompletedTask;
@@ -379,6 +380,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         HostConnection? session;
+        HostConnection[] others;
         lock (_gate)
         {
             if (_disposed)
@@ -396,6 +398,15 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
                 session.ExpectedStop = true;
                 session.Post(new Shutdown());
             }
+
+            others = [.. _connections.Where(connection => !ReferenceEquals(connection, session))];
+        }
+
+        // Les autres connexions vivantes (dernière case fermée, lancement périmé, panne en cours de nettoyage) ne sont plus la session :
+        // personne ne les écoute, on ne leur laisse pas leur minuteur de 5 s.
+        foreach (var connection in others)
+        {
+            connection.KillQuietly();
         }
 
         if (session is not null)
@@ -408,6 +419,30 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         }
 
         await WaitQuietlyAsync(_launchTask, ShutdownGrace).ConfigureAwait(false);
+
+        // Un lancement qui finissait pendant l'attente a pu créer une connexion neuve (arrêtée par Install) : on attend aussi toutes celles-là,
+        // pour que plus aucun fichier du module ne soit tenu quand on rend la main.
+        HostConnection[] remaining;
+        lock (_gate)
+        {
+            remaining = [.. _connections];
+        }
+
+        foreach (var connection in remaining)
+        {
+            connection.KillQuietly();
+        }
+
+        foreach (var connection in remaining)
+        {
+            await WaitQuietlyAsync(connection.Done, ShutdownGrace).ConfigureAwait(false);
+        }
+
+        foreach (var connection in others)
+        {
+            await WaitQuietlyAsync(connection.Done, ShutdownGrace).ConfigureAwait(false);
+        }
+
         foreach (var slot in _slots.Values)
         {
             slot.Dispose();
@@ -608,7 +643,12 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             return;
         }
 
-        connection.Done = WatchAsync(connection);
+        lock (_gate)
+        {
+            _connections.Add(connection); // suivie de sa création à la fin de son nettoyage (Done), quel que soit son sort
+        }
+
+        _ = WatchAsync(connection);
         Install(connection, generation);
     }
 
@@ -783,6 +823,23 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
 
     /// <summary>Attend la fin du processus, puis libère tout ce qui lui était lié, puis compte l'arrêt si personne ne l'a voulu.</summary>
     private async Task WatchAsync(HostConnection connection)
+    {
+        try
+        {
+            await WatchCoreAsync(connection).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _connections.Remove(connection);
+            }
+
+            connection.MarkDone();
+        }
+    }
+
+    private async Task WatchCoreAsync(HostConnection connection)
     {
         int exitCode;
         try

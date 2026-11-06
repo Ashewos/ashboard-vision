@@ -302,6 +302,45 @@ public sealed class SupervisorBoundsTests : IAsyncLifetime
         Assert.True(host.HasExited);
     }
 
+    [WindowsHostFact]
+    public async Task Dispose_AfterTheLastCaseClosed_WaitsForTheStoppingHost_AndReleasesTheFiles()
+    {
+        var (rig, factory, folder) = Fake();
+        var module = OpenAndSize(rig);
+        var host = await factory.WaitForStartAsync();
+        await host.WaitAsync<Hello>();
+        module.Dispose(); // la dernière case : Shutdown, que cet hôte ignore ; le superviseur n'a plus de session
+        await host.WaitAsync<Shutdown>();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        await rig.Supervisor.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"Rendu après {clock.Elapsed} : le superviseur a attendu le délai de 5 s de l'hôte qui s'arrête.");
+        Assert.True(host.Killed);
+        Directory.Delete(folder, true); // lève si un fichier du module est encore tenu
+    }
+
+    [WindowsHostFact]
+    public async Task Dispose_WhileAnOlderHostIsStillFinishing_WaitsForItToo()
+    {
+        var folder = _folders.SmallModule();
+        var manifest = ModuleSandbox.Manifest(entry: "module.dll");
+        var inner = new FakeHostFactory();
+        var rig = new SupervisorRig(ModuleSandbox.Ready(folder, manifest), new SlowExitHostFactory(inner, TimeSpan.FromMilliseconds(1500)));
+        _rigs.Add(rig);
+        rig.Supervisor.ShutdownGrace = TimeSpan.FromMilliseconds(50);
+        rig.Supervisor.DisposeGrace = TimeSpan.FromMilliseconds(100);
+        OpenAndSize(rig);
+        await (await inner.WaitForStartAsync()).WaitAsync<Hello>();
+
+        await rig.Supervisor.RestartAsync(); // l'ancien hôte est tué mais met 1,5 s à finir : on n'a attendu que 50 ms
+        await (await inner.WaitForStartAsync(2)).WaitAsync<Hello>();
+        rig.Supervisor.ShutdownGrace = TimeSpan.FromSeconds(5); // le délai court ne servait qu'à rendre la main à RestartAsync
+        await rig.Supervisor.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15));
+
+        Directory.Delete(folder, true); // lève si l'ancien hôte tient encore un fichier
+    }
+
     // --- Texte venu de l'hôte ------------------------------------------------------------------------------------------------------------
 
     [Theory]
