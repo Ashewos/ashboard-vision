@@ -59,9 +59,11 @@ public static class SettingsDocument
         return ToElement(root);
     }
 
+    /// <summary>Le texte au chemin donné, ou <c>null</c> s'il est absent ou si ce n'est pas un texte.</summary>
     public static string? GetString(JsonElement settings, string key) =>
         Get(settings, key) is { ValueKind: JsonValueKind.String } e ? e.GetString() : null;
 
+    /// <summary>Le booléen au chemin donné, ou <c>null</c> s'il est absent ou si ce n'est pas un booléen.</summary>
     public static bool? GetBool(JsonElement settings, string key) =>
         Get(settings, key) is { } e && e.ValueKind is JsonValueKind.True or JsonValueKind.False
             ? e.GetBoolean()

@@ -7,9 +7,6 @@
          version d'assemblage plus haute que celle d'un hôte plus ancien. -->
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- Une cinquantaine de membres publics (paramètres de records, valeurs d'enums) n'ont pas encore de commentaire XML : l'avertissement CS1591
-         n'est pas une erreur ici. Les types principaux sont documentés ; le reste vient avec la documentation du SDK (tâche 19). -->
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

@@ -23,5 +23,6 @@ public readonly record struct ModuleCommand(ModuleCommandKind Kind, int Index = 
 /// </summary>
 public interface ICommandableModule
 {
+    /// <summary>Réagit à une commande de raccourci ; rend vrai si elle a servi. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
     bool HandleCommand(ModuleCommand command);
 }

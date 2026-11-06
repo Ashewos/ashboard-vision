@@ -27,4 +27,4 @@ GPL-3.0-or-later.
 
 ## Documentation
 
-Le guide pour créer un module (premier module pas à pas, manifeste, permissions, banc d'essai) arrive avec la documentation du SDK. Le code et les exemples sont dans le dépôt : <https://github.com/Ashewos/ashboard-vision>.
+Le guide pour créer un module (premier module pas à pas, manifeste, permissions, banc d'essai) est dans le dossier `docs/sdk` du dépôt, avec les modules d'exemple (`examples`) : <https://github.com/Ashewos/ashboard-vision>.

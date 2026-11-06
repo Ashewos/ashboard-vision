@@ -5,6 +5,7 @@ namespace Trofeo.ModuleKit;
 /// <summary>Fabrique d'un module qui décrit ses réglages à la fenêtre de réglage.</summary>
 public interface IConfigurableModuleFactory : IModuleFactory
 {
+    /// <summary>Les champs de réglage du module. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
     SettingsSchema Schema { get; }
 
     /// <summary>Propositions d'un champ <see cref="LookupField"/> pour la requête donnée.</summary>

@@ -6,5 +6,6 @@ namespace Trofeo.ModuleKit;
 /// </summary>
 public interface IModuleNotices
 {
+    /// <summary>Les remarques en cours. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
     IReadOnlyList<string> Notices { get; }
 }
