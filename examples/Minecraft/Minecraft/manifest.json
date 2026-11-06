@@ -1,0 +1,19 @@
+{
+  "id": "ashewos.minecraft",
+  "name": "Serveur Minecraft",
+  "description": "Affiche l'état d'un serveur Minecraft Java : son icône, son message du jour, les joueurs connectés et la latence.",
+  "author": "Ashewos",
+  "version": "1.0.0",
+  "sdk": "1.0",
+  "entry": "Minecraft.dll",
+  "permissions": ["ce-pc", "reseau-local", "internet"],
+  "minSize": { "columns": 3, "rows": 1 },
+  "presets": {
+    "compact": { "columns": 3, "rows": 1 },
+    "ideal": { "columns": 4, "rows": 1 }
+  },
+  "settings": [
+    { "kind": "text", "key": "adresse", "label": "Adresse du serveur", "placeholder": "localhost", "maxLength": 100, "help": "Le nom ou l'adresse du serveur. Écris localhost pour un serveur lancé sur ce PC." },
+    { "kind": "port", "key": "port", "label": "Port", "default": 25565, "help": "Le port du serveur Minecraft (25565 par défaut). Pour un serveur de ce PC, c'est ce port que le logiciel relaie au module." }
+  ]
+}
