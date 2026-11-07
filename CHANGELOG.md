@@ -30,6 +30,11 @@ Première bêta de la 1.1.0 : les **modules complémentaires**, créés par la c
 - Toute la documentation est en français, dans `docs/sdk`.
 - Le dépôt contient trois modules d'exemple, dans `examples` : Dépôt GitHub, Démo et Serveur Minecraft.
 
+### Corrections
+
+- Dans l'onglet Disposition, cliquer sur un module de la liste « Ajouter un module » l'ajoute de nouveau. Depuis la 1.0.0, le clic refermait la liste sans rien ajouter.
+- À la désinstallation du logiciel, quand tu effaces tes réglages, le dossier des modules est bien supprimé, même dans un dossier Documents synchronisé par OneDrive.
+
 ## 1.0.0
 
 Première version stable d'Ashboard Vision. Elle réunit tout ce que les quatre bêtas ont apporté (voir leurs sections ci-dessous) :
