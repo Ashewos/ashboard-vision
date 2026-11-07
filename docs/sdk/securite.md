@@ -54,7 +54,7 @@ La protection est forte, mais **pas absolue**.
 
 ## L'empreinte et le verrou : un module ne change pas en route
 
-Le propriétaire du projet a demandé que **un module ne puisse pas être modifié entre son installation et son exécution**, et que la vérification marche **hors ligne**.
+Ashboard Vision garantit qu'**un module ne peut pas être modifié entre son installation et son exécution**, et que la vérification marche **hors ligne**.
 
 1. **À l'installation**, le logiciel calcule l'**empreinte SHA-256** de tout le contenu du module (les noms et les octets de tous ses fichiers) et la range, avec les permissions accordées, dans une liste que **seul le logiciel écrit**. Cette liste est dans `%AppData%\ashboard-vision\modules.json`, hors du dossier des modules, que d'autres programmes peuvent écrire.
 2. **La liste est scellée** par une clé que Windows protège (`modules.key`, sous la protection DPAPI, comme le coffre à secrets). Une liste modifiée par un autre programme est refusée ; l'utilisateur voit « La liste des modules validés a été modifiée hors du logiciel : valide de nouveau tes modules. »
@@ -70,7 +70,7 @@ Conséquences pour toi :
 
 ## Pourquoi pas de signature par clé ?
 
-Une signature du créateur (une clé que tu garderais, et dont le logiciel vérifierait la signature) a été envisagée, puis **écartée** : trop compliquée à ce stade du projet. Le choix est assumé :
+Ashboard Vision n'utilise **pas de signature par clé**. Une signature du créateur (une clé que tu garderais, et dont le logiciel vérifierait la signature) a été envisagée, puis **écartée** : trop compliquée à ce stade du projet. Le choix est assumé :
 
 - l'empreinte SHA-256 publiée à côté d'un `.avmod` protège d'un **fichier abîmé** ou d'un **téléchargement détourné** ;
 - elle ne protège pas d'un **dépôt de créateur piraté** : un pirate qui prend ton dépôt peut publier un faux paquet **et** la bonne empreinte du faux paquet ;

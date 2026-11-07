@@ -5,7 +5,7 @@ namespace Trofeo.ModuleKit;
 
 /// <summary>
 /// Lecture et écriture de réglages JSON par chemin pointé (« unifi.host »). Ne lève jamais pour une forme
-/// inattendue. Les éléments rendus sont des copies, jamais liées à un document libéré ; les entrées ne sont jamais modifiées.
+/// inattendue. Les éléments rendus sont des copies, jamais liées à un document libéré ; les entrées ne sont jamais modifiées. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.
 /// </summary>
 public static class SettingsDocument
 {

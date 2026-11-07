@@ -1,18 +1,15 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using Trofeo.ModuleKit;
 
 namespace AshboardVision.Sdk.Tests;
 
 /// <summary>
-/// La documentation du SDK (<c>docs/sdk</c>) reste vraie. Trois garde-fous :
+/// La documentation du SDK (<c>docs/sdk</c>) reste vraie. Deux garde-fous ici (les exemples de champs de réglage, eux, sont lus par le vrai
+/// <c>ManifestReader</c> dans <c>Trofeo.Extensions.Tests.SdkDocsFieldExamplesTests</c>) :
 /// <list type="bullet">
 /// <item>chaque lien relatif des pages du SDK, du README et de l'utilisation avancée pointe vers un fichier qui existe (et, pour une page
 /// Markdown, vers un titre qui existe) ;</item>
 /// <item>chaque extrait de code des pages du SDK vient d'un fichier du dépôt (un exemple, ou le modèle de projet) et figure encore, tel
 /// quel, dans ce fichier : si un exemple change sans la page, le test échoue ;</item>
-/// <item>les exemples de champs de réglage, qui n'ont pas de fichier source, sont lus comme le logiciel lit un manifeste.</item>
 /// </list>
 /// Un extrait porte en légende, sur la dernière ligne non vide qui le précède, le chemin de son fichier source entre apostrophes inversées
 /// (par exemple <c>*Extrait de `examples/Demo/Demo/DemoModule.cs`*</c>). Les blocs <c>csharp</c> doivent tous avoir cette légende ; les blocs
@@ -30,16 +27,6 @@ public sealed partial class DocsTests
         "README.md", "demarrer.md", "contrat.md", "permissions.md", "dessin.md", "reglages.md", "tests.md", "publier.md", "compatibilite.md",
         "securite.md",
     ];
-
-    /// <summary>Les mêmes options que la lecture du manifeste par le logiciel (<c>ManifestReader</c>) : un champ comme elle l'accepte.</summary>
-    private static readonly JsonSerializerOptions SettingsOptions = new(JsonSerializerDefaults.Web)
-    {
-        Converters = { new JsonStringEnumConverter() },
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        AllowOutOfOrderMetadataProperties = true,
-        RespectNullableAnnotations = true,
-        RespectRequiredConstructorParameters = true,
-    };
 
     [GeneratedRegex(@"\[[^\]]*\]\(([^)\s]+)(?:\s+""[^""]*"")?\)")]
     private static partial Regex MarkdownLink();
@@ -265,64 +252,6 @@ public sealed partial class DocsTests
         }
 
         return false;
-    }
-
-    // ---------------------------------------------------------------- les champs de réglage
-
-    [Fact]
-    public void FieldExamples_ParseLikeTheManifestAndCoverEveryKind()
-    {
-        // Les exemples de champs de reglages.md n'ont pas de fichier source : on vérifie au moins que le logiciel les lirait.
-        var problems = new List<string>();
-        var kinds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var page in SdkPages())
-        {
-            foreach (var block in Blocks(File.ReadAllText(page)).Where(b => b.Language == "json" && b.Caption is null))
-            {
-                var name = $"{Path.GetFileName(page)}, ligne {block.Line}";
-                try
-                {
-                    var element = JsonDocument.Parse(block.Text).RootElement;
-                    var json = element.ValueKind == JsonValueKind.Array ? element.GetRawText() : "[" + element.GetRawText() + "]";
-                    var fields = JsonSerializer.Deserialize<List<SettingField?>>(json, SettingsOptions)!;
-                    foreach (var field in fields)
-                    {
-                        if (field is null || string.IsNullOrWhiteSpace(field.Key) || string.IsNullOrWhiteSpace(field.Label))
-                        {
-                            problems.Add($"{name} : un champ sans clé ou sans libellé.");
-                            continue;
-                        }
-
-                        kinds.Add(JsonSerializer.SerializeToElement(field, SettingsOptions).GetProperty("kind").GetString()!);
-                        if (field is NumberField n && (n.Min > n.Max || n.Default < n.Min || n.Default > n.Max))
-                        {
-                            problems.Add($"{name} : « {n.Key} » a des bornes incohérentes.");
-                        }
-
-                        if (field is PortField { Default: < 1 or > 65535 } p)
-                        {
-                            problems.Add($"{name} : « {p.Key} » a un port hors de 1 à 65535.");
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
-                {
-                    problems.Add($"{name} : {ex.Message}");
-                }
-            }
-        }
-
-        Assert.True(problems.Count == 0, string.Join("\n", problems));
-        string[] everyKind = ["choice", "toggle", "text", "list", "secret", "lookup", "action", "number", "port"];
-        Assert.True(everyKind.All(kinds.Contains), "Genres de champ sans exemple : " + string.Join(", ", everyKind.Where(kind => !kinds.Contains(kind))));
-    }
-
-    [Fact]
-    public void FieldExamples_RejectsAFieldTheManifestWouldRefuse()
-    {
-        // Le contrôle doit pouvoir échouer : un genre inconnu, ou un champ sans ses nombres, n'est pas lu.
-        Assert.ThrowsAny<Exception>(() => JsonSerializer.Deserialize<List<SettingField?>>("""[ { "kind": "inconnu", "key": "a", "label": "A" } ]""", SettingsOptions));
-        Assert.ThrowsAny<Exception>(() => JsonSerializer.Deserialize<List<SettingField?>>("""[ { "kind": "number", "key": "a", "label": "A", "min": 1 } ]""", SettingsOptions));
     }
 
     // ---------------------------------------------------------------- lecture d'une page

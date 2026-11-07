@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Trofeo.ModuleKit;
 
-/// <summary>Fabrique d'un module qui décrit ses réglages à la fenêtre de réglage.</summary>
+/// <summary>Fabrique d'un module qui décrit ses réglages à la fenêtre de réglage. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
 public interface IConfigurableModuleFactory : IModuleFactory
 {
     /// <summary>Les champs de réglage du module. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>

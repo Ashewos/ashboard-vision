@@ -77,7 +77,7 @@ La règle simple : l'état que le réseau écrit et que `Render` lit se pose dan
 | `NotConfigured` | Il manque un réglage (une adresse, un jeton…). | Ton message dans la case. |
 | `Offline` | Tu n'arrives pas à travailler (serveur injoignable, permission retirée…). | Ton message dans la case, par-dessus ta dernière image. |
 
-Le message est du français, qui tutoie, et **qui dit quoi faire** (« Indique un dépôt GitHub… », « accorde la permission… »). Il est coupé à 2 000 caractères. Le logiciel ne prend que 4 changements d'état par seconde : ne le fais pas clignoter.
+Le message est du français, qui tutoie, et **qui dit quoi faire** (« Indique un dépôt GitHub… », « accorde la permission… »). Garde-le **court** : le logiciel le coupe à **200 caractères** avant de l'afficher. Il ne prend aussi que 4 changements d'état par seconde : ne le fais pas clignoter.
 
 ### Un module non configuré se dit `NotConfigured`
 

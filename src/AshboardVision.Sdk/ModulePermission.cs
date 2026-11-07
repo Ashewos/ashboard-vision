@@ -22,7 +22,7 @@ public enum ModulePermission
     NowPlaying,
 }
 
-/// <summary>Le nom d'une permission dans le manifeste d'un module.</summary>
+/// <summary>Le nom d'une permission dans le manifeste d'un module. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
 public static class ModulePermissions
 {
     /// <summary>Le nom écrit dans le manifeste : <c>reseau-local</c>, <c>internet</c>, <c>ce-pc</c>, <c>capteurs</c>, <c>musique</c>.</summary>

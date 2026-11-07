@@ -99,7 +99,7 @@ Conséquences pour toi :
 | `Status` | Ce que ça veut dire |
 |---|---|
 | `Ok` | Le flux est ouvert. Il se lit et s'écrit comme une connexion TCP ; le fermer ferme la connexion. |
-| `Denied` | La permission « Cet ordinateur » manque, ou le port n'est pas la valeur d'un champ `port`, ou rien n'écoute sur ce port. |
+| `Denied` | La permission « Cet ordinateur » manque, ou le port n'est pas la valeur d'un champ `port`, ou rien n'écoute sur ce port, ou le module a déjà 16 connexions ouvertes (le plafond). |
 | `Unavailable` | Le logiciel n'a pas répondu. Ce n'est pas le serveur qui est en cause. |
 
 ### Le client HTTP passe par le relais tout seul

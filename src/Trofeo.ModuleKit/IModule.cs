@@ -6,7 +6,7 @@ namespace Trofeo.ModuleKit;
 /// Un module du tableau de bord. Règles de threads : <see cref="Invalidated"/> et <see cref="StatusChanged"/>
 /// peuvent être levés depuis n'importe quel thread (le minuteur du module, par exemple) ; <see cref="Render"/>
 /// est appelé sur le thread d'affichage, qui n'est pas celui du minuteur du module, donc l'état lu au rendu
-/// doit pouvoir être lu en concurrence.
+/// doit pouvoir être lu en concurrence. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.
 /// </summary>
 public interface IModule : IDisposable
 {

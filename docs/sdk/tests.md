@@ -45,6 +45,8 @@ Un premier test : le module démarre, se dessine dans les trois thèmes, et rest
     }
 ```
 
+Dans ce fichier du modèle, `ModuleClassName` est la place du nom de la classe de ton module : `dotnet new` le remplace par le nom de ton projet (`MonModule`, par exemple).
+
 Ce que tu as là :
 
 - `new ModuleTestHost<TonModule>(chemin, réglages, permissionsAccordées)` : les réglages (un `JsonElement`) et les permissions sont facultatifs. Sans permissions précisées, **toutes celles que le manifeste déclare** sont accordées.

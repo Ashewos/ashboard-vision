@@ -13,5 +13,5 @@ public enum ModuleHealth
     Offline,
 }
 
-/// <summary>État d'un module, avec un éventuel message d'action pour l'utilisateur.</summary>
+/// <summary>État d'un module, avec un éventuel message d'action pour l'utilisateur. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
 public sealed record ModuleStatus(ModuleHealth Health, string? ActionMessage = null);

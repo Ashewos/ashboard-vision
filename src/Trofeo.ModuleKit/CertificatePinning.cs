@@ -4,7 +4,7 @@ namespace Trofeo.ModuleKit;
 
 /// <summary>
 /// Épinglage d'un certificat « maison » (console UniFi, serveur local d'un module de la communauté). Un appareil local présente un certificat qu'aucune autorité ne
-/// signe : on retient l'empreinte du premier vu, puis on refuse tout autre.
+/// signe : on retient l'empreinte du premier vu, puis on refuse tout autre. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.
 /// </summary>
 public static class CertificatePinning
 {
