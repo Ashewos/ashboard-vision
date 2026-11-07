@@ -15,16 +15,19 @@
     -Install : ouvre le fichier SANS partage en écriture ni en suppression (le temps de tout le travail), le vérifie sur ce fichier ouvert, puis lance
                « <fichier> /install /quiet /norestart » en le gardant ouvert jusqu'à la fin du setup. Code de sortie 0 : le setup a été lancé et il est
                fini, son propre code de sortie est dans -Output (ligne « exitcode=… »). Un fichier qui échoue à une vérification n'est jamais lancé.
-    -CheckSubject, -CheckRoot : les deux décisions du signataire, sur des valeurs, pour les tests.
+    -CheckSubject, -CheckSubjectHex, -CheckRoot : les deux décisions du signataire, sur des valeurs, pour les tests.
 
     Les vérifications (-Verify et -Install), toutes obligatoires :
       1. l'empreinte SHA-512 du fichier est celle de releases.json ;
       2. la signature Authenticode est valide ET intégrée au fichier (pas une signature de catalogue) ;
       3. le sujet du certificat signataire, lu dans son encodage DER (jamais découpé dans un texte), a un seul attribut O, exactement « Microsoft Corporation »,
          et un seul attribut CN, exactement « .NET » (celui de dotnet.exe et du setup du SDK, relevé en 2026) ou « Microsoft Corporation » ;
-      4. la chaîne du certificat remonte à une racine de la courte liste ci-dessous (Microsoft Root Certificate Authority 2010 ou 2011), par son empreinte
-         SHA-256. Contrôle de révocation : aucun ici (Get-AuthenticodeSignature l'a déjà fait, et la chaîne ne sert qu'à connaître la racine) ; la date de
-         validité du certificat est ignorée (la signature est horodatée) ;
+      4. la chaîne du certificat signataire, bâtie par Windows, remonte à une racine de la courte liste ci-dessous (Microsoft Root Certificate Authority 2010
+         ou 2011), par l'empreinte SHA-256 de son dernier certificat, et cette racine est une racine de confiance du magasin de Windows. Les certificats
+         embarqués dans la signature servent d'intermédiaires possibles (ChainPolicy.ExtraStore) : cela ne change rien à la sûreté, car Windows ne bâtit une chaîne
+         que si chaque certificat est réellement signé par le suivant jusqu'à une racine de confiance, et c'est la racine épinglée qui décide. AUCUN contrôle de
+         révocation (rien ne prouve que Get-AuthenticodeSignature en fasse un) : la racine épinglée et la signature valide suffisent ; la date de validité du
+         certificat est ignorée (la signature est horodatée) ;
       5. le champ ProductName des informations de version commence par « Microsoft .NET » (-ProductNamePrefix, pour les tests seulement).
 
     Code de sortie 0 : réussi ; autre : refus (la raison est dans -Output, ligne « error=… », et sur la sortie d'erreur).
@@ -62,6 +65,10 @@ param(
     [Parameter(ParameterSetName = 'CheckSubject', Mandatory)]
     [string] $CheckSubject,
 
+    # Pour les tests : un sujet DER donné en hexadécimal (pour les types de chaînes et les RDN à plusieurs valeurs qu'un texte ne produit pas).
+    [Parameter(ParameterSetName = 'CheckSubjectHex', Mandatory)]
+    [string] $CheckSubjectHex,
+
     [Parameter(ParameterSetName = 'CheckRoot', Mandatory)]
     [string] $CheckRoot,
 
@@ -69,6 +76,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$script:EmbeddedCertificateCount = 0
 
 # Les seuls hôtes d'où le SDK peut venir (Microsoft). L'adresse doit aussi être en https://, sans identifiant ni port particulier.
 $AllowedHosts = @('builds.dotnet.microsoft.com', 'dotnetcli.blob.core.windows.net', 'download.visualstudio.microsoft.com')
@@ -247,11 +255,49 @@ function Get-RootRefusal([string] $sha256) {
     return "La chaîne du certificat signataire ne remonte pas à une racine de Microsoft connue (empreinte SHA-256 de la racine : $sha256)."
 }
 
+# Les certificats que la signature Authenticode embarque (PKCS#7 de la table des certificats du fichier PE), ou un tableau vide si on n'arrive pas à les lire.
+function Get-EmbeddedCertificates([System.IO.Stream] $stream) {
+    try {
+        $reader = New-Object System.IO.BinaryReader($stream, [System.Text.Encoding]::ASCII, $true)
+        try {
+            $stream.Position = 0
+            if ($reader.ReadUInt16() -ne 0x5A4D) { return @() }
+            $stream.Position = 0x3C
+            $peOffset = [long] $reader.ReadUInt32()
+            $stream.Position = $peOffset
+            if ($reader.ReadUInt32() -ne 0x00004550) { return @() }
+            $stream.Position = $peOffset + 24
+            $magic = $reader.ReadUInt16()
+            if ($magic -eq 0x20B) { $directories = 112 } elseif ($magic -eq 0x10B) { $directories = 96 } else { return @() }
+            $stream.Position = $peOffset + 24 + $directories + 4 * 8   # l'entrée 4 : la table des certificats (déplacement dans le fichier, pas une adresse virtuelle)
+            $tableOffset = [long] $reader.ReadUInt32()
+            $tableSize = [long] $reader.ReadUInt32()
+            if ($tableOffset -eq 0 -or $tableSize -lt 8 -or $tableOffset + $tableSize -gt $stream.Length) { return @() }
+            $stream.Position = $tableOffset
+            $length = [long] $reader.ReadUInt32()
+            [void] $reader.ReadUInt16()                      # wRevision
+            $type = $reader.ReadUInt16()                     # wCertificateType : 2 = PKCS#7 SignedData
+            if ($type -ne 2 -or $length -lt 8 -or $length -gt $tableSize) { return @() }
+            $pkcs7 = $reader.ReadBytes([int] ($length - 8))
+        }
+        finally { $reader.Dispose() }
+        Add-Type -AssemblyName System.Security
+        $cms = New-Object System.Security.Cryptography.Pkcs.SignedCms
+        $cms.Decode($pkcs7)
+        return @($cms.Certificates | ForEach-Object { $_ })
+    }
+    catch { return @() }
+}
+
 # La chaîne du certificat signataire : sa racine doit être l'une des racines de Microsoft de la liste.
-function Test-SignerChain([System.Security.Cryptography.X509Certificates.X509Certificate2] $certificate) {
+function Test-SignerChain([System.Security.Cryptography.X509Certificates.X509Certificate2] $certificate, $embedded) {
     $chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
     $chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
     $chain.ChainPolicy.VerificationFlags = [System.Security.Cryptography.X509Certificates.X509VerificationFlags]::IgnoreNotTimeValid
+    # Les certificats de la signature ne servent que d'intermédiaires possibles : sans eux, un pare-feu qui bloque l'infrastructure de certificats de Microsoft
+    # ferait refuser le SDK à tort. Ils ne peuvent pas ouvrir de porte : Build n'aboutit que si chaque certificat est signé par le suivant et que le dernier est une
+    # racine de confiance de Windows, puis l'empreinte de cette racine doit être dans la liste.
+    foreach ($certificate2 in @($embedded)) { [void] $chain.ChainPolicy.ExtraStore.Add($certificate2) }
     try {
         if (-not $chain.Build($certificate) -or $chain.ChainElements.Count -lt 2) {
             $statuses = ($chain.ChainStatus | ForEach-Object { $_.Status }) -join ', '
@@ -287,7 +333,9 @@ function Open-VerifiedSdkFile {
         }
         $subjectRefusal = Get-SubjectRefusal $signature.SignerCertificate.SubjectName.RawData
         if ($subjectRefusal) { throw [Refusal]::new(13, $subjectRefusal) }
-        Test-SignerChain $signature.SignerCertificate
+        $embedded = @(Get-EmbeddedCertificates $stream)
+        $script:EmbeddedCertificateCount = $embedded.Count
+        Test-SignerChain $signature.SignerCertificate $embedded
 
         $product = [string] [System.Diagnostics.FileVersionInfo]::GetVersionInfo($script:FilePath).ProductName
         if (-not $product.StartsWith($ProductNamePrefix, [System.StringComparison]::Ordinal)) {
@@ -304,7 +352,7 @@ function Open-VerifiedSdkFile {
 function Test-SdkFile {
     $script:FilePath = $Verify
     (Open-VerifiedSdkFile).Dispose()
-    Write-Result @('ok')
+    Write-Result @('ok', "embedded-certificates=$($script:EmbeddedCertificateCount)")
 }
 
 function Install-Sdk {
@@ -332,6 +380,15 @@ function Test-SubjectText {
     Write-Result @('ok')
 }
 
+function Test-SubjectHex {
+    if ($CheckSubjectHex -notmatch '^([0-9a-fA-F]{2})+$') { throw [Refusal]::new(13, 'Le sujet donné en hexadécimal est mal formé.') }
+    $bytes = New-Object byte[] ($CheckSubjectHex.Length / 2)
+    for ($i = 0; $i -lt $bytes.Length; $i++) { $bytes[$i] = [Convert]::ToByte($CheckSubjectHex.Substring(2 * $i, 2), 16) }
+    $refusal = Get-SubjectRefusal $bytes
+    if ($refusal) { throw [Refusal]::new(13, $refusal) }
+    Write-Result @('ok')
+}
+
 function Test-RootText {
     $refusal = Get-RootRefusal $CheckRoot
     if ($refusal) { throw [Refusal]::new(15, $refusal) }
@@ -343,6 +400,7 @@ try {
         'Verify' { Test-SdkFile }
         'Install' { Install-Sdk }
         'CheckSubject' { Test-SubjectText }
+        'CheckSubjectHex' { Test-SubjectHex }
         'CheckRoot' { Test-RootText }
         default { Resolve-Sdk }
     }

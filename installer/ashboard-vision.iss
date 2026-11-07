@@ -224,7 +224,8 @@ var
   DotnetAsOriginalUser: Boolean; // vrai à l'installation (utilisateur d'origine) ; faux à la désinstallation (Exec, mêmes droits que le désinstallateur)
   SdkSetupPath: String; // le setup du SDK .NET 10, téléchargé dans {tmp} et vérifié (empreinte et signature) ; vide sinon
   SdkSetupSha512: String; // l'empreinte SHA-512 de releases.json pour ce fichier, revérifiée par -Install sur le fichier verrouillé
-  SdkWorkDir: String; // le sous-dossier de {tmp} réservé aux administrateurs, où l'aide du SDK .NET 10 et ses résultats vivent ; vide tant qu'il n'est pas prêt
+  SdkWorkDir: String; // le dossier de travail de l'aide du SDK .NET 10, neuf et sous Program Files (voir SecureSdkWorkDir) ; effacé par DeinitializeSetup
+  SdkWorkReady: Boolean; // l'aide y est copiée et son empreinte vérifiée
   SdkBusy: Boolean; // vrai pendant « Recherche… » et « Vérification… » (appels bloquants à PowerShell) : Annuler y est ignoré
   SdkFailure: String; // une phrase pour l'utilisateur quand le SDK .NET 10 n'a pas pu être obtenu ou installé (la raison exacte est au journal) ; vide sinon
 
@@ -446,16 +447,18 @@ end;
 // Un échec à n'importe quelle étape ne lance rien, est journalisé et se dit par une phrase (SdkFailure) ; l'installation continue. Le SDK .NET n'est
 // jamais retiré à la désinstallation : c'est un programme à part (« Applications installées »).
 // Le dossier temporaire de Setup est, quand l'utilisateur est lui-même administrateur, celui de son compte : tout programme non élevé du compte peut y
-// écrire. L'aide et ses fichiers de résultat sont donc copiés dans un sous-dossier réservé aux administrateurs (SecureSdkWorkDir), l'aide copiée est
-// comparée à son empreinte SHA-256 calculée à la compilation, et le setup téléchargé (qui reste dans le dossier temporaire, Inno Setup ne le
-// télécharge pas ailleurs) est ouvert par l'aide sans partage en écriture ni en suppression avant d'être vérifié, puis lancé sans être lâché (-Install).
+// écrire, et y préparer d'avance un dossier ou une jonction. L'aide et ses fichiers de résultat vivent donc dans un dossier NEUF (nom aléatoire, créé par
+// CreateDir, qui échoue s'il existe déjà) sous Program Files, où seuls les administrateurs peuvent écrire (Utilisateurs : lecture et exécution seulement,
+// relevé avec icacls). L'aide copiée est comparée à son empreinte SHA-256 calculée à la compilation avant CHAQUE lancement, et le dossier est effacé par
+// DeinitializeSetup. Le setup téléchargé reste dans le dossier temporaire (Inno Setup ne le télécharge pas ailleurs) : il est ouvert par l'aide sans partage
+// en écriture ni en suppression avant d'être vérifié, puis lancé sans être lâché (-Install).
 
 function OnDotnetSdkProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
 begin
   Result := True;
 end;
 
-// Clic sur Annuler : pendant « Recherche… » et « Vérification… » (SdkBusy), il est ignoré. Ces deux étapes sont des appels bloquants à PowerShell
+// Clic sur Annuler : pendant « Recherche… », « Vérification… » et l'installation du SDK (SdkBusy), il est ignoré. Ces étapes sont des appels bloquants à PowerShell
 // que Setup ne sait pas interrompre : un clic ne doit ni quitter tout Setup ni demander de le quitter. Pendant le téléchargement, Annuler est géré par
 // la page d'Inno Setup (il abandonne le SDK seulement) : SdkBusy y est faux.
 procedure CancelButtonClick(CurPageID: Integer; var Cancel, Confirm: Boolean);
@@ -463,42 +466,49 @@ begin
   if SdkBusy then Cancel := False;
 end;
 
-// Le sous-dossier de {tmp} réservé aux administrateurs et à SYSTEM (héritage coupé), où l'aide travaille. Créé une fois ; rend Vrai s'il est prêt.
+// Le dossier de travail de l'aide : neuf, à nom aléatoire, sous Program Files (voir plus haut). Créé une fois ; rend Vrai s'il est prêt.
 function SecureSdkWorkDir: Boolean;
 var
-  ResultCode: Integer;
-  Directory: String;
+  Attempt: Integer;
+  Directory, Script: String;
 begin
-  Result := SdkWorkDir <> '';
+  Result := SdkWorkReady;
   if Result then Exit;
-  Directory := ExpandConstant('{tmp}\ashboard-sdk');
-  if not ForceDirectories(Directory) then
+  if SdkWorkDir = '' then
   begin
-    Log('Le dossier de travail du SDK .NET 10 n''a pas pu être créé : ' + Directory);
-    Exit;
+    // CreateDir échoue si le nom existe déjà (dossier, fichier ou jonction préparés d'avance) : on en essaie un autre, puis on renonce.
+    for Attempt := 1 to 5 do
+    begin
+      Directory := ExpandConstant('{commonpf64}\Ashboard Vision Setup ')
+        + Copy(GetSHA256OfString(GetDateTimeString('yyyymmddhhnnsszzz', #0, #0) + ':' + IntToStr(Random(2000000000)) + ':' + IntToStr(Attempt)), 1, 16);
+      if CreateDir(Directory) then
+      begin
+        SdkWorkDir := Directory;
+        Break;
+      end;
+    end;
+    if SdkWorkDir = '' then
+    begin
+      Log('Le dossier de travail du SDK .NET 10 n''a pas pu être créé sous ' + ExpandConstant('{commonpf64}') + ' : le SDK n''est pas téléchargé.');
+      Exit;
+    end;
   end;
-  // *S-1-5-32-544 = Administrateurs, *S-1-5-18 = SYSTEM : des identifiants (SID), valables dans toutes les langues de Windows.
-  if not Exec(ExpandConstant('{sys}\icacls.exe'), '"' + Directory + '" /inheritance:r /grant:r *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
-  begin
-    Log('Les droits du dossier de travail du SDK .NET 10 n''ont pas pu être restreints (icacls, code ' + IntToStr(ResultCode) + ') : le SDK n''est pas téléchargé.');
-    Exit;
-  end;
-  // L'aide : extraite dans {tmp} (qui reste ouvert au compte), copiée dans le dossier réservé, et comparée à l'empreinte de la compilation. Une
-  // copie qui n'est pas celle qu'Inno Setup a embarquée est refusée.
+  // L'aide : extraite dans {tmp}, copiée dans le dossier neuf, et comparée à l'empreinte de la compilation. Une copie qui n'est pas celle
+  // qu'Inno Setup a embarquée est refusée. RunSdkHelper la compare encore avant chaque lancement.
+  Script := SdkWorkDir + '\' + DotnetSdkScript;
   ExtractTemporaryFile(DotnetSdkScript);
-  if not CopyFile(ExpandConstant('{tmp}\' + DotnetSdkScript), Directory + '\' + DotnetSdkScript, False) then
+  if not CopyFile(ExpandConstant('{tmp}\' + DotnetSdkScript), Script, False) then
   begin
-    Log('L''aide du SDK .NET 10 n''a pas pu être copiée dans ' + Directory);
+    Log('L''aide du SDK .NET 10 n''a pas pu être copiée dans ' + SdkWorkDir);
     Exit;
   end;
-  if not SameText(GetSHA256OfFile(Directory + '\' + DotnetSdkScript), DotnetSdkScriptSha256) then
+  if not SameText(GetSHA256OfFile(Script), DotnetSdkScriptSha256) then
   begin
     Log('L''aide du SDK .NET 10 copiée n''a pas l''empreinte attendue : elle n''est pas lancée.');
-    DeleteFile(Directory + '\' + DotnetSdkScript);
+    DeleteFile(Script);
     Exit;
   end;
-  SdkWorkDir := Directory;
+  SdkWorkReady := True;
   Result := True;
 end;
 
@@ -506,15 +516,22 @@ end;
 function RunSdkHelper(const Arguments, ResultFile: String; var Lines: TArrayOfString): Integer;
 var
   ResultCode: Integer;
-  ResultPath: String;
+  ResultPath, Script: String;
 begin
   Result := -1;
   SetArrayLength(Lines, 0);
   if not SecureSdkWorkDir then Exit;
+  Script := SdkWorkDir + '\' + DotnetSdkScript;
+  // À chaque lancement, pas seulement à la copie : l'aide est lancée trois fois, dont une après le téléchargement de plus de 200 Mo.
+  if not SameText(GetSHA256OfFile(Script), DotnetSdkScriptSha256) then
+  begin
+    Log('L''aide du SDK .NET 10 n''a plus l''empreinte attendue : elle n''est pas lancée.');
+    Exit;
+  end;
   ResultPath := SdkWorkDir + '\' + ResultFile;
   DeleteFile(ResultPath);
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + SdkWorkDir + '\' + DotnetSdkScript + '" ' + Arguments + ' -Output "' + ResultPath + '"',
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + Script + '" ' + Arguments + ' -Output "' + ResultPath + '"',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
     Log('Windows PowerShell n''a pas pu être lancé : ' + SysErrorMessage(ResultCode));
@@ -672,8 +689,13 @@ var
 begin
   Result := False;
   if not WizardSilent() then WizardForm.StatusLabel.Caption := 'Installation du SDK .NET 10…';
+  SdkBusy := True; // Annuler est ignoré aussi pendant l'installation du SDK (plusieurs minutes, sans rien à abandonner proprement)
   try
-    Code := RunSdkHelper('-Install "' + SdkSetupPath + '" -Sha512 ' + SdkSetupSha512, DotnetSdkVerifyFile, Lines);
+    try
+      Code := RunSdkHelper('-Install "' + SdkSetupPath + '" -Sha512 ' + SdkSetupSha512, DotnetSdkVerifyFile, Lines);
+    finally
+      SdkBusy := False;
+    end;
   except
     Log('Le setup du SDK .NET 10 n''a pas pu être lancé : ' + GetExceptionMessage);
     SdkFailure := 'Le SDK .NET 10 n''a pas pu s''installer.';
@@ -787,6 +809,17 @@ begin
   begin
     Log('La tâche « sdk » était cochée à l''installation d''avant et ne l''est plus : retrait du modèle, de l''outil et de la source.');
     RemoveSdkTools(False);
+  end;
+end;
+
+// Fin de Setup (aussi après une erreur ou Annuler) : le dossier de travail du SDK .NET 10 est effacé.
+procedure DeinitializeSetup;
+begin
+  if SdkWorkDir <> '' then
+  begin
+    if not DelTree(SdkWorkDir, True, True, True) then Log('Le dossier de travail du SDK .NET 10 n''a pas pu être effacé : ' + SdkWorkDir)
+    else Log('Dossier de travail du SDK .NET 10 effacé.');
+    SdkWorkDir := '';
   end;
 end;
 

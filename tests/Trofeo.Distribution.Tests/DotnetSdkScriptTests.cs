@@ -309,7 +309,10 @@ public sealed class DotnetSdkScriptTests : IDisposable
         var (code, result) = VerifyDotnetExe(MicrosoftSignedFile()!);
 
         Assert.Equal(0, code);
-        Assert.Equal("ok", result.Trim().TrimStart('\uFEFF'));
+        var lines = Lines(result.TrimStart('\uFEFF'));
+        Assert.True(lines.ContainsKey("ok"));
+        // Les certificats que la signature embarque (le signataire et son intermédiaire) sont bien lus : ils servent d'intermédiaires possibles à la chaîne.
+        Assert.True(int.Parse(lines["embedded-certificates"]) >= 1, result);
     }
 
     [MicrosoftSignedFileFact]
@@ -413,6 +416,35 @@ public sealed class DotnetSdkScriptTests : IDisposable
         Assert.Equal(11, code);
     }
 
+    [MicrosoftSignedFileFact]
+    public void Verify_FileAlreadyOpenedForWriting_IsRefusedWithCode10()
+    {
+        var path = _dir.Combine("dotnet-sdk-win-x64.exe");
+        File.Copy(MicrosoftSignedFile()!, path);
+        var hash = Sha512Of(path);
+
+        // Un écrivain déjà présent : le script, qui ouvre le fichier sans partage en écriture, ne peut pas s'en assurer, donc il refuse.
+        using var writer = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.Read);
+        var (code, result) = Run("-Verify", path, "-Sha512", hash, "-ProductNamePrefix", ".NET");
+
+        Assert.Equal(10, code);
+        Assert.Contains("sans partage en écriture", result, StringComparison.Ordinal);
+    }
+
+    [MicrosoftSignedFileFact]
+    public void Install_FileAlreadyOpenedForWriting_IsNeverLaunched()
+    {
+        var path = _dir.Combine("dotnet-sdk-win-x64.exe");
+        File.Copy(MicrosoftSignedFile()!, path);
+        var hash = Sha512Of(path);
+
+        using var writer = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.Read);
+        var (code, result) = Run("-Install", path, "-Sha512", hash, "-ProductNamePrefix", ".NET");
+
+        Assert.Equal(10, code);
+        Assert.DoesNotContain("exitcode=", result, StringComparison.Ordinal);
+    }
+
     // --- le signataire : le sujet est lu dans son encodage DER, jamais découpé dans un texte ---------------------------------------
 
     [WindowsPowerShellTheory]
@@ -466,6 +498,79 @@ public sealed class DotnetSdkScriptTests : IDisposable
         var (code, result) = Run("-CheckRoot", sha256);
 
         Assert.Equal(15, code);
+        Assert.StartsWith("error=", result.TrimStart('\uFEFF'), StringComparison.Ordinal);
+    }
+
+    // --- des sujets DER écrits à la main : les types de chaînes et les RDN à plusieurs valeurs qu'un texte ne produit pas -----------------
+
+    private static byte[] Der(byte tag, params byte[][] parts)
+    {
+        var content = parts.SelectMany(part => part).ToArray();
+        byte[] length = content.Length < 0x80 ? [(byte)content.Length] : content.Length < 0x100 ? [0x81, (byte)content.Length] : [0x82, (byte)(content.Length >> 8), (byte)content.Length];
+        return [tag, .. length, .. content];
+    }
+
+    private static readonly byte[] OidOrganization = [0x55, 0x04, 0x0A];
+    private static readonly byte[] OidCommonName = [0x55, 0x04, 0x03];
+    private static readonly byte[] OidOrganizationalUnit = [0x55, 0x04, 0x0B];
+
+    private const byte Utf8String = 0x0C;
+    private const byte PrintableString = 0x13;
+    private const byte TeletexString = 0x14;
+    private const byte BmpString = 0x1E;
+    private const byte UniversalString = 0x1C;
+
+    private static byte[] Attribute(byte[] oid, byte stringTag, byte[] value) => Der(0x30, Der(0x06, oid), Der(stringTag, value));
+
+    private static byte[] Rdn(params byte[][] attributes) => Der(0x31, attributes);
+
+    private static byte[] Name(params byte[][] rdns) => Der(0x30, rdns);
+
+    private static byte[] Utf8(string text) => Encoding.UTF8.GetBytes(text);
+
+    private static byte[] Bmp(string text) => Encoding.BigEndianUnicode.GetBytes(text);
+
+    private const string Microsoft = "Microsoft Corporation";
+
+    public static TheoryData<string, string> AcceptedDerSubjects => new()
+    {
+        { "UTF8 O et CN", Convert.ToHexString(Name(Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET"))), Rdn(Attribute(OidOrganization, Utf8String, Utf8(Microsoft))))) },
+        { "O en BMPString (UTF-16 gros-boutiste)", Convert.ToHexString(Name(Rdn(Attribute(OidCommonName, PrintableString, Utf8(".NET"))), Rdn(Attribute(OidOrganization, BmpString, Bmp(Microsoft))))) },
+        { "O en TeletexString", Convert.ToHexString(Name(Rdn(Attribute(OidCommonName, Utf8String, Utf8(Microsoft))), Rdn(Attribute(OidOrganization, TeletexString, Utf8(Microsoft))))) },
+        { "CN et O dans le même RDN (SET à deux valeurs)", Convert.ToHexString(Name(Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET")), Attribute(OidOrganization, Utf8String, Utf8(Microsoft))))) },
+        { "attributs en plus (OU) sans rapport", Convert.ToHexString(Name(Rdn(Attribute(OidOrganizationalUnit, Utf8String, Utf8("x"))), Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET"))), Rdn(Attribute(OidOrganization, Utf8String, Utf8(Microsoft))))) },
+    };
+
+    [WindowsPowerShellTheory]
+    [MemberData(nameof(AcceptedDerSubjects))]
+    public void CheckSubjectHex_HandWrittenMicrosoftSubjects_AreAccepted(string description, string hex)
+    {
+        var (code, result) = Run("-CheckSubjectHex", hex);
+
+        Assert.True(code == 0, description + " : " + result);
+    }
+
+    public static TheoryData<string, string> RefusedDerSubjects => new()
+    {
+        { "BMPString avec une espace de trop", Convert.ToHexString(Name(Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET"))), Rdn(Attribute(OidOrganization, BmpString, Bmp(Microsoft + " "))))) },
+        { "deux O dans le même RDN", Convert.ToHexString(Name(Rdn(Attribute(OidOrganization, Utf8String, Utf8(Microsoft)), Attribute(OidOrganization, Utf8String, Utf8("Evil Ltd"))), Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET"))))) },
+        { "deux O dans deux RDN", Convert.ToHexString(Name(Rdn(Attribute(OidOrganization, Utf8String, Utf8("Evil Ltd"))), Rdn(Attribute(OidOrganization, Utf8String, Utf8(Microsoft))), Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET"))))) },
+        { "O dans un type illisible (UniversalString)", Convert.ToHexString(Name(Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET"))), Rdn(Attribute(OidOrganization, UniversalString, Encoding.GetEncoding("utf-32BE").GetBytes(Microsoft))))) },
+        { "Microsoft seulement dans une OU", Convert.ToHexString(Name(Rdn(Attribute(OidOrganizationalUnit, Utf8String, Utf8(Microsoft))), Rdn(Attribute(OidOrganization, Utf8String, Utf8("Evil Ltd"))), Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET"))))) },
+        { "CN en BMPString faux", Convert.ToHexString(Name(Rdn(Attribute(OidCommonName, BmpString, Bmp("NET"))), Rdn(Attribute(OidOrganization, Utf8String, Utf8(Microsoft))))) },
+        { "DER tronqué (dernier octet manquant)", Convert.ToHexString(Name(Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET"))), Rdn(Attribute(OidOrganization, Utf8String, Utf8(Microsoft))))[..^1]) },
+        { "octets en trop après le Name", Convert.ToHexString([.. Name(Rdn(Attribute(OidCommonName, Utf8String, Utf8(".NET"))), Rdn(Attribute(OidOrganization, Utf8String, Utf8(Microsoft)))), 0x00]) },
+        { "longueur indéfinie", "3080" + Convert.ToHexString(Rdn(Attribute(OidOrganization, Utf8String, Utf8(Microsoft)))) + "0000" },
+        { "pas du DER", "00" },
+    };
+
+    [WindowsPowerShellTheory]
+    [MemberData(nameof(RefusedDerSubjects))]
+    public void CheckSubjectHex_HandWrittenTrickySubjects_AreRefused(string description, string hex)
+    {
+        var (code, result) = Run("-CheckSubjectHex", hex);
+
+        Assert.True(code == 13, description + " : code " + code + ", " + result);
         Assert.StartsWith("error=", result.TrimStart('\uFEFF'), StringComparison.Ordinal);
     }
 

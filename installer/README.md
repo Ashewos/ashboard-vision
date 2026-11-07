@@ -68,9 +68,12 @@ la version, avec l'installateur et son `.sha256` (elle échoue s'il n'y en a pas
     empreintes SHA-256 (`DownloadTemporaryFile`) et ne contrôle pas les signatures Authenticode : une petite aide **Windows PowerShell 5.1**, `installer/dotnet-sdk.ps1`
     (embarquée, lancée par `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File …`), fait ces deux travaux ; le téléchargement
     reste à Inno Setup, pour sa page de progression. **Où l'aide travaille** : le dossier temporaire de Setup est, quand l'utilisateur est lui-même administrateur, celui de son
-    compte, où tout programme non élevé du compte peut écrire. L'aide est donc extraite dans `{tmp}`, copiée dans `{tmp}\ashboard-sdk` (dont `icacls /inheritance:r` ne laisse l'accès qu'aux
-    Administrateurs et à SYSTEM, par leurs SID), et la copie est comparée à l'empreinte SHA-256 du fichier embarqué (calculée à la compilation par `GetSHA256OfFile`) avant de servir ; ses
-    fichiers de résultat vivent dans ce dossier. Si l'une de ces étapes échoue, le SDK n'est pas téléchargé. Dans `PrepareToInstall`, juste après PawnIO :
+    compte, où tout programme non élevé du compte peut écrire et préparer d'avance un dossier ou une jonction. L'aide vit donc dans un dossier **neuf**,
+    `{commonpf64}\Ashboard Vision Setup <16 caractères aléatoires>`, créé par `CreateDir` (qui échoue si le nom existe déjà : on réessaie avec un autre nom, cinq fois au plus, puis le SDK n'est pas
+    téléchargé) sous Program Files, où seuls les administrateurs peuvent écrire (droits relevés avec `icacls` : Utilisateurs en lecture et exécution seulement ; le dossier en hérite). L'aide embarquée est
+    extraite dans `{tmp}`, copiée dans ce dossier, et la copie est comparée à l'empreinte SHA-256 du fichier embarqué (calculée à la compilation par `GetSHA256OfFile`) **avant chacun des trois
+    lancements** (`-Resolve`, `-Verify`, `-Install`), pas une seule fois ; ses fichiers de résultat vivent dans ce dossier. `DeinitializeSetup` l'efface à la fin de Setup, y compris après une erreur ou
+    Annuler (si Setup est tué, le dossier reste : à effacer à la main). Si l'une de ces étapes échoue, le SDK n'est pas téléchargé. Dans `PrepareToInstall`, juste après PawnIO :
     1. `-Resolve` lit `https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json`, prend `latest-sdk`, puis, dans `releases`, l'entrée SDK de
        cette version (`sdk` ou `sdks`) et son fichier `win-x64` en `.exe` : adresse et empreinte SHA-512. **Aucune version ni empreinte n'est écrite en dur** (au 07/11/2026,
        c'est la 10.0.403, environ 205 Mio, soit 215 Mo). L'adresse doit être en `https://`, sans identifiant ni port, sur `builds.dotnet.microsoft.com`, `dotnetcli.blob.core.windows.net` ou
@@ -82,9 +85,12 @@ la version, avec l'installateur et son `.sha256` (elle échoue s'il n'y en a pas
        l'empreinte SHA-512 est celle de `releases.json` ; la signature Authenticode est valide **et intégrée au fichier** (une signature de catalogue est refusée) ; le sujet du certificat
        signataire, lu dans son encodage DER (jamais découpé dans un texte, ce qui ferme les sujets piégés où `O=Microsoft Corporation` serait dans une valeur entre guillemets),
        a un seul attribut `O` égal à `Microsoft Corporation` et un seul attribut `CN` égal à `.NET` (celui de `dotnet.exe` et du setup du SDK 10.0.403, relevé le 07/11/2026) ou à
-       `Microsoft Corporation` ; la chaîne du certificat remonte à une racine de la liste, par l'empreinte SHA-256 de son certificat : « Microsoft Root Certificate Authority 2011 »
-       (`847DF6A7…ED7C61`, celle de `dotnet.exe` et du setup) ou « 2010 » (`DF545BF9…C163E`), relevées sur le magasin de Windows (pas de contrôle de révocation dans la chaîne, qui ne
-       sert qu'à connaître la racine : `Get-AuthenticodeSignature` l'a fait ; la date de validité du certificat est ignorée, la signature est horodatée) ; le champ `ProductName` des
+       `Microsoft Corporation` ; la chaîne du certificat, bâtie par Windows, remonte à une racine de la liste, par l'empreinte SHA-256 du certificat de sa racine : « Microsoft Root Certificate Authority 2011 »
+       (`847DF6A7…ED7C61`, celle de `dotnet.exe` et du setup) ou « 2010 » (`DF545BF9…C163E`), relevées sur le magasin de Windows ; cette racine doit aussi être une racine de confiance de Windows.
+       Les certificats que la signature embarque (deux pour le setup 10.0.403) sont donnés à la chaîne comme intermédiaires possibles (`ChainPolicy.ExtraStore`) : sans cela, un proxy qui bloque l'infrastructure de
+       certificats de Microsoft ferait refuser le SDK à tort. Ce n'est pas moins sûr : Windows ne bâtit une chaîne que si chaque certificat est réellement signé par le suivant jusqu'à une racine de
+       confiance, puis la racine épinglée décide. **Aucun contrôle de révocation** (rien ne prouve que `Get-AuthenticodeSignature` en fasse un) : la racine épinglée et la signature valide suffisent ; la
+       date de validité du certificat est ignorée, la signature est horodatée ; le champ `ProductName` des
        informations de version commence par `Microsoft .NET` (« Microsoft .NET SDK 10.0.403 (x64) »). L'empreinte vient du même serveur que le fichier : la signature et la racine sont la vraie protection.
     Puis, à `ssPostInstall`, avant `InstallSdkTools` : `-Install <fichier>`. L'aide **ouvre le fichier sans partage en écriture ni en suppression** (`FileShare.Read`), le vérifie sur ce fichier ouvert,
     puis lance `<fichier> /install /quiet /norestart` (installation pour toute la machine, Setup est déjà administrateur) **en le gardant ouvert jusqu'à la fin du setup** : rien ne peut le
@@ -95,8 +101,8 @@ la version, avec l'installateur et son `.sha256` (elle échoue s'il n'y en a pas
     `releases.json` illisible, adresse refusée, empreinte, signature, signataire ou racine faux, installation en échec, Annuler) : rien n'est lancé, la raison exacte est journalisée, la boîte donne
     la phrase courte puis le lien, et l'installation d'Ashboard Vision se termine normalement. Ce que l'aide rend (`url=`, `sha512=`, `version=`, `exitcode=` ou `error=`, et son code de sortie) est lu
     dans un petit fichier du dossier réservé, effacé par Inno Setup à la fin ; les codes de sortie sont documentés en tête de `dotnet-sdk.ps1` ; ses tests sont dans
-    `tests/Trofeo.Distribution.Tests/DotnetSdkScriptTests.cs`. Limite restante : le setup téléchargé reste dans `{tmp}` jusqu'à `-Install` (Inno Setup ne télécharge pas ailleurs) ; un remplacement
-    pendant ce temps est sans effet, puisque `-Install` vérifie le fichier qu'il a ouvert.
+    `tests/Trofeo.Distribution.Tests/DotnetSdkScriptTests.cs`. Le setup téléchargé reste dans `{tmp}` jusqu'à `-Install` (Inno Setup ne télécharge pas ailleurs) ; un remplacement
+    pendant ce temps est sans effet, puisque `-Install` vérifie le fichier qu'il a ouvert (et un écrivain déjà présent fait refuser le fichier, code 10).
     **Le SDK .NET n'est jamais retiré à la désinstallation** : c'est un programme à part, dans « Applications installées ». Seuls la source NuGet, le modèle et l'outil d'Ashboard Vision sont retirés.
   - **Mise à jour** : Inno Setup reprend les cases de l'installation d'avant (`UsePreviousTasks`), y compris en silencieux ; la case est donc cochée si le SDK était
     installé. Pour savoir si elle l'était, `PrepareToInstall` lit la valeur `Inno Setup: Selected Tasks` de la clé de désinstallation d'Inno Setup (avant que cette
@@ -179,7 +185,7 @@ gratuit, donc sans objet, mais cela vaut d'être su.
 
 ## Points qui restent à essayer sur Windows
 
-Dans le Bac à sable Windows, puis sur le PC d'Alex (jamais lancé depuis ce script) : **la case SDK** (décochée par défaut ; cochée sans SDK .NET → téléchargement, vérification et installation du SDK .NET 10 par l'installateur (jamais essayé en vrai : le PC d'Alex en a déjà un, il faut le Bac à sable Windows), puis `dotnet new ashboard-module` ; sans Internet → message avec sa phrase ; clic sur Annuler pendant « Recherche… », « Vérification… » (rien ne doit se passer) puis pendant le téléchargement (le SDK est abandonné, l'installation continue) ; le dossier `ashboard-sdk` du dossier temporaire de Setup, réservé aux administrateurs ; le setup du SDK lancé en `/quiet` par `-Install`, avec le fichier verrouillé ; cochée avec
+Dans le Bac à sable Windows, puis sur le PC d'Alex (jamais lancé depuis ce script) : **la case SDK** (décochée par défaut ; cochée sans SDK .NET → téléchargement, vérification et installation du SDK .NET 10 par l'installateur (jamais essayé en vrai : le PC d'Alex en a déjà un, il faut le Bac à sable Windows), puis `dotnet new ashboard-module` ; sans Internet → message avec sa phrase ; clic sur Annuler pendant « Recherche… », « Vérification… » (rien ne doit se passer) puis pendant le téléchargement (le SDK est abandonné, l'installation continue) ; pendant l'installation, un dossier `C:\Program Files\Ashboard Vision Setup <hexadécimal>` existe (non modifiable sans élévation), et **il a disparu une fois Setup fini**, même si on a annulé ; Annuler pendant le téléchargement abandonne seulement le SDK ; Annuler est ignoré pendant « Recherche… », « Vérification… » et « Installation du SDK .NET 10… » ; le setup du SDK lancé en `/quiet` par `-Install`, avec le fichier verrouillé ; cochée avec
 SDK .NET → `dotnet new ashboard-module` et `ashboard-module` disponibles ; mise à jour silencieuse → case reprise ; désinstallation → outil, modèle et source retirés, avec
 `Exec` à la place de `ExecAsOriginalUser`), pages en français avec le thème suivi, entrée dans
 « Applications installées » (icône, éditeur Ashewos), service « déconnecté » sans écran, mise à jour silencieuse
