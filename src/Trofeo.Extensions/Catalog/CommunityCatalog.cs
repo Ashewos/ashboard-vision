@@ -190,7 +190,8 @@ public sealed class CommunityCatalog(Func<ApprovedLoad> load)
 
     /// <summary>
     /// Le dossier <c>&lt;autre dossier&gt;\&lt;id&gt;\&lt;version&gt;</c> d'un module validé installé hors du dossier des modules courant, ou
-    /// <c>null</c> si son dossier enregistré est sous le dossier courant (cas ordinaire) ou n'a pas cette forme exacte (identifiant et
+    /// <c>null</c> si son dossier enregistré est exactement <c>&lt;dossier courant&gt;\&lt;id&gt;\&lt;version&gt;</c> (cas ordinaire, lu par le scan du
+    /// dossier) ou n'a pas la forme (identifiant et
     /// version valides, chemin complet) : la liste scellée est de confiance, mais on ne lit ni ne supprime rien qui ne soit un dossier de module.
     /// </summary>
     internal static string? ForeignVersionDirectory(ApprovedModule approval, string root)
@@ -204,7 +205,9 @@ public sealed class CommunityCatalog(Func<ApprovedLoad> load)
         {
             var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(approval.Directory));
             var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-            if (full.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            // Le cas ordinaire est exactement <dossier courant>\<id>\<version> (le scan du dossier le lit déjà). Un chemin qui commence par le
+            // dossier courant sans avoir cette forme (l'ancien dossier est dans le nouveau) n'est pas lu par ce scan : il est donc « étranger ».
+            if (string.Equals(full, Path.Combine(fullRoot, approval.Id, approval.Version), StringComparison.OrdinalIgnoreCase))
             {
                 return null;
             }

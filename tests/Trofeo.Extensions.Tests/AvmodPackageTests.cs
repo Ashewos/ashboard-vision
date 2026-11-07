@@ -511,6 +511,100 @@ public sealed class AvmodPackageTests : IDisposable
         Assert.Contains("5000000", Assert.Single(result.Errors));
     }
 
+    /// <summary>
+    /// Un fichier fait main : un enregistrement zip64 (<paramref name="zip64Entries"/> entrées), un localisateur si demandé, puis
+    /// l'enregistrement de fin classique avec les valeurs données (0xFFFF / 0xFFFFFFFF = « voir zip64 »).
+    /// </summary>
+    private string HandmadeZip64(string name, ushort entries, uint size, uint offset, ulong zip64Entries, bool locator = true)
+    {
+        using var stream = new MemoryStream();
+        var writer = new BinaryWriter(stream);
+        writer.Write(0x06064b50u);
+        writer.Write(44UL);
+        writer.Write((ushort)45);
+        writer.Write((ushort)45);
+        writer.Write(0u);
+        writer.Write(0u);
+        writer.Write(zip64Entries);
+        writer.Write(zip64Entries);
+        writer.Write(230_000_000UL);
+        writer.Write(0UL);
+        if (locator)
+        {
+            writer.Write(0x07064b50u);
+            writer.Write(0u);
+            writer.Write(0UL); // l'enregistrement zip64 est au début du fichier
+            writer.Write(1u);
+        }
+
+        writer.Write(0x06054b50u);
+        writer.Write((ushort)0);
+        writer.Write((ushort)0);
+        writer.Write(entries);
+        writer.Write(entries);
+        writer.Write(size);
+        writer.Write(offset);
+        writer.Write((ushort)0);
+        var path = InRoot(name);
+        File.WriteAllBytes(path, stream.ToArray());
+        return path;
+    }
+
+    [Fact]
+    public void Inspect_Zip64AnnouncedByTheDirectoryOffsetMarkerOnly_IsRefused()
+    {
+        // .NET lit aussi le zip64 quand c'est le décalage du répertoire central qui vaut 0xFFFFFFFF, les autres champs restant petits.
+        var path = HandmadeZip64("decalage.avmod", entries: 1, size: 100, offset: 0xFFFFFFFFu, zip64Entries: 5_000_000);
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.Null(result.Manifest);
+        Assert.Contains("5000000", Assert.Single(result.Errors));
+    }
+
+    [Fact]
+    public void Inspect_Zip64LocatorWithoutAnyMarker_IsReadAndRefused()
+    {
+        // Aucun champ de la fin classique ne dit « zip64 », mais un localisateur est juste avant : on retient le plus grand des deux nombres.
+        var path = HandmadeZip64("localisateur.avmod", entries: 1, size: 100, offset: 0, zip64Entries: 5_000_000);
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.Null(result.Manifest);
+        Assert.Contains("5000000", Assert.Single(result.Errors));
+    }
+
+    [Fact]
+    public void Inspect_Zip64LocatorPointingNowhere_IsUnreadable()
+    {
+        var path = HandmadeZip64("fausse-adresse.avmod", entries: 1, size: 100, offset: 0, zip64Entries: 5);
+        var bytes = File.ReadAllBytes(path);
+        var locator = bytes.AsSpan().LastIndexOf(BitConverter.GetBytes(0x07064b50u));
+        BitConverter.GetBytes(10_000_000UL).CopyTo(bytes, locator + 8); // désigne un enregistrement zip64 hors du fichier
+        File.WriteAllBytes(path, bytes);
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.Null(result.Manifest);
+        Assert.Contains("illisible", Assert.Single(result.Errors));
+    }
+
+    [Fact]
+    public void Inspect_PackageWrittenByAvmodWriter_IsStillAccepted()
+    {
+        var module = InRoot("module-writer");
+        Directory.CreateDirectory(module);
+        File.WriteAllText(Path.Combine(module, "manifest.json"), ManifestJson);
+        File.WriteAllText(Path.Combine(module, "Demo.dll"), "dll");
+        var package = InRoot("ecrit.avmod");
+        AvmodWriter.Pack(module, package);
+
+        var result = AvmodPackage.Inspect(package);
+
+        Assert.Empty(result.Errors);
+        Assert.NotNull(result.Manifest);
+    }
+
     [Fact]
     public void Inspect_CentralDirectoryOverTheLimit_IsRefused()
     {

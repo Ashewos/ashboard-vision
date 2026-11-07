@@ -37,26 +37,6 @@ internal sealed class CheckLog : IModuleLog
     }
 }
 
-/// <summary>Le coffre à secrets de l'essai : en mémoire, perdu à la fin. Jamais le coffre chiffré du logiciel.</summary>
-internal sealed class InMemorySecrets : ISecretStore
-{
-    private readonly ConcurrentDictionary<string, string> _values = new(StringComparer.Ordinal);
-
-    public string? Get(string key) => _values.TryGetValue(key, out var value) ? value : null;
-
-    public void Set(string key, string? value)
-    {
-        if (value is null)
-        {
-            _values.TryRemove(key, out _);
-        }
-        else
-        {
-            _values[key] = value;
-        }
-    }
-}
-
 /// <summary>De fausses données de capteurs et de musique, toujours les mêmes : l'essai ne lit pas le matériel de ce PC.</summary>
 internal sealed class SampleDataBroker : IServiceDataBroker
 {

@@ -515,6 +515,34 @@ public sealed class CommunityCatalogTests : IDisposable
     }
 
     [Fact]
+    public void Scan_OldFolderInsideTheNewModulesFolder_KeepsTheModuleVisible()
+    {
+        // Le nouveau dossier des modules est le parent de l'ancien : le scan du nouveau dossier ne lit pas « Neuf », mais le module reste là.
+        var directory = Path.Combine(ModulesRoot, "Neuf", "alex.demo", "1.0.0");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "manifest.json"), Manifest("alex.demo", "1.0.0"));
+        File.WriteAllText(Path.Combine(directory, "Mod.dll"), "code");
+
+        var entry = Assert.Single(Catalog(State([Approve("alex.demo", "1.0.0", directory)])).Scan());
+
+        Assert.Equal(CommunityState.Ready, entry.State);
+        Assert.Equal(directory, entry.Directory);
+    }
+
+    [Fact]
+    public void ForeignVersionDirectory_IsNullOnlyForTheExactOrdinaryShape()
+    {
+        var ordinary = Path.Combine(ModulesRoot, "alex.demo", "1.0.0");
+        var inside = Path.Combine(ModulesRoot, "Neuf", "alex.demo", "1.0.0");
+
+        static ApprovedModule At(string directory) => new("alex.demo", "1.0.0", directory, "h", [], null, null);
+
+        Assert.Null(CommunityCatalog.ForeignVersionDirectory(At(ordinary), ModulesRoot));
+        Assert.Null(CommunityCatalog.ForeignVersionDirectory(At(ordinary + Path.DirectorySeparatorChar), ModulesRoot));
+        Assert.Equal(inside, CommunityCatalog.ForeignVersionDirectory(At(inside), ModulesRoot));
+    }
+
+    [Fact]
     public void Scan_ApprovedModuleInAnotherRoot_ChangedContent_IsChanged()
     {
         var old = InstallInOldRoot("alex.demo", "1.0.0");

@@ -274,27 +274,38 @@ public static class AvmodPackage
             return null;
         }
 
-        long entries = BitConverter.ToUInt16(buffer, at + 10);
-        long bytes = BitConverter.ToUInt32(buffer, at + 12);
-        if (entries != ushort.MaxValue && bytes != uint.MaxValue)
+        // Les nombres de la fin classique : entrées sur ce disque, entrées en tout, taille du répertoire central.
+        // (un marqueur n'est pas un nombre : il compte pour 0, et c'est l'enregistrement zip64 qui donne la valeur)
+        long entries = Math.Max(Real(BitConverter.ToUInt16(buffer, at + 8)), Real(BitConverter.ToUInt16(buffer, at + 10)));
+        long bytes = BitConverter.ToUInt32(buffer, at + 12) is var size && size != uint.MaxValue ? size : 0;
+        var endPosition = length - tail + at;
+
+        // Un localisateur zip64 (20 octets) juste avant la fin classique.
+        var locatorPresent = false;
+        var locator = new byte[20];
+        if (endPosition >= locator.Length)
         {
+            stream.Seek(endPosition - locator.Length, SeekOrigin.Begin);
+            stream.ReadExactly(locator);
+            locatorPresent = BitConverter.ToUInt32(locator, 0) == Zip64LocatorSignature;
+        }
+
+        // ZipArchive passe en zip64 dès qu'un champ de la fin classique vaut son marqueur (numéros de disque, entrées, taille, décalage
+        // du répertoire central), mais on lit aussi l'enregistrement zip64 dès qu'un localisateur est là : on retient alors le plus grand
+        // des deux nombres, quoi que la fin classique dise.
+        var marker = BitConverter.ToUInt16(buffer, at + 4) == ushort.MaxValue || BitConverter.ToUInt16(buffer, at + 6) == ushort.MaxValue
+            || BitConverter.ToUInt16(buffer, at + 8) == ushort.MaxValue || BitConverter.ToUInt16(buffer, at + 10) == ushort.MaxValue
+            || BitConverter.ToUInt32(buffer, at + 12) == uint.MaxValue || BitConverter.ToUInt32(buffer, at + 16) == uint.MaxValue;
+        if (!marker && !locatorPresent)
+        {
+            stream.Seek(0, SeekOrigin.Begin);
             return new DirectoryAnnouncement(entries, bytes);
         }
 
-        // Zip64 : le localisateur (20 octets) précède l'enregistrement de fin et désigne l'enregistrement zip64 (56 octets).
-        var endPosition = length - tail + at;
-        if (endPosition < 20 + 56)
-        {
-            throw new InvalidDataException("zip64 introuvable");
-        }
-
-        var locator = new byte[20];
-        stream.Seek(endPosition - 20, SeekOrigin.Begin);
-        stream.ReadExactly(locator);
+        // L'enregistrement zip64 (56 octets) que le localisateur désigne.
         var offset = BitConverter.ToInt64(locator, 8);
-        if (BitConverter.ToUInt32(locator, 0) != Zip64LocatorSignature || offset < 0 || offset > endPosition - 20 - 56)
+        if (!locatorPresent || offset < 0 || offset > endPosition - locator.Length - 56)
         {
-            stream.Seek(0, SeekOrigin.Begin);
             throw new InvalidDataException("zip64 introuvable");
         }
 
@@ -307,11 +318,14 @@ public static class AvmodPackage
             throw new InvalidDataException("zip64 introuvable");
         }
 
-        var entries64 = BitConverter.ToUInt64(record, 32);
+        var entries64 = Math.Max(BitConverter.ToUInt64(record, 24), BitConverter.ToUInt64(record, 32));
         var bytes64 = BitConverter.ToUInt64(record, 40);
         return new DirectoryAnnouncement(
-            entries64 > long.MaxValue ? long.MaxValue : (long)entries64, bytes64 > long.MaxValue ? long.MaxValue : (long)bytes64);
+            Math.Max(entries, entries64 > long.MaxValue ? long.MaxValue : (long)entries64),
+            Math.Max(bytes, bytes64 > long.MaxValue ? long.MaxValue : (long)bytes64));
     }
+
+    private static long Real(ushort value) => value == ushort.MaxValue ? 0 : value;
 
     private sealed record Item(ZipArchiveEntry Entry, string Path, bool IsDirectory);
 
