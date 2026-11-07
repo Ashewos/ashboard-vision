@@ -168,6 +168,25 @@ Sans pilote, le module Monitoring affiche la ligne « Temp. CPU : installe le pi
 
 La ligne d'aide disparaît dès que la température arrive, et ne s'affiche pas quand l'assistant tourne déjà.
 
+## Modules complémentaires
+
+Les modules créés par la communauté (fichiers `.avmod`) se créent, se testent et se publient avec le SDK, expliqué dans [la documentation du SDK](sdk/README.md). Cette section donne les repères pour qui travaille sur le dépôt.
+
+- **Où sont les fichiers.** Le dossier des modules est `Documents\Ashboard Vision\Modules` par défaut (modifiable dans Paramètres) ; chaque module y est rangé dans `<identifiant>\<version>`. Si tu changes de dossier, les modules déjà installés continuent de tourner depuis l'ancien ; seuls les dossiers nommés comme un identifiant de module (`auteur.module`) sont des modules, les autres sont ignorés. La liste des modules validés et la clé qui la scelle sont dans `%AppData%\ashboard-vision` : `modules.json` et `modules.key`. Ne les modifie pas à la main : une liste modifiée hors du logiciel est refusée, et les modules sont à valider de nouveau.
+- **Le mode développeur** (Paramètres, section Modules complémentaires) charge un module depuis son dossier de travail, sans `.avmod` ; « Recharger » reprend le dossier après une construction.
+- **La consommation** de chaque module complémentaire est dans Paramètres, « Consommation des modules ». Chaque module actif est un processus `Trofeo.ModuleHost.exe`, enfermé dans un conteneur Windows nommé `ashboard-vision.mod.<identifiant>`.
+- **Construire les paquets du SDK** (jamais publiés sur nuget.org : ils sont joints aux versions GitHub). Depuis la racine du dépôt, en `Debug` :
+
+  ```powershell
+  dotnet pack src/AshboardVision.Sdk -c Debug -o paquets
+  dotnet pack src/AshboardVision.Sdk.Testing -c Debug -o paquets
+  dotnet pack tools/AshboardVision.Sdk.Tool -c Debug -o paquets
+  dotnet pack templates/AshboardVision.Sdk.Templates -c Debug -o paquets
+  ```
+
+- **Les trois modules d'exemple** (`examples/Demo`, `examples/GitHubRepo`, `examples/Minecraft`) référencent le SDK par projet, pour que le dépôt se construise sans rien emballer. Un projet de créateur, lui, utilise la `PackageReference` du modèle (`dotnet new ashboard-module`).
+- **La documentation du SDK est testée** : `dotnet test tests/AshboardVision.Sdk.Tests --filter DocsTests` vérifie que chaque lien relatif pointe vers un fichier qui existe, et que chaque extrait de code figure encore, tel quel, dans le fichier d'exemple cité en légende.
+
 ## Compiler et lancer
 
 Il faut le [SDK .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0). La version exacte est fixée dans `global.json`. Le projet vise Windows (WinForms, WinRT, WinUSB) ; sous Linux, la plupart des projets de tests se construisent et tournent quand même (`dotnet test tests/<projet>`).
@@ -191,6 +210,7 @@ La branche de travail est `Canary` : les contributions (pull requests comprises)
 | `tools/Trofeo.SettingsPreview` | Aperçus de la fenêtre de réglage | `dotnet run --project tools/Trofeo.SettingsPreview -- --out apercus-reglages` |
 | `tools/Trofeo.VideoBench` | Mesure le coût du décodeur vidéo des fonds | `dotnet run -c Debug --project tools/Trofeo.VideoBench -- <fichier> [--seconds 60] [--warmup 10]` |
 | `tools/Trofeo.BrandAssets` | Fabrique les icônes, les images de l'installateur et le logo avec le nom en tracés dans `assets/brand` | `dotnet run --project tools/Trofeo.BrandAssets -- --logo docs/superpowers/logo --font src/Trofeo.Core/Assets/Fonts/Manrope-Medium.ttf --out assets/brand` |
+| `tools/AshboardVision.Sdk.Tool` | Le banc d'essai des modules de la communauté (`ashboard-module check` et `pack`) | `dotnet run -c Debug --project tools/AshboardVision.Sdk.Tool -- check <dossier du module>` ; voir « Modules complémentaires » |
 | `tools/Trofeo.ReadmeHero` | Fabrique l'image d'accueil animée du README | `dotnet run --project tools/Trofeo.ReadmeHero -- --name "Ashboard Vision" --tagline "Le tableau de bord de ton écran Thermalright Trofeo Vision." --logo assets/brand/ashboard-vision-horizontal-sombre.svg --out apercus-accueil`, puis les commandes `ffmpeg` de `apercus-accueil/encode.txt` |
 
 Le script de l'installateur (Inno Setup) et la recette GitHub Actions qui publie les versions sont décrits dans [le plan 6](superpowers/plans/2026-10-29-plan-6-distribution.md).
@@ -208,9 +228,16 @@ Le script de l'installateur (Inno Setup) et la recette GitHub Actions qui publie
 | `src/Trofeo.Settings` | La fenêtre de réglage (Avalonia) |
 | `src/Trofeo.Distribution` | Versions, mises à jour depuis GitHub, déménagement des réglages, nettoyage |
 | `src/Trofeo.Sensors`, `src/Trofeo.SensorHelper` | Les capteurs et leur assistant, qui tourne avec les droits d'administrateur |
-| `src/Trofeo.Modules.*` | Les modules |
+| `src/Trofeo.Modules.*` | Les modules d'origine |
+| `src/AshboardVision.Sdk`, `src/AshboardVision.Sdk.Testing` | Le SDK des modules de la communauté et ses aides de test |
+| `src/Trofeo.Extensions` | Le moteur des modules de la communauté : manifeste, paquet `.avmod`, enfermement, superviseur, mises à jour |
+| `src/Trofeo.ModuleHost` | L'hôte : le programme qui charge un module de la communauté, dans son propre processus |
+| `tools/AshboardVision.Sdk.Tool` | Le banc d'essai `ashboard-module` |
+| `templates/AshboardVision.Sdk.Templates` | Le modèle de projet `dotnet new ashboard-module` |
+| `examples` | Les modules d'exemple : Démo, Dépôt GitHub, Serveur Minecraft |
 | `mods/ashboard-quotas` | Le mod Claude Code qui écrit les quotas, appli desktop comprise |
 | `assets/brand` | Le logo, les icônes et les images de l'installateur |
+| `docs/sdk` | La documentation du SDK, pour les créateurs de modules |
 | `docs/superpowers` | Conception, plans de développement et notes |
 
-Les modules sont intégrés au logiciel. Pour en proposer un nouveau, ouvre une pull request vers `Canary` avec un projet `Trofeo.Modules.<Nom>` qui implémente `IModuleFactory` et `IModule`.
+Les modules d'origine sont intégrés au logiciel. Pour en proposer un nouveau de ce genre, ouvre une pull request vers `Canary` avec un projet `Trofeo.Modules.<Nom>` qui implémente `IModuleFactory` et `IModule`. Un module qui n'a pas besoin d'être dans le logiciel se crée plutôt avec le SDK, et se publie à part : voir [la documentation du SDK](sdk/README.md).

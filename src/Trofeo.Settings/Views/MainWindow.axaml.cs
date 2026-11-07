@@ -28,9 +28,9 @@ public partial class MainWindow : Window
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        // Réduite, la fenêtre ne montre rien : l'aperçu se met en pause.
-        if (change.Property == WindowStateProperty && DataContext is MainViewModel model)
-            model.SetPreviewPaused(WindowState == WindowState.Minimized);
+        // Réduite ou cachée, la fenêtre ne montre rien : l'aperçu se met en pause, et la consommation ne se mesure plus.
+        if ((change.Property == WindowStateProperty || change.Property == IsVisibleProperty) && DataContext is MainViewModel model)
+            model.SetPreviewPaused(WindowState == WindowState.Minimized || !IsVisible);
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -38,6 +38,14 @@ public partial class MainWindow : Window
         base.OnKeyDown(e);
         if (e.Handled || DataContext is not MainViewModel model)
             return;
+
+        // Échap ferme la boîte d'un module complémentaire (une mise à jour en cours est abandonnée).
+        if (e.Key == Key.Escape && model.SettingsTab.Community.Dialog is { } dialog)
+        {
+            _ = dialog.CancelAsync();
+            e.Handled = true;
+            return;
+        }
 
         // Échap abandonne un glissement du damier.
         if (e.Key == Key.Escape && model.LayoutTab.IsDragging)

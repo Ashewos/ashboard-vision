@@ -6,11 +6,18 @@ namespace Trofeo.Distribution;
 /// <summary>
 /// Le nettoyage propre à l'utilisateur, à la désinstallation : la valeur <c>Run</c> (la nouvelle et l'ancienne), le mod des quotas dans
 /// Claude Code, le marqueur de préparation <c>installation.json</c> (toujours : une réinstallation doit refaire la préparation et
-/// appliquer de nouveau le choix de l'installateur) et, si l'utilisateur l'a demandé, le dossier des réglages avec les dossiers
+/// appliquer de nouveau le choix de l'installateur), le nettoyage des modules complémentaires et, si l'utilisateur l'a demandé, le dossier des réglages avec les dossiers
 /// qui contiennent des copies de ses données. Chaque étape est tentée même si la précédente a échoué : un
 /// désinstallateur ne doit pas s'arrêter sur un mod déjà retiré ou sur un Claude Code absent.
 /// </summary>
-public sealed class UserCleanup(IRunKey runKey, QuotaModInstaller mods)
+/// <param name="runKey">La valeur <c>Run</c> de l'utilisateur.</param>
+/// <param name="mods">Le mod des quotas dans Claude Code.</param>
+/// <param name="modulesCleanup">
+/// Le nettoyage des modules complémentaires (conteneurs, secrets et, si les réglages sont effacés, la liste et le dossier des modules).
+/// Il vit dans <c>Trofeo.Extensions</c>, qui dépend de cette bibliothèque : l'appelant le fournit. Il reçoit « effacer mes réglages »
+/// et est appelé avant l'effacement du dossier des réglages, où est la liste scellée qu'il relit. <c>null</c> : rien à nettoyer.
+/// </param>
+public sealed class UserCleanup(IRunKey runKey, QuotaModInstaller mods, Func<bool, CancellationToken, Task>? modulesCleanup = null)
 {
     private const string LegacyRunValue = "trofeo-HB-dashboard";
     private const string RunValue = "ashboard-vision";
@@ -41,6 +48,20 @@ public sealed class UserCleanup(IRunKey runKey, QuotaModInstaller mods)
 
         // Même en gardant les réglages : sans lui, la réinstallation sauterait la préparation (même version) ou ignorerait la case de l'installateur.
         TryDelete(() => File.Delete(Path.Combine(settingsDir, UserSetup.StateFileName)));
+
+        // Avant l'effacement des réglages : il relit la liste scellée, qui y est. Les conteneurs et les secrets des modules partent
+        // même quand les réglages sont gardés ; le reste suit le choix.
+        if (modulesCleanup is not null)
+        {
+            try
+            {
+                await modulesCleanup(deleteSettings, ct);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+            {
+                // Ce qui reste (un fichier ouvert…) sera laissé à l'utilisateur : le reste du nettoyage continue.
+            }
+        }
 
         if (!deleteSettings)
         {

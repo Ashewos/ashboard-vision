@@ -48,7 +48,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     private UpdateInfo? _seenUpdate;
 
     public SettingsTabViewModel(
-        IServiceLink link, EditSession session, PreferencesStore preferences, SystemServices system, IFilePicker? picker = null)
+        IServiceLink link, EditSession session, PreferencesStore preferences, SystemServices system, IFilePicker? picker = null, TimeProvider? time = null)
         : base(Texts.TabSettings)
     {
         _link = link;
@@ -57,6 +57,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
         _startup = system.Startup;
         _launcher = system.Launcher;
         Picker = picker;
+        Community = new CommunitySectionViewModel(link, session, () => Picker, time);
         _locateHelper = system.LocateHelper ?? (() => AppLocator.Find("Trofeo.SensorHelper.exe"));
         _ownMemory = system.OwnMemory ?? OwnPrivateBytes;
 
@@ -73,7 +74,11 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     {
         _link.Changed -= Refresh;
         _session.Changed -= Refresh;
+        Community.Dispose();
     }
+
+    /// <summary>La section « Modules complémentaires » : la liste, l'installation, la validation, les mises à jour.</summary>
+    public CommunitySectionViewModel Community { get; }
 
     /// <summary>Le sélecteur de fichier de la fenêtre (export, import, installeur de PawnIO) ; la vue le pose à l'ouverture.</summary>
     public IFilePicker? Picker { get; set; }
@@ -467,7 +472,8 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     }
 
     /// <summary>
-    /// Pour chaque type de module dont le schéma déclare un <see cref="SecretField"/> (une clé du coffre de CE PC), garde les
+    /// Pour chaque type de module dont le schéma déclare un <see cref="SecretField"/> (une clé du coffre de CE PC) ou un
+    /// <see cref="PortField"/> (un port de CE PC que le service relaie à un module qui a la permission « Cet ordinateur »), garde les
     /// réglages de ce PC : une instance importée reprend ceux de l'instance locale du même type (dans l'ordre, emplacements puis
     /// modules retirés), ou <c>{}</c> si ce PC n'en a pas assez. Sans quoi le fichier d'un tiers fixerait où la clé est envoyée
     /// (l'hôte de la console UniFi, par exemple). Sans le catalogue du service, aucun type n'est connu pour sûr : tous gardent
@@ -475,9 +481,9 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     /// </summary>
     private (DashboardLayout Layout, IReadOnlyList<string> Kept) KeepLocalSecretSettings(DashboardLayout imported, DashboardLayout current)
     {
-        var catalog = _link.Welcome?.Types.GroupBy(t => t.TypeId).ToDictionary(g => g.Key, g => g.First());
+        var catalog = _link.KnownTypes()?.GroupBy(t => t.TypeId).ToDictionary(g => g.Key, g => g.First());
         bool TouchesASecret(string typeId) =>
-            catalog is null || (catalog.TryGetValue(typeId, out var type) && type.Schema.Fields.OfType<SecretField>().Any());
+            catalog is null || (catalog.TryGetValue(typeId, out var type) && type.Schema.Fields.Any(field => field is SecretField or PortField));
 
         var local = current.Placements.Concat(current.Shelf ?? []).ToList();
         var taken = new Dictionary<string, int>(); // combien d'instances de chaque type ont déjà repris les réglages locaux
@@ -502,28 +508,28 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
             Placements = [.. imported.Placements.Select(Protect)],
             Shelf = imported.Shelf is null ? null : [.. imported.Shelf.Select(Protect)],
         };
-        var names = keptTypes.Select(id => catalog?.GetValueOrDefault(id)?.DisplayName ?? id).ToList();
+        var names = keptTypes.Select(id => catalog?.GetValueOrDefault(id)?.Label() ?? id).ToList();
         return (protectedLayout, names);
     }
 
     /// <summary>Ce que le service ne saurait pas appliquer : un type de module inconnu, ou un module plus petit que son minimum.</summary>
     private string? Unsupported(DashboardLayout layout)
     {
-        if (_link.Welcome is not { } welcome)
+        if (_link.KnownTypes() is not { } known)
             return null; // sans le catalogue du service, il le dira au rechargement
-        var types = welcome.Types.GroupBy(t => t.TypeId).ToDictionary(g => g.Key, g => g.First());
+        var types = known.GroupBy(t => t.TypeId).ToDictionary(g => g.Key, g => g.First());
 
         foreach (var placement in layout.Placements.Concat(layout.Shelf ?? []))
         {
             if (!types.ContainsKey(placement.TypeId))
-                return string.Format(Texts.ShareUnknownType, placement.TypeId);
+                return string.Format(Texts.ShareUnknownType, UntrustedText.Line(placement.TypeId)); // le type vient d'un fichier reçu d'un tiers
         }
 
         foreach (var placement in layout.Placements)
         {
             var type = types[placement.TypeId];
             if (placement.Columns < type.MinSize.Columns || placement.Rows < type.MinSize.Rows)
-                return string.Format(Texts.ShareTooSmall, type.DisplayName, type.MinSize.Columns, type.MinSize.Rows);
+                return string.Format(Texts.ShareTooSmall, type.Label(), type.MinSize.Columns, type.MinSize.Rows);
         }
 
         return null;

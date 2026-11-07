@@ -10,6 +10,7 @@ using Trofeo.Core.Shortcuts;
 using Trofeo.Device;
 using Trofeo.Display.Video;
 using Trofeo.Distribution;
+using Trofeo.Extensions;
 using Trofeo.Modules.Agents;
 using Trofeo.Modules.Clock;
 using Trofeo.Modules.Monitoring;
@@ -29,6 +30,8 @@ static class Program
 
     // Les mises à jour interrogent GitHub : 30 s pour répondre, et pas plus (le téléchargement lit son flux après les en-têtes).
     private static readonly TimeSpan UpdateHttpTimeout = TimeSpan.FromSeconds(30);
+
+    private const string ModuleHostExeName = "Trofeo.ModuleHost.exe";
 
     [STAThread]
     static int Main(string[] args)
@@ -94,7 +97,19 @@ static class Program
         {
             if (!silent) ApplicationConfiguration.Initialize();
             var deleteSettings = ShouldDeleteSettings(silent, AskKeepSettings);
-            var cleanup = new UserCleanup(new RegistryRunKey(), QuotaModInstaller.CreateProduction(null));
+            // Les modules complémentaires : leurs conteneurs et leurs secrets, puis (réglages effacés) la liste et le dossier par défaut.
+            // Le nettoyage relit la liste scellée avant toute suppression ; il est fourni d'ici parce que Trofeo.Extensions dépend de
+            // Trofeo.Distribution.
+            var vault = new DpapiSecretVault(Path.Combine(AppPaths.SettingsDir, "secrets.dat"));
+            var modules = new CommunityCleanup(
+                AppPaths.SettingsDir, Trofeo.Extensions.Sandbox.AppContainerProfile.Delete, vault.RemoveScope, warn: message => Trace.TraceWarning(message));
+            var cleanup = new UserCleanup(
+                new RegistryRunKey(), QuotaModInstaller.CreateProduction(null),
+                (erase, _) =>
+                {
+                    modules.Run(erase);
+                    return Task.CompletedTask;
+                });
             Task.Run(() => cleanup.RunAsync(
                 AppPaths.SettingsDir, deleteSettings, CancellationToken.None,
                 [AppPaths.SettingsDir + "-sauvegardes", AppPaths.LegacySettingsDir, UpdateDownloadDir])).GetAwaiter().GetResult();
@@ -152,6 +167,38 @@ static class Program
                 CodexFactory.CreateProduction(),
             ],
             vault.Scope);
+
+        // Les mises à jour ont leur propre client : elles suivent les redirections (GitHub envoie les fichiers vers d'autres hôtes),
+        // ce que celui de la Freebox ne doit jamais faire. L'API de GitHub exige un User-Agent. Il sert au service des mises à jour du
+        // logiciel comme à celles des modules complémentaires : déclaré avant l'un et l'autre, libéré après eux.
+        using var updateHttp = new HttpClient(new SocketsHttpHandler()) { Timeout = UpdateHttpTimeout };
+        updateHttp.DefaultRequestHeaders.UserAgent.TryParseAdd($"{ProductIdentity.Id}/{ServiceControlHandler.InstalledVersion}");
+
+        // Les modules complémentaires : un hôte enfermé par module validé, lancé seulement quand une case est posée (rien ne tourne
+        // sans module). Déclarés avant la boucle : arrêtés après elle, quand ses cases sont fermées. Leurs mises à jour (GitHub) ne
+        // cherchent rien tant qu'aucun module ne porte de dépôt.
+        using var dataBroker = new ServiceDataBroker(
+            sensorHub, () => new SmtcMediaSource(new TraceModuleLog("modules-complementaires", Guid.Empty, TimeProvider.System)), TimeProvider.System);
+        var community = new CommunityModules(
+            new ApprovedModulesStore(
+                Path.Combine(AppPaths.SettingsDir, ApprovedModulesStore.FileName), Path.Combine(AppPaths.SettingsDir, ApprovedModulesStore.KeyFileName), Warn),
+            registry.SetCommunityFactories,
+            vault.Scope,
+            vault.RemoveScope,
+            dataBroker,
+            AppLocator.Find(ModuleHostExeName) ?? Path.Combine(AppContext.BaseDirectory, ModuleHostExeName),
+            TimeProvider.System,
+            updateHttp: updateHttp);
+        using var communityScope = new AsyncDisposeScope(community);
+        try
+        {
+            community.Refresh(); // avant la boucle : la disposition retrouve les types des modules complémentaires
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceError($"Modules complémentaires : l'examen du dossier a échoué, le service tourne sans : {ex}");
+        }
+
         var screen = new ScreenDevice(new WinUsbTransportFactory(), TimeProvider.System);
         screen.StateChanged += (_, _) =>
         {
@@ -168,9 +215,13 @@ static class Program
             Warn(message);
             buildWarnings.Warn(message);
         };
-        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current) => LoopConfigFactory.Build(
-            next, new SkiaSystemFonts(), path => MediaFoundationBackground.TryOpen(path, warnAndCollect), warnAndCollect, current);
+        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current) =>
+            LoopConfigFactory.Build(
+                next, new SkiaSystemFonts(), path => MediaFoundationBackground.TryOpen(path, warnAndCollect), warnAndCollect, current);
 
+        // Les hôtes des modules complémentaires suivent le plafond d'images et l'apparence de la disposition : au démarrage ici, puis
+        // à chaque rechargement par le handler (BuildConfig ne tourne que si l'apparence change).
+        ServiceControlHandler.ApplyHostOptions(community, layout);
         var config = BuildConfig(layout, null);
         var theme = config.Theme;
         Trace.TraceInformation(
@@ -182,11 +233,6 @@ static class Program
         using var cts = new CancellationTokenSource();
         loop.Start(cts.Token);
 
-        // Les mises à jour ont leur propre client : elles suivent les redirections (GitHub envoie les fichiers vers d'autres hôtes),
-        // ce que celui de la Freebox ne doit jamais faire. L'API de GitHub exige un User-Agent. Déclarés avant le service des mises à jour :
-        // libérés après lui.
-        using var updateHttp = new HttpClient(new SocketsHttpHandler()) { Timeout = UpdateHttpTimeout };
-        updateHttp.DefaultRequestHeaders.UserAgent.TryParseAdd($"{ProductIdentity.Id}/{ServiceControlHandler.InstalledVersion}");
         AppVersion? installed = AppVersion.TryParse(ServiceControlHandler.InstalledVersion, out var parsed) ? parsed : null;
         if (installed is null)
             Trace.TraceWarning($"Version « {ServiceControlHandler.InstalledVersion} » illisible : ni mises à jour ni préparation de l'utilisateur.");
@@ -215,7 +261,7 @@ static class Program
             var meter = new ProcessMeter(SampleProcess, TimeProvider.System, Environment.ProcessorCount);
             using var handler = new ServiceControlHandler(
                 store, loop, registry, () => ServiceControlHandler.ToScreenInfo(screen.Status), () => ReadSensors(sensorPipe),
-                meter, BuildConfig, hotkeys?.Host, buildWarnings, config, updates);
+                meter, BuildConfig, hotkeys?.Host, community, buildWarnings, config, updates);
             using var control = StartControl(handler);
 
             if (installed is { } current) StartUserSetup(current, cts.Token);
@@ -241,6 +287,22 @@ static class Program
         }
 
         return 0;
+    }
+
+    /// <summary>Libère un objet asynchrone à la sortie d'un bloc <c>using</c> (le service s'arrête de façon synchrone).</summary>
+    private sealed class AsyncDisposeScope(IAsyncDisposable inner) : IDisposable
+    {
+        public void Dispose()
+        {
+            try
+            {
+                inner.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Arrêt des modules complémentaires : {ex}");
+            }
+        }
     }
 
     /// <summary>

@@ -853,4 +853,360 @@
     <value>Garder ma bêta</value>
     <comment>Bouton de la boîte du retour en arrière quand la case « attendre » est cochée : rien n'est installé.</comment>
   </data>
+  <data name="ModulesNumberRange" xml:space="preserve">
+    <value>De {0} à {1}, {2} par défaut.</value>
+    <comment>Sous un champ numérique ou de port. {0} : le minimum, {1} : le maximum, {2} : la valeur proposée.</comment>
+  </data>
+  <data name="ModulesNumberInvalid" xml:space="preserve">
+    <value>Écris un nombre entier entre {0} et {1}.</value>
+    <comment>Sous un champ numérique ou de port quand la saisie ne convient pas. {0} : le minimum, {1} : le maximum.</comment>
+  </data>
+  <data name="CommunityNotice" xml:space="preserve">
+    <value>Module complémentaire : créé par la communauté, pas par Ashboard Vision</value>
+    <comment>En-tête des réglages d'un module complémentaire, et nom du point d'exclamation jaune.</comment>
+  </data>
+  <data name="CommunityAuthorVersion" xml:space="preserve">
+    <value>par {0} · version {1}</value>
+    <comment>Sous le nom d'un module complémentaire. {0} : l'auteur, {1} : la version.</comment>
+  </data>
+  <data name="CommunityGranted" xml:space="preserve">
+    <value>Permissions accordées : {0}.</value>
+    <comment>{0} : les noms des permissions, séparés par des virgules.</comment>
+  </data>
+  <data name="CommunityNoneGranted" xml:space="preserve">
+    <value>Aucune permission accordée.</value>
+    <comment>Un module complémentaire sans aucune permission accordée.</comment>
+  </data>
+  <data name="PermissionLocalNetwork" xml:space="preserve">
+    <value>Réseau local</value>
+    <comment>Nom de la permission (identique à celui du service).</comment>
+  </data>
+  <data name="PermissionLocalNetworkHelp" xml:space="preserve">
+    <value>Le module peut parler aux appareils et aux serveurs de ton réseau (Home Assistant, Frigate, Proxmox…).</value>
+    <comment>Explication de la permission (identique à celle du service).</comment>
+  </data>
+  <data name="PermissionInternet" xml:space="preserve">
+    <value>Internet</value>
+    <comment>Nom de la permission (identique à celui du service).</comment>
+  </data>
+  <data name="PermissionInternetHelp" xml:space="preserve">
+    <value>Le module peut contacter des services sur Internet (Downdetector…).</value>
+    <comment>Explication de la permission (identique à celle du service).</comment>
+  </data>
+  <data name="PermissionThisComputer" xml:space="preserve">
+    <value>Cet ordinateur (ports choisis dans les réglages du module)</value>
+    <comment>Nom de la permission (identique à celui du service).</comment>
+  </data>
+  <data name="PermissionThisComputerHelp" xml:space="preserve">
+    <value>Le module peut se connecter à un service lancé sur ce PC, mais seulement sur les ports que tu choisis dans ses réglages (serveur Minecraft sur le 25565, Home Assistant sur le 8123…).</value>
+    <comment>Explication de la permission (identique à celle du service).</comment>
+  </data>
+  <data name="PermissionSensors" xml:space="preserve">
+    <value>Capteurs</value>
+    <comment>Nom de la permission (identique à celui du service).</comment>
+  </data>
+  <data name="PermissionSensorsHelp" xml:space="preserve">
+    <value>Le module peut lire les températures, les charges et la mémoire de ton PC.</value>
+    <comment>Explication de la permission (identique à celle du service).</comment>
+  </data>
+  <data name="PermissionNowPlaying" xml:space="preserve">
+    <value>Musique en cours</value>
+    <comment>Nom de la permission (identique à celui du service).</comment>
+  </data>
+  <data name="PermissionNowPlayingHelp" xml:space="preserve">
+    <value>Le module peut lire le titre, l'artiste et la pochette de la musique en cours.</value>
+    <comment>Explication de la permission (identique à celle du service).</comment>
+  </data>
+  <data name="PermissionNew" xml:space="preserve">
+    <value>Nouvelle</value>
+    <comment>Repère à côté d'une permission que la nouvelle version demande en plus.</comment>
+  </data>
+  <data name="DialogWarning" xml:space="preserve">
+    <value>Ce module a été créé par la communauté, pas par Ashboard Vision. Il peut contenir du code malveillant : installe seulement un module dont tu connais et fais confiance à l'auteur.</value>
+    <comment>Avertissement de la boîte d'installation, de validation et de mise à jour d'un module complémentaire.</comment>
+  </data>
+  <data name="DialogInstallTitle" xml:space="preserve">
+    <value>Installer un module complémentaire</value>
+    <comment>Titre de la boîte d'installation.</comment>
+  </data>
+  <data name="DialogApproveTitle" xml:space="preserve">
+    <value>Valider un module complémentaire</value>
+    <comment>Titre de la boîte de validation d'un module trouvé dans le dossier des modules.</comment>
+  </data>
+  <data name="DialogUpdateTitle" xml:space="preserve">
+    <value>Mettre à jour un module complémentaire</value>
+    <comment>Titre de la boîte de mise à jour.</comment>
+  </data>
+  <data name="DialogPermissionsTitle" xml:space="preserve">
+    <value>Permissions du module</value>
+    <comment>Titre de la boîte qui change les permissions d'un module.</comment>
+  </data>
+  <data name="DialogAuthor" xml:space="preserve">
+    <value>Auteur : {0}</value>
+    <comment>{0} : l'auteur du module.</comment>
+  </data>
+  <data name="DialogVersion" xml:space="preserve">
+    <value>Version {0}</value>
+    <comment>{0} : la version du module.</comment>
+  </data>
+  <data name="DialogVersionUpdate" xml:space="preserve">
+    <value>Version {1} (tu as la {0})</value>
+    <comment>Mise à jour. {0} : la version installée, {1} : la nouvelle.</comment>
+  </data>
+  <data name="DialogPermissionsIntro" xml:space="preserve">
+    <value>Coche une par une les permissions que tu accordes. Ce que tu ne coches pas est refusé au module.</value>
+    <comment>Au-dessus des cases des permissions.</comment>
+  </data>
+  <data name="DialogNoPermissions" xml:space="preserve">
+    <value>Ce module ne demande aucune permission.</value>
+    <comment>Quand le manifeste ne déclare aucune permission.</comment>
+  </data>
+  <data name="DialogNewPermissions" xml:space="preserve">
+    <value>Cette version demande de nouvelles permissions. Elles ne sont pas cochées : coche celles que tu acceptes.</value>
+    <comment>Mise à jour qui déclare une permission de plus.</comment>
+  </data>
+  <data name="DialogNotes" xml:space="preserve">
+    <value>Nouveautés</value>
+    <comment>Titre des notes d'une version.</comment>
+  </data>
+  <data name="DialogPreparing" xml:space="preserve">
+    <value>Téléchargement de la version {0}…</value>
+    <comment>Pendant que le service télécharge et vérifie la mise à jour. {0} : la version.</comment>
+  </data>
+  <data name="DialogWorking" xml:space="preserve">
+    <value>En cours…</value>
+    <comment>Pendant qu'une demande est en route.</comment>
+  </data>
+  <data name="DialogInstall" xml:space="preserve">
+    <value>Installer</value>
+    <comment>Bouton de la boîte d'installation.</comment>
+  </data>
+  <data name="DialogApprove" xml:space="preserve">
+    <value>Valider</value>
+    <comment>Bouton de la boîte de validation.</comment>
+  </data>
+  <data name="DialogSave" xml:space="preserve">
+    <value>Enregistrer</value>
+    <comment>Bouton de la boîte des permissions.</comment>
+  </data>
+  <data name="SettingsCommunity" xml:space="preserve">
+    <value>Modules complémentaires</value>
+    <comment>Titre de section, dans Paramètres.</comment>
+  </data>
+  <data name="CommunityHelp" xml:space="preserve">
+    <value>Des modules créés par la communauté. Chacun tourne à part, enfermé, et n'a que les permissions que tu lui accordes.</value>
+    <comment>Sous le titre de la section.</comment>
+  </data>
+  <data name="CommunityInstallButton" xml:space="preserve">
+    <value>Installer un module…</value>
+    <comment>Bouton : choisit un fichier .avmod.</comment>
+  </data>
+  <data name="CommunityPickTitle" xml:space="preserve">
+    <value>Choisir un module à installer</value>
+    <comment>Titre du sélecteur de fichier.</comment>
+  </data>
+  <data name="CommunityPickType" xml:space="preserve">
+    <value>Module Ashboard Vision</value>
+    <comment>Nom du type de fichier .avmod.</comment>
+  </data>
+  <data name="CommunityNone" xml:space="preserve">
+    <value>Aucun module complémentaire pour l'instant.</value>
+    <comment>Section sans module.</comment>
+  </data>
+  <data name="CommunityTampered" xml:space="preserve">
+    <value>La liste des modules validés a été modifiée hors du logiciel : valide de nouveau tes modules.</value>
+    <comment>Bandeau quand la liste scellée a été trouvée altérée.</comment>
+  </data>
+  <data name="PackageNetworkPath" xml:space="preserve">
+    <value>Copie ce fichier sur ce PC pour l'installer.</value>
+    <comment>Un .avmod ouvert depuis un partage réseau : la fenêtre ne se connecte pas à un hôte, elle demande de copier le fichier.</comment>
+  </data>
+  <data name="PackageMissing" xml:space="preserve">
+    <value>Ce fichier est introuvable : vérifie qu'il est toujours là.</value>
+    <comment>Un .avmod ouvert qui n'existe plus (ou dont le chemin est invalide).</comment>
+  </data>
+  <data name="PackageUnopenable" xml:space="preserve">
+    <value>Ce fichier ne peut pas s'ouvrir depuis cet emplacement : copie-le sur un disque de ce PC.</value>
+    <comment>Un .avmod dont l'emplacement ne permet pas de dire s'il est sur ce PC (lecteur de type inconnu, nom de périphérique).</comment>
+  </data>
+  <data name="CommunityStateReady" xml:space="preserve">
+    <value>Actif</value>
+    <comment>État d'un module complémentaire.</comment>
+  </data>
+  <data name="CommunityStateNeedsApproval" xml:space="preserve">
+    <value>À valider</value>
+    <comment>État d'un module complémentaire.</comment>
+  </data>
+  <data name="CommunityStateChanged" xml:space="preserve">
+    <value>Modifié depuis sa validation : valide-le de nouveau</value>
+    <comment>État d'un module complémentaire.</comment>
+  </data>
+  <data name="CommunityStateNeedsNewerApp" xml:space="preserve">
+    <value>Demande une version plus récente d'Ashboard Vision</value>
+    <comment>État d'un module complémentaire.</comment>
+  </data>
+  <data name="CommunityStateTooOld" xml:space="preserve">
+    <value>Trop ancien pour cette version d'Ashboard Vision</value>
+    <comment>État d'un module complémentaire.</comment>
+  </data>
+  <data name="CommunityStateInvalid" xml:space="preserve">
+    <value>Invalide</value>
+    <comment>État d'un module complémentaire.</comment>
+  </data>
+  <data name="CommunityStateUnavailable" xml:space="preserve">
+    <value>Indisponible</value>
+    <comment>État d'un module complémentaire.</comment>
+  </data>
+  <data name="CommunityStateSetAside" xml:space="preserve">
+    <value>Mis de côté : il s'est arrêté trop souvent</value>
+    <comment>État d'un module complémentaire.</comment>
+  </data>
+  <data name="CommunityDevFolder" xml:space="preserve">
+    <value>dossier de développement</value>
+    <comment>Précise l'origine d'un module chargé depuis un dossier de travail.</comment>
+  </data>
+  <data name="CommunityUpdateOffer" xml:space="preserve">
+    <value>Mise à jour proposée : {0}</value>
+    <comment>Sur la ligne d'un module. {0} : la version proposée.</comment>
+  </data>
+  <data name="CommunityPermissions" xml:space="preserve">
+    <value>Permissions…</value>
+    <comment>Bouton de la ligne d'un module.</comment>
+  </data>
+  <data name="CommunityApprove" xml:space="preserve">
+    <value>Valider…</value>
+    <comment>Bouton de la ligne d'un module à valider.</comment>
+  </data>
+  <data name="CommunityUpdate" xml:space="preserve">
+    <value>Mettre à jour</value>
+    <comment>Bouton de la ligne d'un module, et de la boîte de mise à jour.</comment>
+  </data>
+  <data name="CommunityRelaunch" xml:space="preserve">
+    <value>Relancer</value>
+    <comment>Bouton de la ligne d'un module mis de côté.</comment>
+  </data>
+  <data name="CommunityUninstall" xml:space="preserve">
+    <value>Désinstaller</value>
+    <comment>Bouton de la ligne d'un module, et de sa confirmation.</comment>
+  </data>
+  <data name="CommunityUninstallConfirm" xml:space="preserve">
+    <value>Ses cases seront retirées de l'écran.</value>
+    <comment>Confirmation avant de désinstaller un module.</comment>
+  </data>
+  <data name="DialogInvalidPackage" xml:space="preserve">
+    <value>Ce paquet n'est pas valide.</value>
+    <comment>Boîte d'installation : le paquet a des erreurs, dont aucune ne se lit une fois nettoyée.</comment>
+  </data>
+  <data name="DialogPreparationFailed" xml:space="preserve">
+    <value>La mise à jour n'a pas pu être préparée.</value>
+    <comment>Boîte de mise à jour : le service refuse sans dire pourquoi.</comment>
+  </data>
+  <data name="CommunityFolderTitle" xml:space="preserve">
+    <value>Dossier des modules</value>
+    <comment>Titre de la zone du dossier des modules, dans Paramètres.</comment>
+  </data>
+  <data name="CommunityFolderHelp" xml:space="preserve">
+    <value>Les nouveaux modules sont rangés ici. Ceux qui sont déjà installés restent où ils sont.</value>
+    <comment>Sous le dossier des modules.</comment>
+  </data>
+  <data name="CommunityFolderChange" xml:space="preserve">
+    <value>Changer…</value>
+    <comment>Bouton : choisit le dossier des modules.</comment>
+  </data>
+  <data name="CommunityFolderPickTitle" xml:space="preserve">
+    <value>Choisir le dossier des modules</value>
+    <comment>Titre du sélecteur de dossier.</comment>
+  </data>
+  <data name="DeveloperTitle" xml:space="preserve">
+    <value>Mode développeur</value>
+    <comment>Titre de la zone du mode développeur.</comment>
+  </data>
+  <data name="DeveloperHelp" xml:space="preserve">
+    <value>Charge un module depuis son dossier de travail, sans fichier .avmod, pour l'essayer pendant que tu l'écris. Éteint, ces modules disparaissent de l'écran.</value>
+    <comment>Sous l'interrupteur du mode développeur.</comment>
+  </data>
+  <data name="DeveloperBanner" xml:space="preserve">
+    <value>Mode développeur actif</value>
+    <comment>Bandeau en haut de la fenêtre tant que le mode développeur est allumé.</comment>
+  </data>
+  <data name="DeveloperFolders" xml:space="preserve">
+    <value>Dossiers de travail</value>
+    <comment>Titre de la liste des dossiers du mode développeur.</comment>
+  </data>
+  <data name="DeveloperNoFolders" xml:space="preserve">
+    <value>Aucun dossier de travail pour l'instant.</value>
+    <comment>Liste des dossiers de travail vide.</comment>
+  </data>
+  <data name="DeveloperNoModule" xml:space="preserve">
+    <value>Aucun module lisible dans ce dossier.</value>
+    <comment>Ligne d'un dossier de travail dont le module n'est pas dans la liste.</comment>
+  </data>
+  <data name="DeveloperAddFolder" xml:space="preserve">
+    <value>Ajouter un dossier…</value>
+    <comment>Bouton : choisit le dossier de travail d'un module.</comment>
+  </data>
+  <data name="DeveloperPickTitle" xml:space="preserve">
+    <value>Choisir le dossier de travail d'un module</value>
+    <comment>Titre du sélecteur de dossier.</comment>
+  </data>
+  <data name="DeveloperReload" xml:space="preserve">
+    <value>Recharger</value>
+    <comment>Bouton d'une ligne : recharge le module avec les fichiers de son dossier.</comment>
+  </data>
+  <data name="DeveloperRemove" xml:space="preserve">
+    <value>Retirer</value>
+    <comment>Bouton d'une ligne : retire le dossier de la liste (le dossier lui-même n'est pas touché).</comment>
+  </data>
+  <data name="DialogDevTitle" xml:space="preserve">
+    <value>Tester un module en développement</value>
+    <comment>Titre de la boîte qui ajoute un dossier de travail ou recharge son module.</comment>
+  </data>
+  <data name="DialogDevAdd" xml:space="preserve">
+    <value>Ajouter</value>
+    <comment>Bouton de confirmation de la boîte d'un dossier de travail.</comment>
+  </data>
+  <data name="ConsumptionTitle" xml:space="preserve">
+    <value>Consommation des modules</value>
+    <comment>Titre de section, dans Paramètres.</comment>
+  </data>
+  <data name="ConsumptionHelp" xml:space="preserve">
+    <value>Le service entier, qui fait tourner les modules d'origine, et chaque module complémentaire. Relu toutes les 5 secondes tant que cette section est affichée.</value>
+    <comment>Sous le titre de la consommation.</comment>
+  </data>
+  <data name="ConsumptionModule" xml:space="preserve">
+    <value>Module</value>
+    <comment>En-tête de colonne du tableau de consommation.</comment>
+  </data>
+  <data name="ConsumptionCpu" xml:space="preserve">
+    <value>Processeur</value>
+    <comment>En-tête de colonne du tableau de consommation.</comment>
+  </data>
+  <data name="ConsumptionMemory" xml:space="preserve">
+    <value>Mémoire</value>
+    <comment>En-tête de colonne du tableau de consommation.</comment>
+  </data>
+  <data name="ConsumptionHigh" xml:space="preserve">
+    <value>Consommation élevée</value>
+    <comment>Repère orange d'un module qui consomme beaucoup depuis un moment.</comment>
+  </data>
+  <data name="ConsumptionCpuValue" xml:space="preserve">
+    <value>{0} %</value>
+    <comment>Processeur d'une ligne. {0} : le pourcentage, avec la virgule.</comment>
+  </data>
+  <data name="ConsumptionMemoryValue" xml:space="preserve">
+    <value>{0} Mo</value>
+    <comment>Mémoire d'une ligne. {0} : les mégaoctets.</comment>
+  </data>
+  <data name="ConsumptionHide" xml:space="preserve">
+    <value>Masquer</value>
+    <comment>Bouton : replie le tableau de consommation (plus aucune mesure demandée).</comment>
+  </data>
+  <data name="ConsumptionShow" xml:space="preserve">
+    <value>Afficher</value>
+    <comment>Bouton : déplie le tableau de consommation.</comment>
+  </data>
+  <data name="ConsumptionFailed" xml:space="preserve">
+    <value>Impossible de lire la consommation pour le moment.</value>
+    <comment>Quand le service ne répond pas à la lecture de la consommation.</comment>
+  </data>
 </root>

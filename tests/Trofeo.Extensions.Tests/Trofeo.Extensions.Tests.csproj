@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trofeo.Extensions\Trofeo.Extensions.csproj" />
+    <ProjectReference Include="..\Trofeo.TestDoubles\Trofeo.TestDoubles.csproj" />
+    <!-- La sonde de l'enfermement : construite avant les tests, puis copiée dans le sous-dossier « probe » de la sortie
+         (les tests la recopient dans un dossier temporaire avant d'en accorder la lecture à un conteneur). -->
+    <ProjectReference Include="..\Trofeo.SandboxProbe\Trofeo.SandboxProbe.csproj" ReferenceOutputAssembly="false" />
+    <!-- Le vrai hôte de module et un module d'essai, pour les tests du superviseur (copiés dans « host » et « sample »). -->
+    <ProjectReference Include="..\..\src\Trofeo.ModuleHost\Trofeo.ModuleHost.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Trofeo.ModuleHost.Tests.SampleModule\Trofeo.ModuleHost.Tests.SampleModule.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <Target Name="CopySandboxProbe" AfterTargets="Build">
+    <ItemGroup>
+      <SandboxProbeFile Include="$(MSBuildThisFileDirectory)..\Trofeo.SandboxProbe\bin\$(Configuration)\$(TargetFramework)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SandboxProbeFile)" DestinationFolder="$(OutDir)probe\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyHostAndSample" AfterTargets="Build">
+    <ItemGroup>
+      <HostFile Include="$(MSBuildThisFileDirectory)..\..\src\Trofeo.ModuleHost\bin\$(Configuration)\net10.0-windows10.0.19041.0\**\*" />
+      <SampleFile Include="$(MSBuildThisFileDirectory)..\Trofeo.ModuleHost.Tests.SampleModule\bin\$(Configuration)\net10.0\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(HostFile)" DestinationFolder="$(OutDir)host\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(SampleFile)" DestinationFolder="$(OutDir)sample\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -6,12 +6,17 @@ namespace Trofeo.ModuleKit;
 /// Un module du tableau de bord. Règles de threads : <see cref="Invalidated"/> et <see cref="StatusChanged"/>
 /// peuvent être levés depuis n'importe quel thread (le minuteur du module, par exemple) ; <see cref="Render"/>
 /// est appelé sur le thread d'affichage, qui n'est pas celui du minuteur du module, donc l'état lu au rendu
-/// doit pouvoir être lu en concurrence.
+/// doit pouvoir être lu en concurrence. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.
 /// </summary>
 public interface IModule : IDisposable
 {
+    /// <summary>Ce qui décrit le type de module (identifiant, nom, tailles). Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
     ModuleDescriptor Descriptor { get; }
+
+    /// <summary>L'état du module. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
     ModuleStatus Status { get; }
+
+    /// <summary>Vrai tant que le module veut être redessiné en continu. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
     bool IsAnimating { get; }
 
     /// <summary>
@@ -26,6 +31,7 @@ public interface IModule : IDisposable
     /// </summary>
     event EventHandler? StatusChanged;
 
+    /// <summary>Démarre le module. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.</summary>
     Task StartAsync(CancellationToken ct);
 
     /// <summary>

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using AshboardVision.Sdk;
 using Trofeo.Control;
 using Trofeo.ModuleKit;
 using Trofeo.Settings.Services;
@@ -31,7 +32,105 @@ public class ServiceLinkTests
         /// <summary>La version du protocole annoncée à la connexion.</summary>
         public int Protocol { get; init; } = ControlPipe.ProtocolVersion;
 
-        public Welcome Hello() => new("1.0.0", Protocol, []);
+        public Welcome Hello() => new("1.0.0", Protocol, HelloTypes);
+
+        /// <summary>Les types annoncés à la connexion.</summary>
+        public IReadOnlyList<ModuleTypeInfo> HelloTypes { get; init; } = [];
+
+        /// <summary>Les types que le service connaît maintenant : une installation ou un retrait les change.</summary>
+        public volatile IReadOnlyList<ModuleTypeInfo> CurrentTypes = [];
+
+        public int TypesCalls;
+        public readonly ConcurrentQueue<string> ModuleCalls = new();
+
+        public IReadOnlyList<ModuleTypeInfo> GetTypes()
+        {
+            Interlocked.Increment(ref TypesCalls);
+            return CurrentTypes;
+        }
+
+        public static ModuleTypeInfo CommunityType(string id) =>
+            new(id, "Démo", new GridSize(2, 1), new Dictionary<SizePreset, GridSize>(), false, SettingsSchema.Empty,
+                new CommunityTypeInfo("Alex", "Démo", "1.0.0", [ModulePermission.Internet], [ModulePermission.Internet]));
+
+        /// <summary>Si posé, le prochain changement a lieu (les types changent) puis lève : le service répond « error ».</summary>
+        public volatile bool FailNextChange;
+
+        private ActionResult Changing(string call)
+        {
+            ModuleCalls.Enqueue(call);
+            CurrentTypes = [.. CurrentTypes, CommunityType("alex.t" + CurrentTypes.Count)];
+            if (FailNextChange)
+            {
+                FailNextChange = false;
+                throw new InvalidOperationException("Le dossier du module est verrouillé.");
+            }
+
+            return new ActionResult(true, "Fait.");
+        }
+
+        public CommunityOverview GetCommunity()
+        {
+            ModuleCalls.Enqueue("community");
+            return new CommunityOverview([], @"C:\Modules", false, [], false);
+        }
+
+        public PackageInfo InspectPackage(string path)
+        {
+            ModuleCalls.Enqueue("inspect " + path);
+            return new PackageInfo("alex.demo", "Démo", "Alex", "1.0.0", "Démo", [], [], null, null);
+        }
+
+        public PackageInfo InspectDevFolder(string path)
+        {
+            ModuleCalls.Enqueue("inspectDev " + path);
+            return new PackageInfo("alex.dev", "Dev", "Alex", "0.1.0", "Dev", [], [], null, null);
+        }
+
+        public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+            Task.FromResult(Changing("install " + path));
+
+        public ActionResult ApproveModule(string id, IReadOnlyList<ModulePermission> granted) => Changing("approve " + id);
+
+        public Task<ActionResult> SetModulePermissionsAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+            Task.FromResult(Changing("permissions " + id));
+
+        public Task<ActionResult> UninstallModuleAsync(string id, CancellationToken ct) => Task.FromResult(Changing("uninstall " + id));
+
+        public Task<ActionResult> RelaunchModuleAsync(string id, CancellationToken ct) => Task.FromResult(Changing("relaunch " + id));
+
+        public ActionResult SetModulesRoot(string path) => Changing("root " + path);
+
+        public ActionResult SetDeveloperMode(bool on) => Changing("dev " + on);
+
+        public ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted) => Changing("addDev " + path);
+
+        public ActionResult RemoveDevFolder(string path) => Changing("removeDev " + path);
+
+        public Task<ActionResult> ReloadDevModuleAsync(string id, CancellationToken ct) => Task.FromResult(Changing("reloadDev " + id));
+
+        public Task CheckModuleUpdatesAsync(CancellationToken ct)
+        {
+            ModuleCalls.Enqueue("checkModuleUpdates");
+            return Task.CompletedTask;
+        }
+
+        public Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id, CancellationToken ct)
+        {
+            ModuleCalls.Enqueue("prepare " + id);
+            return Task.FromResult(new ModuleUpdatePreparation(true, null, "1.3.0", "Notes.", [ModulePermission.Internet], []));
+        }
+
+        public void CancelModuleUpdate(string id) => ModuleCalls.Enqueue("cancel " + id);
+
+        public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+            Task.FromResult(Changing("update " + id));
+
+        public IReadOnlyList<ModuleConsumption> GetConsumption()
+        {
+            ModuleCalls.Enqueue("consumption");
+            return [new ModuleConsumption("service", "Service", false, 0.3, 50_000_000, false)];
+        }
 
         public ServiceStatus GetStatus() => new(
             new ScreenInfo(LinkScreenState.Ready, null), false, [],
@@ -153,6 +252,160 @@ public class ServiceLinkTests
         // L'état change côté service : la relecture de chaque seconde le rapporte.
         handler.Update = handler.Update with { State = LinkUpdateState.UpToDate };
         await WaitUntilAsync(() => link.Updates!.State == LinkUpdateState.UpToDate, "relecture des mises à jour");
+    }
+
+    [Fact]
+    public async Task Types_StartAsTheWelcomeOnes_AndAreNullWhenNotConnected()
+    {
+        var pipe = NewPipeName();
+        var link = NewLink(pipe);
+        await using var _ = link;
+        Assert.Null(link.Types);
+        var handler = new Handler { HelloTypes = [Handler.CommunityType("alex.demo")] };
+        var server = new ControlServer(pipe, handler);
+        server.Start();
+
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+
+        Assert.Equal(["alex.demo"], link.Types!.Select(t => t.TypeId));
+
+        server.Dispose();
+        await WaitUntilAsync(() => link.State != LinkState.Connected, "coupure");
+        Assert.Null(link.Types);
+    }
+
+    [Fact]
+    public async Task Types_RefreshedAfterInstall()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler();
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+        Assert.Empty(link.Types!);
+        var changes = 0;
+        link.Changed += () => Interlocked.Increment(ref changes);
+
+        var result = await link.InstallPackageAsync(@"C:\a.avmod", [ModulePermission.Internet]);
+
+        Assert.True(result.Ok);
+        Assert.Equal(["alex.t0"], link.Types!.Select(t => t.TypeId)); // relus sans attendre quoi que ce soit
+        Assert.NotNull(link.Types![0].Community);
+        Assert.True(Volatile.Read(ref changes) > 0);
+        Assert.Equal(["install C:\\a.avmod"], handler.ModuleCalls.ToArray());
+    }
+
+    [Fact]
+    public async Task Types_ReadTimesOutAfterASuccessfulChange_TheChangeStaysASuccess()
+    {
+        var pipe = NewPipeName();
+        using var server = new ControlServer(pipe, new Handler());
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+        var before = link.Types;
+        link.TypesReader = (_, _) => throw new TimeoutException("Le service n'a pas répondu à « types » dans le délai.");
+
+        var result = await link.InstallPackageAsync(@"C:.avmod", [ModulePermission.Internet]);
+
+        Assert.True(result.Ok);
+        Assert.Same(before, link.Types); // on garde ce qu'on avait
+    }
+
+    [Fact]
+    public async Task Types_ReadCancelledAfterASuccessfulChange_TheChangeStaysASuccess()
+    {
+        var pipe = NewPipeName();
+        using var server = new ControlServer(pipe, new Handler());
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+        link.TypesReader = (_, _) => throw new OperationCanceledException();
+
+        var result = await link.UninstallModuleAsync("alex.demo");
+
+        Assert.True(result.Ok);
+    }
+
+    [Fact]
+    public async Task Types_ChangeRequestThatThrows_StillReadsTheTypesAgain()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler { FailNextChange = true };
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+        Assert.Empty(link.Types!);
+
+        // Le service a changé quelque chose avant d'échouer (ou le délai est passé alors qu'il finissait) : la liste doit le dire.
+        var ex = await Assert.ThrowsAsync<ControlException>(() => link.InstallPackageAsync(@"C:.avmod", [ModulePermission.Internet]));
+
+        Assert.Equal("Le dossier du module est verrouillé.", ex.Message);
+        Assert.Equal(["alex.t0"], link.Types!.Select(t => t.TypeId));
+    }
+
+    [Fact]
+    public async Task Types_ReadAgainAfterEveryChange_ButNotAfterAReadOnlyRequest()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler();
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => link.State == LinkState.Connected, "connexion");
+        var granted = new[] { ModulePermission.Internet };
+
+        var changes = new Func<Task<ActionResult>>[]
+        {
+            () => link.InstallPackageAsync("a", granted),
+            () => link.ApproveModuleAsync("alex.demo", granted),
+            () => link.SetModulePermissionsAsync("alex.demo", granted),
+            () => link.UninstallModuleAsync("alex.demo"),
+            () => link.RelaunchModuleAsync("alex.demo"),
+            () => link.SetModulesRootAsync("D:"),
+            () => link.SetDeveloperModeAsync(true),
+            () => link.AddDevFolderAsync("C:", granted),
+            () => link.RemoveDevFolderAsync("C:"),
+            () => link.ReloadDevModuleAsync("alex.demo"),
+            () => link.InstallModuleUpdateAsync("alex.demo", granted),
+        };
+        foreach (var change in changes)
+        {
+            var before = Volatile.Read(ref handler.TypesCalls);
+            Assert.True((await change()).Ok);
+            Assert.Equal(before + 1, Volatile.Read(ref handler.TypesCalls));
+        }
+
+        Assert.Equal(changes.Length, link.Types!.Count);
+
+        var calls = Volatile.Read(ref handler.TypesCalls);
+        Assert.Equal(@"C:\Modules", (await link.GetCommunityAsync()).ModulesRoot);
+        Assert.Equal("alex.demo", (await link.InspectPackageAsync("x.avmod")).Id);
+        Assert.Equal("alex.dev", (await link.InspectDevFolderAsync("C:")).Id); // examiner un dossier ne change rien : pas de relecture des types
+        await link.CheckModuleUpdatesAsync();
+        Assert.Equal("service", Assert.Single(await link.GetConsumptionAsync()).Id);
+        // Préparer une mise à jour (télécharger, lire) et l'abandonner ne changent encore aucun module : rien à relire.
+        var preparation = await link.PrepareModuleUpdateAsync("alex.demo");
+        await link.CancelModuleUpdateAsync("alex.demo");
+        Assert.True(preparation.Ok);
+        Assert.Equal("1.3.0", preparation.Version);
+        Assert.Equal(calls, Volatile.Read(ref handler.TypesCalls));
+        Assert.Contains("prepare alex.demo", handler.ModuleCalls);
+        Assert.Contains("cancel alex.demo", handler.ModuleCalls);
+    }
+
+    [Fact]
+    public async Task ModuleRequests_ServiceAbsent_ThrowControlException()
+    {
+        await using var link = NewLink(NewPipeName());
+
+        await Assert.ThrowsAsync<ControlException>(() => link.InstallPackageAsync("a", []));
+        await Assert.ThrowsAsync<ControlException>(() => link.GetCommunityAsync());
+        await Assert.ThrowsAsync<ControlException>(() => link.GetConsumptionAsync());
+        await Assert.ThrowsAsync<ControlException>(() => link.PrepareModuleUpdateAsync("alex.demo"));
+        await Assert.ThrowsAsync<ControlException>(() => link.CancelModuleUpdateAsync("alex.demo"));
     }
 
     [Fact]

@@ -63,6 +63,31 @@ public class SettingsSchemaTests
     }
 
     [Fact]
+    public void Schema_NumberAndPortFields_RoundTripAsJson()
+    {
+        var schema = new SettingsSchema(
+        [
+            new NumberField("days", "Jours", 1, 30, 7) { Help = "Entre 1 et 30." },
+            new PortField("port", "Port", 25565) { VisibleWhen = new FieldCondition("days", "7") },
+        ]);
+        var json = JsonSerializer.Serialize(schema);
+
+        using var doc = JsonDocument.Parse(json);
+        var kinds = doc.RootElement.GetProperty("Fields").EnumerateArray()
+            .Select(f => f.GetProperty("kind").GetString()!).ToArray();
+        Assert.Equal(["number", "port"], kinds);
+
+        var back = JsonSerializer.Deserialize<SettingsSchema>(json)!;
+        var number = Assert.IsType<NumberField>(back.Fields[0]);
+        Assert.Equal((1, 30, 7), (number.Min, number.Max, number.Default));
+        Assert.Equal("Entre 1 et 30.", number.Help);
+        var port = Assert.IsType<PortField>(back.Fields[1]);
+        Assert.Equal(25565, port.Default);
+        Assert.Equal(new FieldCondition("days", "7"), port.VisibleWhen);
+        Assert.Equal(json, JsonSerializer.Serialize(back));
+    }
+
+    [Fact]
     public async Task Factory_DefaultLookupAndAction_AreHarmless()
     {
         IConfigurableModuleFactory factory = new MinimalFactory();

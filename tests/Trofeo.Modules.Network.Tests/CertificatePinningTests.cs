@@ -1,4 +1,5 @@
 using System.Net.Security;
+using Trofeo.ModuleKit;
 
 namespace Trofeo.Modules.Network.Tests;
 

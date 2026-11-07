@@ -83,6 +83,7 @@ internal static class Program
         RenderShortcuts(folder, scratch, jpeg, connected.Welcome, connected.Status);
         RenderSettings(folder, scratch, jpeg, connected.Welcome, connected.Status);
         RenderFirstRun(folder, scratch, jpeg, connected.Welcome, connected.Status);
+        RenderCommunity(folder, scratch, jpeg, connected.Welcome, connected.Status);
 
         // L'onglet Disposition : un module choisi, des glissements (libre, refusé), l'ajout, l'oubli à confirmer.
         var layoutStatus = connected.Status with
@@ -647,6 +648,342 @@ internal static class Program
         Shot("assistant-sans-claude-reseau.png", 1440, 900, Connected, FirstRunStep.Network, layout: withoutClaude);
     }
 
+    /// <summary>
+    /// Les modules complémentaires : la section de l'onglet Paramètres, la boîte (installer, erreurs, valider, mise à jour avec ses
+    /// nouvelles permissions, un nom démesuré), le point d'exclamation jaune dans les listes, l'en-tête et un angle de la case, et les
+    /// champs numérique et de port d'un module.
+    /// </summary>
+    private static void RenderCommunity(string folder, string scratch, byte[] jpeg, Welcome welcome, ServiceStatus status)
+    {
+        static void Run(Task task) => task.GetAwaiter().GetResult();
+        static System.Text.Json.JsonElement Json(string json) => System.Text.Json.JsonDocument.Parse(json).RootElement.Clone();
+        const string path = @"C:\Users\Alex\Downloads\alex.minecraft-1.0.0.avmod";
+        const string devPath = @"C:\Users\Alex\dev\horloge-mondiale";
+        const string oldDevPath = @"C:\Users\Alex\dev\ancien-essai";
+
+        var community = new CommunityTypeInfo(
+            "Alex", "Surveille ton serveur Minecraft : joueurs connectés et latence.", "1.0.0",
+            [AshboardVision.Sdk.ModulePermission.ThisComputer, AshboardVision.Sdk.ModulePermission.Internet],
+            [AshboardVision.Sdk.ModulePermission.ThisComputer]);
+        var minecraft = new ModuleTypeInfo(
+            "alex.minecraft", "Serveur Minecraft", new Trofeo.ModuleKit.GridSize(3, 1),
+            new Dictionary<Trofeo.ModuleKit.SizePreset, Trofeo.ModuleKit.GridSize> { [Trofeo.ModuleKit.SizePreset.Ideal] = new(4, 2) }, false,
+            new Trofeo.ModuleKit.SettingsSchema(
+            [
+                new Trofeo.ModuleKit.TextField("name", "Nom affiché") { Placeholder = "Mon serveur" },
+                new Trofeo.ModuleKit.PortField("port", "Port du serveur", 25565) { Help = "Le port sur lequel ton serveur écoute sur ce PC." },
+                new Trofeo.ModuleKit.NumberField("refresh", "Actualiser toutes les (secondes)", 5, 300, 30),
+            ]),
+            community);
+        var layoutWith = Base with
+        {
+            Placements =
+            [
+                .. Base.Placements.Where(p => p.TypeId != "clock"),
+                new ModulePlacement(CommunityFixture.DemoId, "alex.minecraft", 12, 0, 4, 2, Trofeo.ModuleKit.TextSize.Normal, Json("""{"port":25565}""")),
+            ],
+            Shelf = [],
+        };
+        IReadOnlyList<ModuleTypeInfo> types = [.. SampleData.Types(), minecraft];
+        void Connected(FakeServiceLink link)
+        {
+            link.Set(LinkState.Connected, welcome, status);
+            link.SetTypes(types);
+            link.Consumption.Add(new ModuleConsumption("originaux", "Modules d'origine (dans le service)", false, 0.8, 44L * 1024 * 1024, false));
+            link.Package = CommunityFixture.Package(
+                id: "alex.minecraft", name: "Serveur Minecraft", author: "Alex", version: "1.0.0", description: "Surveille ton serveur Minecraft : joueurs connectés et latence.",
+                declared: [AshboardVision.Sdk.ModulePermission.ThisComputer, AshboardVision.Sdk.ModulePermission.Internet, AshboardVision.Sdk.ModulePermission.Sensors]);
+        }
+
+        CommunityModuleInfo Module(string id, string name, string author, LinkCommunityState state = LinkCommunityState.Ready, string? message = null,
+            string? update = null, string? notes = null, string version = "1.0.0", bool dev = false, string? devPath = null) =>
+            CommunityFixture.Module(id, state, version, [AshboardVision.Sdk.ModulePermission.ThisComputer, AshboardVision.Sdk.ModulePermission.Internet],
+                [AshboardVision.Sdk.ModulePermission.ThisComputer], update, notes, message, dev, name, author, "Un module de la communauté.", devPath);
+        var modules = new[]
+        {
+            Module("alex.minecraft", "Serveur Minecraft", "Alex", update: "1.1.0", notes: "Le nombre de joueurs se met à jour toutes les 5 secondes."),
+            Module("bob.meteo", "Météo détaillée", "Bob", LinkCommunityState.SetAside, "Il s'est arrêté trois fois en dix minutes : relance-le quand tu auras vu pourquoi.", version: "2.3.1"),
+            Module("carl.horloge", "Horloge mondiale", "Carl", LinkCommunityState.NeedsApproval, "À valider dans la fenêtre de réglage", version: "0.4.0"),
+            Module("dora.dev", "Module en cours d'écriture", "Dora", dev: true, version: "0.0.1", devPath: devPath),
+        };
+        void Listed(FakeServiceLink link)
+        {
+            Connected(link);
+            link.Community = new CommunityOverview(modules, @"C:\Users\Alex\Documents\Ashboard Vision\Modules", true, [devPath, oldDevPath], false);
+            // Les mesures : les modules d'origine, un module léger, un module gourmand.
+            link.Consumption.Add(new ModuleConsumption("alex.minecraft", "Serveur Minecraft", true, 0.3, 61L * 1024 * 1024, false));
+            link.Consumption.Add(new ModuleConsumption("dora.dev", "Module en cours d'écriture", true, 3.4, 212L * 1024 * 1024, true));
+            // Le dossier de travail déclare maintenant une permission de plus (Capteurs) que celles accordées.
+            link.DevFolder = new PackageInfo("dora.dev", "Module en cours d'écriture", "Dora", "0.0.2", "Un module de la communauté.",
+                [AshboardVision.Sdk.ModulePermission.ThisComputer, AshboardVision.Sdk.ModulePermission.Internet, AshboardVision.Sdk.ModulePermission.Sensors], [], null, null);
+        }
+
+        void OpenSettings(MainViewModel model) => model.SelectedTab = model.SettingsTab;
+
+        // La section : un module actif avec une mise à jour proposée, un module mis de côté, un module à valider, un dossier de développement.
+        Render(folder, scratch, "parametres-modules-complementaires.png", 1440, 2600, jpeg, Listed, (_, model) => OpenSettings(model), layout: layoutWith);
+
+        Render(folder, scratch, "parametres-modules-complementaires-1200x760.png", 1200, 760, jpeg, Listed, (_, model) => OpenSettings(model), layout: layoutWith);
+
+        Render(folder, scratch, "parametres-modules-complementaires-desinstaller.png", 1440, 2600, jpeg, Listed, (_, model) =>
+        {
+            OpenSettings(model);
+            model.SettingsTab.Community.Modules[0].AskUninstallCommand.Execute(null);
+        }, layout: layoutWith);
+
+        Render(folder, scratch, "parametres-modules-complementaires-vide.png", 1440, 1900, jpeg, Connected, (_, model) => OpenSettings(model));
+
+        Render(folder, scratch, "parametres-modules-complementaires-liste-alteree.png", 1440, 2000, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.Community = link.Community with { StoreTampered = true, Modules = [Module("alex.minecraft", "Serveur Minecraft", "Alex", LinkCommunityState.NeedsApproval, "À valider dans la fenêtre de réglage")] };
+            },
+            (_, model) => OpenSettings(model));
+
+        Render(folder, scratch, "parametres-modules-complementaires-refus.png", 1440, 2600, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.ModuleResult = new Trofeo.ModuleKit.ActionResult(false, "Le dossier du module est utilisé par un autre programme : ferme-le puis recommence.");
+            },
+            (_, model) =>
+            {
+                OpenSettings(model);
+                Run(model.SettingsTab.Community.Modules[0].ConfirmUninstallCommand.ExecuteAsync(null));
+            }, layout: layoutWith);
+
+        // Le mode développeur éteint : ni liste de dossiers, ni bandeau ; le dossier des modules et la consommation restent.
+        Render(folder, scratch, "parametres-mode-developpeur-eteint.png", 1440, 2000, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.Community = link.Community with { DeveloperMode = false, DevFolders = [], Modules = [.. modules.Where(m => !m.FromDevFolder)] };
+            },
+            (_, model) => OpenSettings(model), layout: layoutWith);
+
+        // Le dossier des modules changé vers un dossier que le service refuse : son message tel quel, la section reste.
+        Render(folder, scratch, "parametres-dossier-refus.png", 1440, 2600, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.ModuleResult = new Trofeo.ModuleKit.ActionResult(false, "Choisis un dossier, pas la racine d'un disque.");
+            },
+            (_, model) =>
+            {
+                OpenSettings(model);
+                Run(model.SettingsTab.Community.ChangeModulesFolderAsync());
+            }, layout: layoutWith, picker: new FakeFilePicker { FolderResult = @"C:\" });
+
+        // La consommation repliée : plus aucune mesure demandée.
+        Render(folder, scratch, "parametres-consommation-repliee.png", 1440, 2600, jpeg, Listed,
+            (_, model) =>
+            {
+                OpenSettings(model);
+                model.SettingsTab.Community.Consumption.ToggleCommand.Execute(null);
+            }, layout: layoutWith);
+
+        // Le bandeau du mode développeur, dans un autre onglet.
+        Render(folder, scratch, "disposition-mode-developpeur.png", 1440, 900, jpeg, Listed, (_, _) => { }, layout: layoutWith);
+
+        // Ajouter un dossier de travail : le même avertissement et les mêmes cases qu'une installation, décochées ; le titre dit le mode.
+        Render(folder, scratch, "dialogue-dossier-travail.png", 1440, 900, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.DevFolder = new PackageInfo(
+                    "alex.horloge", "Horloge mondiale", "Alex", "0.1.0", "Plusieurs fuseaux horaires sur une même case.",
+                    [AshboardVision.Sdk.ModulePermission.Internet, AshboardVision.Sdk.ModulePermission.Sensors], [], null, null);
+            },
+            (_, model) =>
+            {
+                OpenSettings(model);
+                Run(model.SettingsTab.Community.AddDevFolderAsync());
+            }, picker: new FakeFilePicker { FolderResult = @"C:\Users\Alex\dev\nouveau-module" });
+
+        Render(folder, scratch, "dialogue-dossier-travail-erreurs.png", 1440, 900, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.DevFolder = new PackageInfo(
+                    "alex.minecraft", "Horloge mondiale", "Alex", "0.1.0", "x", [AshboardVision.Sdk.ModulePermission.Internet],
+                    ["Un module installé porte déjà cet identifiant : désinstalle-le ou change l'identifiant."], null, null);
+            },
+            (_, model) =>
+            {
+                OpenSettings(model);
+                Run(model.SettingsTab.Community.AddDevFolderAsync());
+            }, picker: new FakeFilePicker { FolderResult = @"C:\Users\Alex\dev\copie" });
+
+        // Recharger un module dont le dossier demande une permission de plus : l'accordé est coché, la nouvelle décochée et signalée.
+        Render(folder, scratch, "dialogue-dossier-travail-recharger.png", 1440, 900, jpeg, Listed, (_, model) =>
+        {
+            OpenSettings(model);
+            Run(model.SettingsTab.Community.DevFolders[0].ReloadCommand.ExecuteAsync(null));
+        });
+
+        // La boîte d'installation : l'avertissement, les trois permissions déclarées, décochées.
+        Render(folder, scratch, "dialogue-installation.png", 1440, 900, jpeg, Connected, (_, model) =>
+            Run(model.SettingsTab.Community.OpenPackageAsync(path)));
+
+        Render(folder, scratch, "dialogue-installation-1200x760.png", 1200, 760, jpeg, Connected, (_, model) =>
+        {
+            Run(model.SettingsTab.Community.OpenPackageAsync(path));
+            model.SettingsTab.Community.Dialog!.Permissions[0].IsChecked = true;
+        });
+
+        Render(folder, scratch, "dialogue-installation-erreurs.png", 1440, 900, jpeg,
+            link =>
+            {
+                Connected(link);
+                link.Package = CommunityFixture.Package(
+                    id: "alex.minecraft", name: "Serveur Minecraft", errors: ["Le paquet contient plus de 1 000 fichiers.", @"Chemin refusé : ..\evil.dll."],
+                    conflict: "Un autre module porte déjà cet identifiant. Désinstalle-le d'abord.");
+            },
+            (_, model) => Run(model.SettingsTab.Community.OpenPackageAsync(path)));
+
+        Render(folder, scratch, "dialogue-installation-refus.png", 1440, 900, jpeg,
+            link =>
+            {
+                Connected(link);
+                link.ModuleResult = new Trofeo.ModuleKit.ActionResult(false, "Un autre module porte déjà cet identifiant.");
+            },
+            (_, model) =>
+            {
+                Run(model.SettingsTab.Community.OpenPackageAsync(path));
+                Run(model.SettingsTab.Community.Dialog!.ConfirmAsync());
+            });
+
+        Render(folder, scratch, "dialogue-validation.png", 1440, 900, jpeg, Listed, (_, model) =>
+        {
+            OpenSettings(model);
+            model.SettingsTab.Community.Modules[2].ApproveCommand.Execute(null);
+        });
+
+        Render(folder, scratch, "dialogue-permissions.png", 1440, 900, jpeg, Listed, (_, model) =>
+        {
+            OpenSettings(model);
+            model.SettingsTab.Community.Modules[0].PermissionsCommand.Execute(null);
+        });
+
+        // La mise à jour en deux temps : le téléchargement (version et notes de la liste), puis les notes du paquet et les cases.
+        var gate = new TaskCompletionSource<ModuleUpdatePreparation>();
+        Render(folder, scratch, "dialogue-mise-a-jour-telechargement.png", 1440, 900, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.OnPrepare = _ => gate.Task;
+            },
+            (_, model) =>
+            {
+                OpenSettings(model);
+                var downloading = model.SettingsTab.Community.Modules[0].UpdateCommand.ExecuteAsync(null); // le téléchargement dure : on le photographie en route
+                GC.KeepAlive(downloading);
+            });
+
+        Render(folder, scratch, "dialogue-mise-a-jour.png", 1440, 900, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.Preparation = new ModuleUpdatePreparation(
+                    true, null, "1.1.0", "Le nombre de joueurs se met à jour toutes les 5 secondes.\nNouveau : la latence s'affiche en millisecondes.",
+                    [AshboardVision.Sdk.ModulePermission.ThisComputer, AshboardVision.Sdk.ModulePermission.Internet, AshboardVision.Sdk.ModulePermission.NowPlaying],
+                    [AshboardVision.Sdk.ModulePermission.NowPlaying]);
+            },
+            (_, model) =>
+            {
+                OpenSettings(model);
+                Run(model.SettingsTab.Community.Modules[0].UpdateCommand.ExecuteAsync(null));
+            });
+
+        Render(folder, scratch, "dialogue-mise-a-jour-refus.png", 1440, 900, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.Preparation = new ModuleUpdatePreparation(false, "L'empreinte du paquet ne correspond pas à celle publiée : téléchargement abandonné.", null, null, [], []);
+            },
+            (_, model) =>
+            {
+                OpenSettings(model);
+                Run(model.SettingsTab.Community.Modules[0].UpdateCommand.ExecuteAsync(null));
+            });
+
+        // Un nom, un auteur et une description démesurés : la mise en page tient.
+        var longName = "Un-nom-de-module-sans-aucun-espace-" + new string('x', 300);
+        Render(folder, scratch, "dialogue-nom-tres-long.png", 1440, 900, jpeg,
+            link =>
+            {
+                Connected(link);
+                link.Package = CommunityFixture.Package(
+                    id: "alex.minecraft", name: longName, author: "Un auteur très " + new string('b', 200),
+                    description: string.Join(' ', Enumerable.Repeat("Une description vraiment très longue qui n'en finit pas.", 40)));
+            },
+            (_, model) => Run(model.SettingsTab.Community.OpenPackageAsync(path)));
+
+        Render(folder, scratch, "parametres-modules-complementaires-nom-tres-long.png", 1440, 2000, jpeg,
+            link =>
+            {
+                Listed(link);
+                link.Community = link.Community with { Modules = [Module("alex.minecraft", longName, "Un auteur très " + new string('b', 200), update: "1.1.0")] };
+            },
+            (_, model) => OpenSettings(model));
+
+        // Le point d'exclamation jaune : dans un angle de la case, dans la liste « Ajouter un module » et dans la liste des modules placés.
+        Render(folder, scratch, "disposition-module-complementaire.png", 1440, 900, jpeg, Connected,
+            (_, model) => model.LayoutTab.Select(CommunityFixture.DemoId), layout: layoutWith);
+
+        Render(folder, scratch, "disposition-ajout-complementaire.png", 1440, 900, jpeg,
+            link =>
+            {
+                Connected(link);
+                link.SetTypes([.. SampleData.Types(), minecraft, CommunityFixture.DemoType("bob.meteo", longName[..60], "Bob")]);
+            },
+            (window, _) =>
+            {
+                var add = window.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "AddButton");
+                add.Flyout!.ShowAt(add);
+            }, layout: layoutWith);
+
+        // Le nom démesuré dans les listes de l'onglet Disposition.
+        Render(folder, scratch, "disposition-nom-tres-long.png", 1440, 900, jpeg,
+            link =>
+            {
+                Connected(link);
+                link.SetTypes([.. SampleData.Types(), minecraft with { DisplayName = longName }]);
+            },
+            (_, model) => model.LayoutTab.Select(CommunityFixture.DemoId), layout: layoutWith);
+
+        // Les réglages d'un module complémentaire : l'en-tête avec le point d'exclamation, la mention, les permissions accordées, le port et le nombre.
+        Render(folder, scratch, "modules-complementaire.png", 1440, 1240, jpeg, Connected,
+            (_, model) =>
+            {
+                model.SelectedTab = model.ModulesTab;
+                model.ModulesTab.Select(CommunityFixture.DemoId);
+            }, layout: layoutWith);
+
+        Render(folder, scratch, "modules-complementaire-port-invalide.png", 1440, 1240, jpeg, Connected,
+            (_, model) =>
+            {
+                model.SelectedTab = model.ModulesTab;
+                model.ModulesTab.Select(CommunityFixture.DemoId);
+                var port = model.ModulesTab.Form!.Field<Trofeo.Settings.ViewModels.Fields.NumberFieldViewModel>("port");
+                port.Text = "70000";
+                Run(port.CommitAsync());
+            }, layout: layoutWith);
+
+        Render(folder, scratch, "modules-complementaire-nom-tres-long.png", 1440, 1240, jpeg,
+            link =>
+            {
+                Connected(link);
+                link.SetTypes([.. SampleData.Types(), minecraft with { DisplayName = longName, Community = community with { Author = "Un auteur très " + new string('b', 200), Description = string.Join(' ', Enumerable.Repeat("Une description vraiment très longue.", 40)) } }]);
+            },
+            (_, model) =>
+            {
+                model.SelectedTab = model.ModulesTab;
+                model.ModulesTab.Select(CommunityFixture.DemoId);
+            }, layout: layoutWith);
+    }
+
     private static readonly Guid ClaudeId = new("3c1d9f5e-7a2b-4e8c-9b1f-6d2a0e4c8b17");
     private static readonly Guid MonitoringId = new("246ac06d-eec2-4d64-9930-24b64603a03b");
     private static readonly Guid NowPlayingId = new("8ebcc647-ab4b-401d-b2b3-f7a0ebd97b4b");
@@ -677,7 +1014,8 @@ internal static class Program
         string folder, string scratch, string name, int width, int height, byte[]? jpeg,
         Action<FakeServiceLink> state, Action<MainWindow, MainViewModel> arrange,
         DashboardLayout? layout = null, string? refuseReload = null, IReadOnlyList<string>? systemFonts = null,
-        ISecretAccess? secrets = null, TimeProvider? time = null, SystemServices? system = null, EditorPreferences? preferences = null)
+        ISecretAccess? secrets = null, TimeProvider? time = null, SystemServices? system = null, EditorPreferences? preferences = null,
+        IFilePicker? picker = null)
     {
         var link = new FakeServiceLink();
         state(link);
@@ -688,7 +1026,7 @@ internal static class Program
         var document = new LayoutDocument(store, link);
         document.Load();
         using var model = new MainViewModel(
-            link, document, preferences ?? new EditorPreferences(FirstRunDone: true), null, systemFonts ?? ["Arial", "Consolas", "Segoe UI"], secrets, time, null, system);
+            link, document, preferences ?? new EditorPreferences(FirstRunDone: true), picker, systemFonts ?? ["Arial", "Consolas", "Segoe UI"], secrets, time, null, system);
         var window = new MainWindow { DataContext = model, Width = width, Height = height };
         window.Show();
         if (jpeg is not null)

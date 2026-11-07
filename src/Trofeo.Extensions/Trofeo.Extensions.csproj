@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Les modules complémentaires : manifeste, paquet, liste scellée, supervision. Ne référence jamais
+       Trofeo.Service (c'est le service qui référence cette bibliothèque). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+    <!-- Control : seulement pour ProcessInfo et ModuleConsumption, que le service et la fenêtre de réglage échangent. Control ne connaît pas Extensions. -->
+    <ProjectReference Include="..\Trofeo.Control\Trofeo.Control.csproj" />
+    <ProjectReference Include="..\Trofeo.Core\Trofeo.Core.csproj" />
+    <ProjectReference Include="..\Trofeo.Distribution\Trofeo.Distribution.csproj" />
+    <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
+  </ItemGroup>
+
+  <!-- Sources partagées avec les aides de test des créateurs (AshboardVision.Sdk.Testing) : le faux applique les règles du vrai relais. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\PortRule.cs" Link="Shared\PortRule.cs" />
+    <Compile Include="..\Shared\SecretLimits.cs" Link="Shared\SecretLimits.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Trofeo.Extensions.Tests" />
+  </ItemGroup>
+
+</Project>

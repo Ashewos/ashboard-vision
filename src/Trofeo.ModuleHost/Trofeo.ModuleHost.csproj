@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- L'hôte de module : un exécutable sans fenêtre, lancé par le service (enfermé dans un AppContainer et un job object), qui
+       charge la DLL d'un module de la communauté et parle au service par deux tubes anonymes (arguments in et out). Il référence
+       Trofeo.Extensions pour le protocole et les images partagées (une seule implémentation). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <AssemblyTitle>Ashboard Vision - Hôte de module</AssemblyTitle>
+    <Description>Charge un module de la communauté dans un processus enfermé et lui donne son canevas.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>..\..\assets\brand\ashboard-vision.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Mémoire (décision R13, mesurée) : runtimeconfig.template.json fixe System.GC.HeapHardLimit au-dessus des 512 Mio du job, comme la sonde de
+         l'enfermement ; sans lui le ramasse-miettes s'impose 75 % de la limite et l'hôte tombe vers 390 Mo sans que le job signale rien. Garder
+         les autres réglages du ramasse-miettes par défaut : le test Probe_ManagedChurn_StaysAliveUnderTheJobLimit (tests/Trofeo.Extensions.Tests)
+         mesure qu'un module qui produit beaucoup de déchets survit avec cette configuration. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+    <ProjectReference Include="..\Trofeo.Core\Trofeo.Core.csproj" />
+    <ProjectReference Include="..\Trofeo.Extensions\Trofeo.Extensions.csproj" />
+    <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Trofeo.ModuleHost.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Les tests de l'hôte de module le lancent pour de vrai (sans enfermement, par des tubes anonymes ordinaires) avec un
+       module de test. L'hôte et les modules sont copiés dans des sous-dossiers de la sortie : « host », « sample » et « two ». -->
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trofeo.Extensions\Trofeo.Extensions.csproj" />
+    <ProjectReference Include="..\..\src\Trofeo.ModuleHost\Trofeo.ModuleHost.csproj" />
+    <ProjectReference Include="..\Trofeo.ModuleHost.Tests.SampleModule\Trofeo.ModuleHost.Tests.SampleModule.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Trofeo.ModuleHost.Tests.TwoClassesModule\Trofeo.ModuleHost.Tests.TwoClassesModule.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <Target Name="CopyHostAndModules" AfterTargets="Build">
+    <ItemGroup>
+      <HostFile Include="$(MSBuildThisFileDirectory)..\..\src\Trofeo.ModuleHost\bin\$(Configuration)\net10.0-windows10.0.19041.0\**\*" />
+      <SampleFile Include="$(MSBuildThisFileDirectory)..\Trofeo.ModuleHost.Tests.SampleModule\bin\$(Configuration)\net10.0\**\*" />
+      <TwoFile Include="$(MSBuildThisFileDirectory)..\Trofeo.ModuleHost.Tests.TwoClassesModule\bin\$(Configuration)\net10.0\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(HostFile)" DestinationFolder="$(OutDir)host\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(SampleFile)" DestinationFolder="$(OutDir)sample\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(TwoFile)" DestinationFolder="$(OutDir)two\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

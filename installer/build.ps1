@@ -4,12 +4,17 @@
     Fabrique l'installateur d'Ashboard Vision : installer/out/Ashboard-Vision-Setup-<version>.exe et son empreinte .sha256.
 
 .DESCRIPTION
-    1. publie Trofeo.Display, Trofeo.Settings et Trofeo.SensorHelper (Release, win-x64, autonome) dans installer/publish/ ;
+    1. publie Trofeo.Display, Trofeo.Settings, Trofeo.SensorHelper et Trofeo.ModuleHost (l'hôte des modules complémentaires) (Release, win-x64,
+       autonome) dans installer/publish/ ;
     2. y ajoute les mods, les licences et le fichier LICENSE ;
     3. lit l'adresse officielle, la version et l'empreinte de PawnIO (pawnio.json) pour les donner à l'installateur, qui le télécharge
        pendant l'installation (PawnIO n'est jamais embarqué) ;
-    4. compile installer/ashboard-vision.iss avec Inno Setup 7.1 ou plus ;
-    5. écrit le .sha256 au format « <empreinte>  <nom du fichier> ».
+    4. fabrique les quatre paquets du SDK des modules complémentaires (AshboardVision.Sdk, .Sdk.Testing, .Sdk.Tool, .Sdk.Templates ; Release,
+       dotnet pack) dans installer/publish/sdk/ : l'installateur les propose (case « Outils pour créer des modules (SDK) ») et la recette les
+       joint à la version GitHub ; ils ne vont jamais sur nuget.org. Ils portent la version du SDK (1.0.x, fixée dans leurs .csproj), pas celle
+       du logiciel : le paramètre -Version ne leur est jamais passé ;
+    5. compile installer/ashboard-vision.iss avec Inno Setup 7.1 ou plus ;
+    6. écrit le .sha256 au format « <empreinte>  <nom du fichier> » et copie les quatre .nupkg à côté de l'installateur, dans installer/out/.
 
     La publication passe par installer/artifacts/ (--artifacts-path) : les dossiers bin et obj des projets ne sont jamais touchés,
     ce qui laisse tranquille le service lancé depuis src/Trofeo.Display/bin/Release.
@@ -41,7 +46,16 @@ $repo = Split-Path $installerDir -Parent
 $publishDir = Join-Path $installerDir 'publish'
 $artifactsDir = Join-Path $installerDir 'artifacts'
 $outDir = Join-Path $installerDir 'out'
+$sdkDir = Join-Path $publishDir 'sdk'
 $setupName = "Ashboard-Vision-Setup-$Version.exe"
+
+# Les quatre paquets du SDK, avec le projet de chacun. Ce sont eux, et eux seuls, qui sortent de Pack-Sdk.
+$sdkPackages = [ordered]@{
+    'AshboardVision.Sdk'           = 'src/AshboardVision.Sdk/AshboardVision.Sdk.csproj'
+    'AshboardVision.Sdk.Testing'   = 'src/AshboardVision.Sdk.Testing/AshboardVision.Sdk.Testing.csproj'
+    'AshboardVision.Sdk.Tool'      = 'tools/AshboardVision.Sdk.Tool/AshboardVision.Sdk.Tool.csproj'
+    'AshboardVision.Sdk.Templates' = 'templates/AshboardVision.Sdk.Templates/AshboardVision.Sdk.Templates.csproj'
+}
 
 function Step([string] $message) { Write-Host "==> $message" -ForegroundColor Cyan }
 
@@ -71,7 +85,7 @@ function Assert-InnoVersion([string] $isccPath) {
 
 function Publish-Project([string] $project) {
     Step "Publication de $project"
-    # Dossier d'artefacts à part : ni src/*/bin ni src/*/obj ne sont écrits. -o rassemble les trois programmes au même endroit.
+    # Dossier d'artefacts à part : ni src/*/bin ni src/*/obj ne sont écrits. -o rassemble les quatre programmes au même endroit.
     & dotnet publish (Join-Path $repo "src/$project/$project.csproj") `
         -c Release -r win-x64 --self-contained `
         -o $publishDir `
@@ -80,6 +94,29 @@ function Publish-Project([string] $project) {
         -p:DebugType=none -p:DebugSymbols=false -p:SatelliteResourceLanguages=fr `
         --nologo -v:minimal
     if ($LASTEXITCODE -ne 0) { throw "La publication de $project a échoué (code $LASTEXITCODE)." }
+}
+
+function Pack-Sdk {
+    Step 'Paquets du SDK (AshboardVision.Sdk, .Testing, .Tool, .Templates)'
+    New-Item -ItemType Directory -Force -Path $sdkDir | Out-Null
+    foreach ($id in $sdkPackages.Keys) {
+        # Pas de -p:Version : ces paquets ont leur propre numéro (celui du SDK, dans leur .csproj), à part de celui du logiciel.
+        # Pas de --no-restore non plus : le .nuspec de AshboardVision.Sdk n'est sans dépendance Trofeo.ModuleKit que si pack restaure.
+        & dotnet pack (Join-Path $repo $sdkPackages[$id]) `
+            -c Release `
+            -o $sdkDir `
+            --artifacts-path $artifactsDir `
+            --nologo -v:minimal
+        if ($LASTEXITCODE -ne 0) { throw "La fabrication du paquet $id a échoué (code $LASTEXITCODE)." }
+    }
+
+    # Exactement quatre paquets, un par identifiant (ni symboles ni reste d'un autre numéro).
+    $found = @(Get-ChildItem -LiteralPath $sdkDir -File)
+    $expected = @($sdkPackages.Keys | ForEach-Object { $id = $_; $found | Where-Object { $_.Name -match ('^' + [regex]::Escape($id) + '\.\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\.nupkg$') } })
+    if ($found.Count -ne $sdkPackages.Count -or $expected.Count -ne $sdkPackages.Count) {
+        throw "Les paquets du SDK attendus sont $($sdkPackages.Count) (un par identifiant) ; trouvés dans $sdkDir : $(($found | ForEach-Object Name) -join ', ')."
+    }
+    foreach ($package in $found) { Write-Host "    $($package.Name)" }
 }
 
 function Copy-Mods {
@@ -147,16 +184,20 @@ Assert-InnoVersion $isccPath
 
 Step 'Dossiers de travail'
 if (Test-Path -LiteralPath $publishDir) { Remove-Item -LiteralPath $publishDir -Recurse -Force }
-if (Test-Path -LiteralPath $outDir) { Get-ChildItem -LiteralPath $outDir -Filter 'Ashboard-Vision-Setup-*' | Remove-Item -Force }
+if (Test-Path -LiteralPath $outDir) {
+    Get-ChildItem -LiteralPath $outDir -Filter 'Ashboard-Vision-Setup-*' | Remove-Item -Force
+    Get-ChildItem -LiteralPath $outDir -Filter 'AshboardVision.Sdk*.nupkg' | Remove-Item -Force
+}
 New-Item -ItemType Directory -Force -Path $publishDir, $outDir | Out-Null
 
-foreach ($project in 'Trofeo.Display', 'Trofeo.Settings', 'Trofeo.SensorHelper') { Publish-Project $project }
-foreach ($exe in 'Trofeo.Display.exe', 'Trofeo.Settings.exe', 'Trofeo.SensorHelper.exe') {
+foreach ($project in 'Trofeo.Display', 'Trofeo.Settings', 'Trofeo.SensorHelper', 'Trofeo.ModuleHost') { Publish-Project $project }
+foreach ($exe in 'Trofeo.Display.exe', 'Trofeo.Settings.exe', 'Trofeo.SensorHelper.exe', 'Trofeo.ModuleHost.exe') {
     if (-not (Test-Path -LiteralPath (Join-Path $publishDir $exe))) { throw "$exe manque dans la publication." }
 }
 # Les symboles des bibliothèques natives (SkiaSharp, HarfBuzz) viennent avec leurs paquets : l'utilisateur n'en a pas l'usage.
 Get-ChildItem -LiteralPath $publishDir -Recurse -File -Filter '*.pdb' | Remove-Item -Force
 
+Pack-Sdk
 Copy-Mods
 Copy-Licences
 
@@ -164,7 +205,7 @@ Step 'PawnIO'
 $pawnIo = Read-PawnIo
 
 Step 'Compilation de l''installateur'
-$isccArgs = @("/DAppVersion=$Version", "/DSourceDir=$publishDir", "/DOutputDir=$outDir", "/DPawnIoUrl=$($pawnIo.url)", "/DPawnIoSha256=$($pawnIo.sha256.ToLowerInvariant())")
+$isccArgs = @("/DAppVersion=$Version", "/DSourceDir=$publishDir", "/DOutputDir=$outDir", "/DSdkDir=$sdkDir", "/DPawnIoUrl=$($pawnIo.url)", "/DPawnIoSha256=$($pawnIo.sha256.ToLowerInvariant())")
 $logPath = Join-Path $outDir 'iscc.log'
 & $isccPath @isccArgs (Join-Path $installerDir 'ashboard-vision.iss') 2>&1 | Tee-Object -FilePath $logPath
 if ($LASTEXITCODE -ne 0) { throw "ISCC a échoué (code $LASTEXITCODE). Journal : $logPath" }
@@ -177,7 +218,11 @@ $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvaria
 # Format de sha256sum : « <empreinte>  <nom> », fin de ligne LF, sans BOM (le logiciel relit ce fichier avant de lancer l'installateur).
 [System.IO.File]::WriteAllText("$setup.sha256", "$hash  $setupName`n", [System.Text.UTF8Encoding]::new($false))
 
+# Les paquets du SDK sont joints à la version GitHub à côté de l'installateur (la recette les prend dans installer/out/).
+Copy-Item -Path (Join-Path $sdkDir '*.nupkg') -Destination $outDir
+
 $size = [math]::Round((Get-Item -LiteralPath $setup).Length / 1MB, 1)
 Write-Host ''
 Write-Host "Installateur : $setup ($size Mo)" -ForegroundColor Green
 Write-Host "Empreinte    : $hash"
+foreach ($package in Get-ChildItem -LiteralPath $outDir -Filter 'AshboardVision.Sdk*.nupkg') { Write-Host "Paquet SDK   : $($package.FullName)" }

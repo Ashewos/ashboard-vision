@@ -116,6 +116,13 @@ public class SettingsDocumentTests
         Assert.True(SettingsDocument.IsVisible(host with { VisibleWhen = new FieldCondition("note", "") }, empty, schema));
         Assert.False(SettingsDocument.IsVisible(host with { VisibleWhen = new FieldCondition("note", "x") }, empty, schema));
 
+        // Nombre et port : le défaut s'écrit comme un nombre JSON.
+        var numeric = new SettingsSchema([new NumberField("days", "Jours", 1, 30, 7), new PortField("port", "Port", 8123)]);
+        Assert.True(SettingsDocument.IsVisible(host with { VisibleWhen = new FieldCondition("days", "7") }, empty, numeric));
+        Assert.False(SettingsDocument.IsVisible(host with { VisibleWhen = new FieldCondition("days", "8") }, empty, numeric));
+        Assert.True(SettingsDocument.IsVisible(host with { VisibleWhen = new FieldCondition("port", "8123") }, empty, numeric));
+        Assert.True(SettingsDocument.IsVisible(host with { VisibleWhen = new FieldCondition("days", "9") }, Json("""{"days":9}"""), numeric));
+
         // Autres genres ou champ inconnu : absent = différent.
         Assert.False(SettingsDocument.IsVisible(host with { VisibleWhen = new FieldCondition("key", "") }, empty, schema));
         Assert.False(SettingsDocument.IsVisible(host with { VisibleWhen = new FieldCondition("nope", "") }, empty, schema));

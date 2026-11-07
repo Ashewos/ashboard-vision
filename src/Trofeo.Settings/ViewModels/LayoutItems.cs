@@ -6,11 +6,16 @@ using Trofeo.ModuleKit;
 namespace Trofeo.Settings.ViewModels;
 
 /// <summary>Un module placé sur l'écran, tel que la colonne « Sur l'écran » et le damier le montrent.</summary>
-public sealed partial class PlacedModuleItem(ModulePlacement placement, string name) : ObservableObject
+public sealed partial class PlacedModuleItem(ModulePlacement placement, string name, bool isCommunity = false) : ObservableObject
 {
     public Guid Id { get; } = placement.InstanceId;
     public string TypeId { get; } = placement.TypeId;
     public string Name { get; } = name;
+    /// <summary>Le module vient de la communauté : un point d'exclamation jaune le signale dans la liste et dans un angle de sa case.</summary>
+    public bool IsCommunity { get; } = isCommunity;
+
+    public string CommunityNotice => Texts.CommunityNotice;
+
     public int Column { get; } = placement.Column;
     public int Row { get; } = placement.Row;
     public int Columns { get; } = placement.Columns;
@@ -37,7 +42,7 @@ public sealed partial class PlacedModuleItem(ModulePlacement placement, string n
 
     /// <summary>Même module, même nom, même place : seule la santé a pu changer.</summary>
     internal bool SameShape(PlacedModuleItem other) =>
-        Id == other.Id && Name == other.Name && Column == other.Column && Row == other.Row && Columns == other.Columns && Rows == other.Rows;
+        Id == other.Id && Name == other.Name && IsCommunity == other.IsCommunity && Column == other.Column && Row == other.Row && Columns == other.Columns && Rows == other.Rows;
 }
 
 /// <summary>Un module retiré de l'écran, gardé avec ses réglages.</summary>
@@ -68,10 +73,15 @@ public sealed partial class ShelvedModuleItem(ModulePlacement placement, string 
 }
 
 /// <summary>Un type de module que le service sait créer : une ligne de la liste « Ajouter un module ».</summary>
-public sealed partial class AddTypeItem(string typeId, string name, LayoutTabViewModel owner) : ObservableObject
+public sealed partial class AddTypeItem(string typeId, string name, LayoutTabViewModel owner, bool isCommunity = false) : ObservableObject
 {
     public string TypeId { get; } = typeId;
     public string Name { get; } = name;
+
+    /// <summary>Le type vient d'un module de la communauté : un point d'exclamation jaune le signale dans la liste.</summary>
+    public bool IsCommunity { get; } = isCommunity;
+
+    public string CommunityNotice => Texts.CommunityNotice;
 
     [RelayCommand]
     private Task Add() => owner.AddAsync(this);

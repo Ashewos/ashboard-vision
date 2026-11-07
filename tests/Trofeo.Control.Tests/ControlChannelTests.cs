@@ -4,7 +4,7 @@ using Trofeo.ModuleKit;
 
 namespace Trofeo.Control.Tests;
 
-public class ControlChannelTests
+public partial class ControlChannelTests
 {
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(5);
 
@@ -42,7 +42,7 @@ public class ControlChannelTests
         new(LinkUpdateState.Available, "1.2.0", IsDowngrade: true, Percent: null, "La version 1.2.0 est disponible.",
             LinkUpdateChannel.Beta, WaitForNextStable: true);
 
-    private sealed class FakeHandler : IControlHandler
+    private sealed partial class FakeHandler : IControlHandler
     {
         public Welcome WelcomeToReturn { get; set; } = SampleWelcome();
         public ServiceStatus StatusToReturn { get; set; } = SampleStatus();
@@ -295,7 +295,7 @@ public class ControlChannelTests
     }
 
     [Fact]
-    public void ProtocolVersion_IsTwo() => Assert.Equal(2, ControlPipe.ProtocolVersion);
+    public void ProtocolVersion_IsThree() => Assert.Equal(3, ControlPipe.ProtocolVersion);
 
     [Fact]
     public void TimeoutFor_UpdateRequests()

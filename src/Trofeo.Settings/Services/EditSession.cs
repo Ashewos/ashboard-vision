@@ -159,6 +159,34 @@ public sealed class EditSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Prie le service de recharger la disposition telle qu'elle est, sans rien y changer ni rien ajouter à l'historique (après la
+    /// désinstallation d'un module, par exemple) ; ses avertissements et son message sont gardés comme pour une modification. Si
+    /// <c>layout.json</c> ne se lit pas, rien n'est écrit et le motif est donné.
+    /// </summary>
+    public async Task<SaveOutcome?> ReloadAsync()
+    {
+        Begin();
+        await _gate.WaitAsync().ConfigureAwait(true);
+        try
+        {
+            if (await RefuseWhileUnreadableAsync().ConfigureAwait(true) is { } refused)
+                return refused;
+
+            var current = _document.Current;
+            var save = _document.SaveAsync(current);
+            Changed?.Invoke();
+            var outcome = await save.ConfigureAwait(true);
+            Record(current, current, outcome);
+            return outcome;
+        }
+        finally
+        {
+            _gate.Release();
+            End();
+        }
+    }
+
     public Task<SaveOutcome?> UndoAsync() => StepAsync(undo: true);
 
     public Task<SaveOutcome?> RedoAsync() => StepAsync(undo: false);

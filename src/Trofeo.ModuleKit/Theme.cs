@@ -7,7 +7,14 @@ namespace Trofeo.ModuleKit;
 /// <see cref="Pixel"/> : angles vifs, barres en segments, points carrés, onglet actif marqué d'un trait de 4 px à gauche
 /// (chaque module le met en œuvre lui-même).
 /// </summary>
-public enum ThemeShape { Rounded, Pixel }
+public enum ThemeShape
+{
+    /// <summary>Coins arrondis, barres pleines, points ronds.</summary>
+    Rounded,
+
+    /// <summary>Angles vifs, barres en segments, points carrés.</summary>
+    Pixel,
+}
 
 /// <summary>Palette et typographie communes à tous les modules.</summary>
 public sealed record Theme(

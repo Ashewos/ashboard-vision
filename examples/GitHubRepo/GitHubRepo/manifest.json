@@ -1,0 +1,19 @@
+{
+  "id": "ashewos.github",
+  "name": "Dépôt GitHub",
+  "description": "Affiche les étoiles, la dernière version et les téléchargements d'un dépôt GitHub.",
+  "author": "Ashewos",
+  "version": "1.0.0",
+  "sdk": "1.0",
+  "entry": "GitHubRepo.dll",
+  "permissions": ["internet"],
+  "minSize": { "columns": 3, "rows": 1 },
+  "presets": {
+    "compact": { "columns": 3, "rows": 1 },
+    "ideal": { "columns": 3, "rows": 2 }
+  },
+  "settings": [
+    { "kind": "text", "key": "repo", "label": "Dépôt", "placeholder": "Ashewos/ashboard-vision", "maxLength": 100, "help": "Écris-le sous la forme propriétaire/nom." },
+    { "kind": "secret", "key": "token", "label": "Jeton GitHub (facultatif)", "help": "Sans jeton, GitHub limite à 60 requêtes par heure : c'est assez, le module en fait 12." }
+  ]
+}

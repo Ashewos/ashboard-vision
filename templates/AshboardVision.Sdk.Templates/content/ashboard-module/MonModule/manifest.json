@@ -1,0 +1,18 @@
+{
+  "id": "auteur.mon-module",
+  "name": "MonModule",
+  "description": "Dit bonjour et affiche l'heure.",
+  "author": "Ton nom",
+  "version": "1.0.0",
+  "sdk": "1.0",
+  "entry": "MonModule.dll",
+  "permissions": [],
+  "minSize": { "columns": 2, "rows": 1 },
+  "presets": {
+    "compact": { "columns": 2, "rows": 1 },
+    "ideal": { "columns": 3, "rows": 1 }
+  },
+  "settings": [
+    { "kind": "text", "key": "message", "label": "Message", "placeholder": "Bonjour", "maxLength": 40 }
+  ]
+}

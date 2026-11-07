@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Le module : une DLL (Minecraft.dll) et son manifest.json, côte à côte dans le dossier de sortie (bin/Debug/net10.0). Le logiciel fournit
+       lui-même le SDK et SkiaSharp au module : les copies qui se retrouvent dans le dossier de sortie ne servent à rien à l'exécution. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Minecraft</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Dans le dépôt, le module référence le SDK par projet. Dans ton projet, ce sera la ligne du modèle (dotnet new ashboard-module) :
+         <PackageReference Include="AshboardVision.Sdk" Version="1.0.0" />. Le paquet embarque Trofeo.ModuleKit (le thème, ModuleDrawing,
+         ModuleHealth…) ; sans paquet, il faut aussi le référencer. -->
+    <ProjectReference Include="..\..\..\src\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+    <ProjectReference Include="..\..\..\src\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Les tests lisent les fonctions internes (le dessin des lignes, la connexion à un serveur distant) et y glissent un faux. -->
+    <InternalsVisibleTo Include="Minecraft.Tests" />
+  </ItemGroup>
+
+</Project>
