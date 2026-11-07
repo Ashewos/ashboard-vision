@@ -43,9 +43,6 @@ public static partial class ManifestReader
     /// <summary>Vrai si <paramref name="id"/> a la forme d'un identifiant de module de la communauté (<c>auteur.module</c>, 40 caractères au plus). Les types d'origine (<c>network</c>, <c>clock</c>…) n'ont pas de point et n'y répondent jamais.</summary>
     public static bool IsValidId(string? id) => id is { Length: > 0 and <= MaxIdLength } && IdPattern().IsMatch(id);
 
-    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+\z", RegexOptions.CultureInvariant)]
-    private static partial Regex RepositoryPattern();
-
     /// <summary>Lit un manifeste ; en cas de problème, <see cref="ManifestReadResult.Manifest"/> est <c>null</c> et les erreurs disent tout ce qui ne va pas.</summary>
     public static ManifestReadResult Read(string json)
     {
@@ -110,7 +107,8 @@ public static partial class ManifestReader
             string? repository = null;
             if (ReadOptionalText(root, "repository", errors, 140) is { } repo)
             {
-                if (!RepositoryPattern().IsMatch(repo) || repo.EndsWith("/.", StringComparison.Ordinal) || repo.EndsWith("/..", StringComparison.Ordinal))
+                // La même règle que les mises à jour (ReleaseFeed) : un dépôt accepté ici ne doit pas être ignoré en silence là.
+                if (!ReleaseFeed.IsRepository(repo))
                 {
                     errors.Add("\"repository\" : doit avoir la forme propriétaire/dépôt.");
                 }

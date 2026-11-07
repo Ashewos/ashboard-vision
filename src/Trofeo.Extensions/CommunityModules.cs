@@ -44,6 +44,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
     private readonly Func<string, ISecretStore> _secretsFor;
     private readonly Action<string> _clearSecrets;
     private readonly Action<string> _deleteProfile;
+    private readonly Func<string, bool?> _volumeHasAcls;
     private readonly IServiceDataBroker _data;
     private readonly string _hostExecutable;
     private readonly TimeProvider _time;
@@ -75,6 +76,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
     /// <param name="launcher">Lance les hôtes ; par défaut, dans l'AppContainer et le job du module (les tests en fournissent d'autres).</param>
     /// <param name="deleteProfile">Supprime l'AppContainer d'un module et ses données ; par défaut <see cref="Sandbox.AppContainerProfile.Delete"/>.</param>
     /// <param name="grantRead">Accorde à l'AppContainer d'un module la lecture de son dossier ; par défaut l'AppContainer du module.</param>
+    /// <param name="volumeHasAcls">Dit si le disque d'un dossier garde les droits d'accès (<c>null</c> : on ne sait pas) ; par défaut la question posée à Windows. Le dossier des modules en a besoin pour enfermer les modules.</param>
     /// <param name="updateHttp">
     /// Le client HTTP des mises à jour des modules (il suit les redirections de GitHub et a un délai d'attente) ; <c>null</c> : le service
     /// ne cherche aucune mise à jour de module. Sans module portant un dépôt, il ne sert à rien : ni minuteur ni requête.
@@ -83,7 +85,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         ApprovedModulesStore store, Action<IReadOnlyList<IModuleFactory>> publishFactories, Func<string, ISecretStore> secretsFor,
         Action<string> clearSecrets, IServiceDataBroker data, string hostExecutable, TimeProvider time,
         IHostProcessFactory? launcher = null, Action<string>? deleteProfile = null, Action<string, string>? grantRead = null,
-        HttpClient? updateHttp = null)
+        HttpClient? updateHttp = null, Func<string, bool?>? volumeHasAcls = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _publish = publishFactories ?? throw new ArgumentNullException(nameof(publishFactories));
@@ -94,8 +96,9 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         _hostExecutable = hostExecutable;
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _launcher = launcher;
+        _volumeHasAcls = volumeHasAcls ?? Sandbox.VolumeAcls.Check;
         _deleteProfile = deleteProfile ?? Sandbox.AppContainerProfile.Delete;
-        _installer = new ModuleInstaller(grantRead);
+        _installer = new ModuleInstaller(grantRead, _deleteProfile);
         _catalog = new CommunityCatalog(() => _snapshot);
         _meter = new ConsumptionMeter(time);
         _sampler = new ConsumptionSampler(time, _meter, ReadHost);
@@ -574,7 +577,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             }
 
             var directory = ModuleInstaller.VersionDirectory(root, manifest.Id, manifest.Version)!;
-            var extracted = await Task.Run(() => _installer.Extract(avmodPath, directory, manifest), ct).ConfigureAwait(false);
+            var extracted = await Task.Run(() => _installer.Extract(avmodPath, directory, manifest, newModule: inspection.Installed is null), ct).ConfigureAwait(false);
             if (extracted.Manifest is not { } written || extracted.ContentHash is not { } hash)
             {
                 return new ActionResult(false, extracted.Error ?? "Le module n'a pas pu être installé.");
@@ -599,6 +602,11 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             if (!result.Ok || pending is null)
             {
                 ModuleInstaller.TryDelete(directory); // rien n'a été validé : on ne laisse pas des fichiers qu'on n'a pas annoncés
+                if (inspection.Installed is null)
+                {
+                    _installer.DiscardContainer(written.Id); // ni le conteneur créé pour l'occasion : aucune liste ne le retrouverait
+                }
+
                 return result;
             }
 
@@ -863,6 +871,10 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
 
     // --- Dossier des modules, mode développeur --------------------------------------------------------------------------------------
 
+    /// <summary>La phrase quand le dossier choisi est sur un disque sans droits d'accès (exFAT, FAT32).</summary>
+    internal const string NoAclsMessage =
+        "Ce disque ne garde pas les droits d'accès (exFAT, FAT32…) : les modules n'y seraient pas enfermés. Choisis un dossier sur un disque NTFS.";
+
     /// <inheritdoc />
     public ActionResult SetModulesRoot(string path)
     {
@@ -878,6 +890,13 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             if (Path.GetPathRoot(full) is { } driveRoot && SamePath(driveRoot, full))
             {
                 return new ActionResult(false, "Choisis un dossier, pas la racine d'un disque.");
+            }
+
+            // Les modules sont enfermés par des droits d'accès posés sur leur dossier : un disque qui n'en garde pas (exFAT, FAT32 : clé USB,
+            // carte mémoire) ne pourrait pas les porter, et chaque installation échouerait. « Inconnu » ne refuse rien.
+            if (_volumeHasAcls(full) == false)
+            {
+                return new ActionResult(false, NoAclsMessage);
             }
 
             Directory.CreateDirectory(full);

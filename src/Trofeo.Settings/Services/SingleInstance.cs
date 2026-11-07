@@ -26,7 +26,14 @@ public sealed class SingleInstance : IDisposable
     /// l'identifiant de la session Windows, comme la portée <c>Local\</c> du mutex : deux sessions ouvertes en même temps (changement
     /// rapide d'utilisateur, services Bureau à distance) ont chacune leur fenêtre et leur tube, et un tube ne prend jamais la place de l'autre.
     /// </summary>
-    public static string PipeName => PipeNameForSession(System.Diagnostics.Process.GetCurrentProcess().SessionId);
+    public static string PipeName
+    {
+        get
+        {
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            return PipeNameForSession(process.SessionId);
+        }
+    }
 
     /// <summary>Le nom du tube de la session Windows donnée.</summary>
     public static string PipeNameForSession(int sessionId) => "trofeo-HB-dashboard.settings.open." + sessionId.ToString(System.Globalization.CultureInfo.InvariantCulture);

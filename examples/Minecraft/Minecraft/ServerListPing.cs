@@ -412,7 +412,7 @@ public static class ServerListPing
     }
 
     /// <summary>U+202A à U+202E et U+2066 à U+2069 (embeddings, overrides et isolats), plus les marques U+200E, U+200F et U+061C.</summary>
-    private static bool IsBidiControl(char c) => c is (>= '‪' and <= '‮') or (>= '⁦' and <= '⁩') or '‎' or '‏' or '؜';
+    private static bool IsBidiControl(char c) => c is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069') or '\u200E' or '\u200F' or '\u061C';
 
     /// <summary>L'icône : <c>data:image/png;base64,…</c>. Trop grosse, mal codée ou autre chose qu'un PNG : on l'ignore, sans faire échouer l'état.</summary>
     private static byte[]? DecodeFavicon(string value)

@@ -24,7 +24,7 @@ internal sealed class CommunityRig : IAsyncDisposable
     private IReadOnlyList<IModuleFactory> _published = [];
     private int _changes;
 
-    public CommunityRig(bool autoShutdown = true, HttpClient? updateHttp = null)
+    public CommunityRig(bool autoShutdown = true, HttpClient? updateHttp = null, Func<string, bool?>? volumeHasAcls = null)
     {
         Directory.CreateDirectory(Root);
         Store = new ApprovedModulesStore(Path.Combine(_work, "settings", "modules.json"), Path.Combine(_work, "settings", "modules.key"), _ => { });
@@ -58,7 +58,8 @@ internal sealed class CommunityRig : IAsyncDisposable
             Launcher,
             id => Profiles.Add(id),
             (id, directory) => Grants.Add((id, directory)),
-            updateHttp);
+            updateHttp,
+            volumeHasAcls ?? (_ => true));
         Community.Changed += (_, _) => Interlocked.Increment(ref _changes);
     }
 
@@ -425,6 +426,67 @@ public sealed class CommunityModulesTests : IAsyncLifetime
         Assert.Null(extracted.Manifest);
         Assert.False(Directory.Exists(target));
         Assert.False(Directory.Exists(Path.GetDirectoryName(target)));
+    }
+
+    [WindowsHostTheory]
+    [InlineData(true, new[] { "alex.demo" })]
+    [InlineData(false, new string[0])] // une mise à jour : le conteneur existait déjà (avec ses données), on n'y touche pas
+    public void Extract_WhenPreparingTheContainerFails_DeletesTheContainerOnlyOfANewModule(bool newModule, string[] expectedDeleted)
+    {
+        var rig = NewRig();
+        var package = rig.Package();
+        var expected = AvmodPackage.Inspect(package).Manifest!;
+        var target = Path.Combine(rig.Root, "alex.demo", "1.0.0");
+        var deleted = new List<string>();
+
+        // Le conteneur est créé par l'accord de la lecture, puis l'accord échoue (disque sans ACL, par exemple).
+        var extracted = new ModuleInstaller((_, _) => throw new InvalidOperationException("refus"), deleted.Add).Extract(package, target, expected, newModule);
+
+        Assert.NotNull(extracted.Error);
+        Assert.Equal(expectedDeleted, deleted);
+    }
+
+    [WindowsHostFact]
+    public void Extract_Succeeding_NeverDeletesTheContainer()
+    {
+        var rig = NewRig();
+        var package = rig.Package();
+        var expected = AvmodPackage.Inspect(package).Manifest!;
+        var deleted = new List<string>();
+
+        var extracted = new ModuleInstaller((_, _) => { }, deleted.Add).Extract(package, Path.Combine(rig.Root, "alex.demo", "1.0.0"), expected, newModule: true);
+
+        Assert.Null(extracted.Error);
+        Assert.Empty(deleted);
+    }
+
+    [WindowsHostFact]
+    public async Task Install_NewModuleWhenTheListCannotBeWritten_DeletesTheContainerItCreated()
+    {
+        var rig = NewRig();
+        var blocker = Path.Combine(rig.Root, "..", "settings", "modules.json.tmp");
+        Directory.CreateDirectory(blocker); // l'écriture du fichier temporaire de la liste échoue
+
+        var result = await rig.Community.InstallAsync(rig.Package(), Internet, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal(["alex.demo"], rig.Profiles);
+        Assert.False(Directory.Exists(Path.Combine(rig.Root, "alex.demo")));
+    }
+
+    [WindowsHostFact]
+    public async Task Install_UpdateWhenTheListCannotBeWritten_KeepsTheContainerOfTheInstalledModule()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package(version: "1.0.0"));
+        var blocker = Path.Combine(rig.Root, "..", "settings", "modules.json.tmp");
+        Directory.CreateDirectory(blocker);
+
+        var result = await rig.Community.InstallAsync(rig.Package(version: "1.1.0"), Internet, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Empty(rig.Profiles);
+        Assert.True(Directory.Exists(Path.Combine(rig.Root, "alex.demo", "1.0.0")));
     }
 
     private static void Write(ZipArchive zip, string name, string content)
@@ -812,6 +874,27 @@ public sealed class CommunityModulesTests : IAsyncLifetime
         await InstallAsync(rig, rig.Package(id: "alex.autre"));
         Assert.True(Directory.Exists(Path.Combine(elsewhere, "alex.autre", "1.0.0")));
         Assert.Equal(["alex.autre", "alex.demo"], rig.Community.Entries.Select(e => e.Id));
+    }
+
+    [WindowsHostTheory]
+    [InlineData(false, false)] // un disque sans droits d'accès : refusé
+    [InlineData(true, true)]
+    [InlineData(null, true)] // on ne sait pas : on ne bloque rien
+    public void SetModulesRoot_OnAVolumeWithoutAcls_IsRefusedWithAClearMessage(bool? volumeHasAcls, bool accepted)
+    {
+        var rig = new CommunityRig(volumeHasAcls: _ => volumeHasAcls);
+        _rigs.Add(rig);
+        var elsewhere = Path.Combine(rig.NewFolder(), "cle-usb");
+
+        var result = rig.Community.SetModulesRoot(elsewhere);
+
+        Assert.Equal(accepted, result.Ok);
+        if (!accepted)
+        {
+            Assert.Contains("NTFS", result.Message);
+            Assert.False(Directory.Exists(elsewhere), "rien n'est créé sur un disque refusé");
+            Assert.NotEqual(elsewhere, rig.Approved.ModulesRoot);
+        }
     }
 
     [WindowsHostFact]

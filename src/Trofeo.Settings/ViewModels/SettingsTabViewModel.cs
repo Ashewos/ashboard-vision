@@ -522,7 +522,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
         foreach (var placement in layout.Placements.Concat(layout.Shelf ?? []))
         {
             if (!types.ContainsKey(placement.TypeId))
-                return string.Format(Texts.ShareUnknownType, placement.TypeId);
+                return string.Format(Texts.ShareUnknownType, UntrustedText.Line(placement.TypeId)); // le type vient d'un fichier reçu d'un tiers
         }
 
         foreach (var placement in layout.Placements)

@@ -311,6 +311,9 @@ public class ManifestReaderTests
     [InlineData("seulement-un-nom")]
     [InlineData("a/b/c")]
     [InlineData("a b/c")]
+    [InlineData("mon_pseudo/depot")] // « _ » n'existe pas dans un nom de propriétaire GitHub : les mises à jour ne trouveraient jamais ce dépôt
+    [InlineData("mon.pseudo/depot")]
+    [InlineData("abcdefghijabcdefghijabcdefghijabcdefghij/depot")] // un propriétaire fait 39 caractères au plus
     public void Read_RepositoryBadForm_IsRefused(string repository)
     {
         AssertRefused(ReadEdited(m => m["repository"] = repository), "repository");

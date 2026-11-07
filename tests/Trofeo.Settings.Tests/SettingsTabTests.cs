@@ -770,6 +770,23 @@ public sealed class SettingsTabTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_UnknownModuleType_ShowsItWithoutInvisibleOrDirectionalCharacters()
+    {
+        // Le type vient d'un fichier reçu d'un tiers : il est affiché comme n'importe quel texte non fiable.
+        var tab = Open();
+        var shared = Path.Combine(_dir, "futur.trofeo.json");
+        var layout = new DashboardLayout(
+            180, [new ModulePlacement(Guid.NewGuid(), "holo‮gramme​", 0, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone())]);
+        File.WriteAllText(shared, ExportedJson(layout));
+        _picker.Result = shared;
+
+        await tab.ImportAsync();
+
+        Assert.Equal("Ce service ne connaît pas le module « hologramme ».", tab.ShareMessage);
+        Assert.True(tab.ShareMessageIsError);
+    }
+
+    [Fact]
     public async Task Import_ModuleSmallerThanItsMinimum_IsRefused()
     {
         var tab = Open();

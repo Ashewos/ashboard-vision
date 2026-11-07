@@ -20,9 +20,15 @@ internal sealed class ModuleInstaller
     };
 
     private readonly Action<string, string> _grantRead;
+    private readonly Action<string> _deleteProfile;
 
     /// <param name="grantRead">Accorde au conteneur du module (identifiant, dossier) la lecture de son dossier ; par défaut l'AppContainer.</param>
-    public ModuleInstaller(Action<string, string>? grantRead = null) => _grantRead = grantRead ?? GrantToContainer;
+    /// <param name="deleteProfile">Supprime le conteneur d'un module (et ses données) ; par défaut l'AppContainer.</param>
+    public ModuleInstaller(Action<string, string>? grantRead = null, Action<string>? deleteProfile = null)
+    {
+        _grantRead = grantRead ?? GrantToContainer;
+        _deleteProfile = deleteProfile ?? DeleteContainer;
+    }
 
     /// <summary>
     /// Le dossier d'une version (<c>&lt;racine&gt;\&lt;id&gt;\&lt;version&gt;</c>), ou <c>null</c> si l'identifiant ou la version ne
@@ -59,8 +65,12 @@ internal sealed class ModuleInstaller
     /// celui qu'on a annoncé (le fichier a pu être remplacé entre l'inspection et l'extraction), le dossier est supprimé.
     /// </summary>
     /// <param name="expected">Le manifeste montré à l'utilisateur.</param>
+    /// <param name="newModule">Vrai pour une première installation de cet identifiant : si elle échoue après la création du conteneur
+    /// (l'accord de la lecture le crée), le conteneur est supprimé aussi, car aucune liste ne le retrouverait jamais. Faux pour une mise à
+    /// jour ou une réinstallation : le conteneur existait déjà, avec les données du module installé.</param>
     /// <returns>Le manifeste tel qu'il est sur le disque et l'empreinte, ou la raison de l'échec en français.</returns>
-    public (ModuleManifest? Manifest, string? ContentHash, string? Error) Extract(string avmodPath, string directory, ModuleManifest expected)
+    public (ModuleManifest? Manifest, string? ContentHash, string? Error) Extract(
+        string avmodPath, string directory, ModuleManifest expected, bool newModule = false)
     {
         try
         {
@@ -99,7 +109,25 @@ internal sealed class ModuleInstaller
                                        or System.Runtime.InteropServices.COMException or ArgumentException or InvalidOperationException
                                        or PlatformNotSupportedException)
         {
+            if (newModule)
+            {
+                DiscardContainer(expected.Id);
+            }
+
             return Fail(directory, $"Le module n'a pas pu être préparé : {ex.Message}");
+        }
+    }
+
+    /// <summary>Supprime le conteneur qu'une première installation a créé puis abandonné (sans erreur : c'est un nettoyage).</summary>
+    public void DiscardContainer(string moduleId)
+    {
+        try
+        {
+            _deleteProfile(moduleId);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Le conteneur de « {moduleId} » n'a pas pu être supprimé après l'échec de l'installation : {ex.Message}");
         }
     }
 
@@ -168,6 +196,9 @@ internal sealed class ModuleInstaller
         // Windows réserve « con.txt » comme « con » : le nom est jugé sur ce qui précède le premier point.
         return !ReservedNames.Contains(name.Split('.')[0].TrimEnd(' '));
     }
+
+    [SupportedOSPlatform("windows")]
+    private static void DeleteContainer(string moduleId) => AppContainerProfile.Delete(moduleId);
 
     [SupportedOSPlatform("windows")]
     private static void GrantToContainer(string moduleId, string directory) => AppContainerProfile.Ensure(moduleId).GrantRead(directory);

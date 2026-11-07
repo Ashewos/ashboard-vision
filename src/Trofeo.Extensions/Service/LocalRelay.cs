@@ -64,7 +64,7 @@ public sealed class LocalRelay : IDisposable
 
     /// <summary>
     /// Vrai si <paramref name="port"/> est la valeur d'un champ « port » de ces réglages (ou, quand le réglage n'est pas écrit,
-    /// la valeur proposée par le champ). Un réglage qui n'est pas un nombre entier ne compte pas.  La règle vit dans <c>src/Shared/PortRule.cs</c>, partagée avec les aides de test des créateurs.
+    /// la valeur proposée par le champ). Un réglage qui n'est pas un nombre entier ne compte pas. La règle vit dans <c>src/Shared/PortRule.cs</c>, partagée avec les aides de test des créateurs.
     /// </summary>
     public static bool IsAllowedPort(IReadOnlyList<PortField> portFields, JsonElement settings, int port)
         => PortRule.IsAllowed(portFields, settings, port);

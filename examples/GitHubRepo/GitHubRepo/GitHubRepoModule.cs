@@ -16,7 +16,10 @@ namespace GitHubRepo;
 /// </summary>
 public class GitHubRepoModule : CommunityModule
 {
-    /// <summary>Toutes les 10 minutes : 12 requêtes par heure, loin des 60 que GitHub accorde sans jeton.</summary>
+    /// <summary>
+    /// Toutes les 10 minutes, soit 6 actualisations par heure. Chacune coûte une requête pour le dépôt, plus une par page de versions
+    /// (voir <see cref="MaxReleasePages"/>) : 12 requêtes par heure jusqu'à 99 versions, 36 au plus, sous les 60 que GitHub accorde sans jeton.
+    /// </summary>
     private static readonly TimeSpan RefreshEvery = TimeSpan.FromMinutes(10);
 
     /// <summary>
