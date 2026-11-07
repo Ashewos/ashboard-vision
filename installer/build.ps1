@@ -16,6 +16,9 @@
     5. compile installer/ashboard-vision.iss avec Inno Setup 7.1 ou plus ;
     6. écrit le .sha256 au format « <empreinte>  <nom du fichier> » et copie les quatre .nupkg à côté de l'installateur, dans installer/out/.
 
+    L'aide installer/dotnet-sdk.ps1 (le SDK .NET 10 que l'installateur télécharge s'il manque) n'a rien à fabriquer : ashboard-vision.iss
+    l'embarque tel quel (dontcopy). Le script la vérifie seulement (elle existe, sa syntaxe est valide), sans la lancer.
+
     La publication passe par installer/artifacts/ (--artifacts-path) : les dossiers bin et obj des projets ne sont jamais touchés,
     ce qui laisse tranquille le service lancé depuis src/Trofeo.Display/bin/Release.
 
@@ -176,6 +179,16 @@ function Read-PawnIo {
     return $config
 }
 
+function Test-DotnetSdkHelper {
+    # Windows PowerShell 5.1 la lancera chez l'utilisateur ; ici on s'assure seulement qu'elle est là et qu'elle s'analyse sans erreur.
+    $helper = Join-Path $installerDir 'dotnet-sdk.ps1'
+    if (-not (Test-Path -LiteralPath $helper)) { throw "installer/dotnet-sdk.ps1 manque : l'installateur l'embarque pour télécharger le SDK .NET 10." }
+    $syntaxErrors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($helper, [ref]$null, [ref]$syntaxErrors)
+    if ($syntaxErrors.Count -gt 0) { throw "installer/dotnet-sdk.ps1 a une erreur de syntaxe : $($syntaxErrors[0].Message) (ligne $($syntaxErrors[0].Extent.StartLineNumber))." }
+    Write-Host '    dotnet-sdk.ps1 : syntaxe valide (embarquée par l''installateur).'
+}
+
 # --- Début -------------------------------------------------------------------------------------------------------------------
 
 Step 'Outils'
@@ -203,6 +216,9 @@ Copy-Licences
 
 Step 'PawnIO'
 $pawnIo = Read-PawnIo
+
+Step 'Aide du SDK .NET 10'
+Test-DotnetSdkHelper
 
 Step 'Compilation de l''installateur'
 $isccArgs = @("/DAppVersion=$Version", "/DSourceDir=$publishDir", "/DOutputDir=$outDir", "/DSdkDir=$sdkDir", "/DPawnIoUrl=$($pawnIo.url)", "/DPawnIoSha256=$($pawnIo.sha256.ToLowerInvariant())")

@@ -5,7 +5,7 @@ Dans cette page, tu installes le SDK, tu crées un module avec une seule command
 ## Ce qu'il te faut
 
 - **Windows 10 ou 11, 64 bits.** Le banc d'essai (`ashboard-module`) ne marche que sous Windows, comme le logiciel.
-- **Le SDK .NET 10.** Tu le télécharges sur <https://dotnet.microsoft.com/download/dotnet/10.0>. Pour savoir s'il est installé, tape `dotnet --list-sdks` dans un terminal : une ligne doit commencer par `10.`.
+- **Le SDK .NET 10.** L'installateur d'Ashboard Vision le télécharge et l'installe s'il manque (voir « Avec l'installateur » plus bas). Sinon, tu le télécharges sur <https://dotnet.microsoft.com/download/dotnet/10.0>. Pour savoir s'il est installé, tape `dotnet --list-sdks` dans un terminal : une ligne doit commencer par `10.`.
 - **Un éditeur de code** : Visual Studio, Rider, VS Code…
 - **Ashboard Vision**, si tu veux voir ton module sur l'écran. Pour écrire et tester, il n'est pas obligatoire.
 - **Une connexion Internet la première fois.** Le SDK lui-même n'est jamais sur nuget.org (voir plus bas), mais la restauration d'un projet va chercher SkiaSharp et les paquets de test sur nuget.org, comme n'importe quel projet .NET.
@@ -29,11 +29,14 @@ Pendant l'installation, la page des options propose **« Outils pour créer des 
 
 1. copie les quatre paquets dans le dossier `sdk` du dossier d'installation (par défaut `C:\Program Files\Ashboard Vision\sdk`) ;
 2. si le SDK .NET 10 est installé sur le PC, ajoute ce dossier comme source de paquets NuGet de ton compte (elle s'appelle `AshboardVision`), installe le modèle de projet et l'outil `ashboard-module`, avec tes droits (pas ceux de l'administrateur) ;
-3. sinon, te dit d'installer le SDK .NET 10 pour créer des modules (une boîte de message, avec l'adresse <https://dotnet.microsoft.com/download>). Les quatre paquets sont tout de même copiés dans `sdk` ; le modèle et l'outil ne sont pas installés. Pour finir, installe le SDK .NET 10, puis soit tu relances l'installateur d'Ashboard Vision en cochant la case, soit tu tapes les trois commandes de « À la main » ci-dessous en prenant `C:\Program Files\Ashboard Vision\sdk` comme dossier des paquets (au lieu de `C:\paquets-ashboard`).
+3. sinon, **télécharge et installe le SDK .NET 10** (environ 220 Mo, depuis le site de Microsoft), pour tout l'ordinateur, puis fait comme au point 2. Avant de le lancer, l'installateur vérifie le fichier : son empreinte est celle que Microsoft publie, et sa signature est celle de Microsoft. Un fichier qui échoue à l'une des deux n'est jamais lancé. Pour ne garder que le SDK d'Ashboard Vision, décoche la case et installe le SDK .NET 10 toi-même.
+4. si le téléchargement ou l'installation échoue (pas d'Internet, par exemple), te le dit en une phrase, avec l'adresse <https://dotnet.microsoft.com/download>. Les quatre paquets sont tout de même copiés dans `sdk` ; le modèle et l'outil ne sont pas installés. Pour finir, installe le SDK .NET 10, puis soit tu relances l'installateur d'Ashboard Vision en cochant la case, soit tu tapes les trois commandes de « À la main » ci-dessous en prenant `C:\Program Files\Ashboard Vision\sdk` comme dossier des paquets (au lieu de `C:\paquets-ashboard`).
 
-Lors d'une mise à jour d'Ashboard Vision, la case reprend ton choix précédent : cochée si le SDK était déjà installé. Décochée alors qu'elle était cochée, elle fait retirer la source, le modèle et l'outil. Quand la mise à jour est lancée par le logiciel (mode silencieux), l'installateur n'affiche **aucune boîte** : si le SDK .NET 10 manque, seul son journal le dit.
+Si `dotnet` ou `ashboard-module` n'est pas reconnu juste après l'installation, ouvre un nouveau terminal : Windows ne relit le `PATH` qu'à l'ouverture d'un terminal.
 
-La désinstallation d'Ashboard Vision retire la source, le modèle et l'outil, si tu avais installé le SDK. Une limite : elle le fait avec le compte qui a validé la demande d'administrateur. Si c'est un autre compte que le tien (un administrateur qui a saisi son mot de passe), ils restent dans ton profil : retire-les toi-même avec `dotnet tool uninstall -g AshboardVision.Sdk.Tool`, `dotnet new uninstall AshboardVision.Sdk.Templates` et `dotnet nuget remove source AshboardVision`.
+Lors d'une mise à jour d'Ashboard Vision, la case reprend ton choix précédent : cochée si le SDK était déjà installé. Décochée alors qu'elle était cochée, elle fait retirer la source, le modèle et l'outil. Quand la mise à jour est lancée par le logiciel (mode silencieux), l'installateur n'affiche **aucune boîte** et ne télécharge **rien** : si le SDK .NET 10 manque, seul son journal le dit.
+
+La désinstallation d'Ashboard Vision retire la source, le modèle et l'outil, si tu avais installé le SDK. Le SDK .NET 10, lui, n'est **jamais retiré** : c'est un programme à part, que tu désinstalles dans « Applications installées » si tu n'en veux plus. Une limite : elle le fait avec le compte qui a validé la demande d'administrateur. Si c'est un autre compte que le tien (un administrateur qui a saisi son mot de passe), ils restent dans ton profil : retire-les toi-même avec `dotnet tool uninstall -g AshboardVision.Sdk.Tool`, `dotnet new uninstall AshboardVision.Sdk.Templates` et `dotnet nuget remove source AshboardVision`.
 
 ### À la main, depuis une version GitHub
 

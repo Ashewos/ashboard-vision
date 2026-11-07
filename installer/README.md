@@ -16,7 +16,8 @@ autonomes) dans `installer/publish/`, puis fabrique les quatre paquets du SDK de
 par `installer/artifacts/` (`--artifacts-path`) : les dossiers `bin` et `obj` des projets ne sont pas touchés, donc le service lancé depuis
 `src/Trofeo.Display/bin/Release` n'est pas dérangé. Il y copie `mods/` (la version du mod ashboard-quotas y prend celle du logiciel : le
 fichier du dépôt ne change pas), `LICENSE`, `LICENCES-TIERCES.txt` et les textes de licence des paquets. Il échoue si l'un des quatre `.exe`
-(dont `Trofeo.ModuleHost.exe`) manque après la publication. `installer/out/`,
+(dont `Trofeo.ModuleHost.exe`) manque après la publication, ou si `installer/dotnet-sdk.ps1` (l'aide du SDK .NET 10, voir plus bas) manque ou ne
+s'analyse pas : elle n'a rien à fabriquer, `ashboard-vision.iss` l'embarque telle quelle (`dontcopy`), et le script ne fait que la vérifier, sans la lancer. `installer/out/`,
 `installer/publish/`, `installer/artifacts/` ne sont pas versionnés.
 
 **Le SDK des modules** : `build.ps1` lance `dotnet pack -c Release` (avec restauration : le `.nuspec` de `AshboardVision.Sdk` n'est sans dépendance
@@ -59,8 +60,30 @@ la version, avec l'installateur et son `.sha256` (elle échoue s'il n'y en a pas
     `--force` pour que la même version se réinstalle sans erreur), `dotnet tool update -g AshboardVision.Sdk.Tool --source "{app}\sdk"` (installe l'outil
     s'il est absent, ne fait rien s'il est déjà à jour ; `--source` le limite au dossier du SDK, donc rien n'est demandé à nuget.org et cela marche hors ligne :
     essayé, `--add-source` échoue quand nuget.org est injoignable, même avec `--ignore-failed-sources`).
-  - **Sans SDK .NET 10** : seuls les fichiers sont copiés. Hors mode silencieux, une boîte dit « Installe le SDK .NET 10 pour créer des modules :
-    https://dotnet.microsoft.com/download » et de relancer l'installateur ensuite ; en mode silencieux (mise à jour lancée par le logiciel), **aucune boîte**, le journal seul le dit.
+  - **Sans SDK .NET 10** : l'installateur le **télécharge chez Microsoft et l'installe** (voir « Le SDK .NET 10 manque » juste après). En mode silencieux (mise à jour
+    lancée par le logiciel), il ne télécharge **jamais** rien : seuls les fichiers sont copiés, **aucune boîte**, le journal seul le dit. Quand le téléchargement ou
+    l'installation échoue, seuls les fichiers sont copiés aussi, et une boîte dit pourquoi (une phrase, par exemple « Le SDK .NET 10 n'a pas pu être téléchargé. »)
+    avant « Installe le SDK .NET 10 pour créer des modules : https://dotnet.microsoft.com/download » et de relancer l'installateur ensuite.
+  - **Le SDK .NET 10 manque** (case cochée, aucun SDK .NET 10 trouvé par `FindDotnet`, Setup pas silencieux). Inno Setup 7.1 ne lit pas le JSON, ne vérifie que des
+    empreintes SHA-256 (`DownloadTemporaryFile`) et ne contrôle pas les signatures Authenticode : une petite aide **Windows PowerShell 5.1**, `installer/dotnet-sdk.ps1`
+    (embarquée, extraite dans `{tmp}`, lancée par `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File …`), fait ces deux travaux ; le téléchargement
+    reste à Inno Setup, pour sa page de progression. Dans `PrepareToInstall`, juste après PawnIO :
+    1. `-Resolve` lit `https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json`, prend `latest-sdk`, puis, dans `releases`, l'entrée SDK de
+       cette version (`sdk` ou `sdks`) et son fichier `win-x64` en `.exe` : adresse et empreinte SHA-512. **Aucune version ni empreinte n'est écrite en dur** (au 07/11/2026,
+       c'est la 10.0.403, environ 205 Mio, soit 215 Mo). L'adresse doit être en `https://`, sans identifiant ni port, sur `builds.dotnet.microsoft.com`, `dotnetcli.blob.core.windows.net` ou
+       `download.visualstudio.microsoft.com` ; sinon, refus ;
+    2. Inno Setup télécharge le fichier dans `{tmp}` (page « Téléchargement du SDK .NET 10 », avec Annuler : cela n'abandonne que le SDK) ;
+    3. `-Verify` contrôle le fichier **avant tout lancement** : l'empreinte SHA-512 est celle de `releases.json`, **et** il porte une signature Authenticode valide, intégrée au fichier, dont
+       le signataire est Microsoft (`O=Microsoft Corporation`). L'empreinte vient du même serveur que le fichier : la signature est la vraie protection. Un fichier qui échoue à l'une
+       des deux n'est jamais lancé.
+    Puis, à `ssPostInstall`, avant `InstallSdkTools` : le fichier est **revérifié** (il est resté dans `{tmp}` pendant la copie des fichiers), puis `<fichier> /install /quiet /norestart` avec `Exec` (installation pour toute la machine, Setup est déjà administrateur),
+    « Installation du SDK .NET 10… » dans l'assistant ; les codes 0, 3010 et 1641 valent réussite, tout autre code est un échec (journalisé). `InstallSdkTools` cherche alors `dotnet`
+    à nouveau : le `PATH` de Setup n'a pas changé, c'est le chemin de repli `Program Files\dotnet\dotnet.exe` de `FindDotnet` qui répond. À la moindre panne (pas d'Internet,
+    `releases.json` illisible, adresse refusée, empreinte ou signature fausse, installation en échec, Annuler) : rien n'est lancé, la raison exacte est journalisée, la boîte donne
+    la phrase courte puis le lien, et l'installation d'Ashboard Vision se termine normalement. Ce que l'aide rend (`url=`, `sha512=`, `version=` ou `error=`, et son code de sortie) est lu
+    dans un petit fichier de `{tmp}`, effacé par Inno Setup à la fin ; les codes de sortie sont documentés en tête de `dotnet-sdk.ps1` ; ses tests sont dans
+    `tests/Trofeo.Distribution.Tests/DotnetSdkScriptTests.cs`.
+    **Le SDK .NET n'est jamais retiré à la désinstallation** : c'est un programme à part, dans « Applications installées ». Seuls la source NuGet, le modèle et l'outil d'Ashboard Vision sont retirés.
   - **Mise à jour** : Inno Setup reprend les cases de l'installation d'avant (`UsePreviousTasks`), y compris en silencieux ; la case est donc cochée si le SDK était
     installé. Pour savoir si elle l'était, `PrepareToInstall` lit la valeur `Inno Setup: Selected Tasks` de la clé de désinstallation d'Inno Setup (avant que cette
     clé soit réécrite) ; si `sdk` y est et que la case est maintenant décochée, les mêmes retraits qu'à la désinstallation sont faits.
@@ -73,7 +96,7 @@ la version, avec l'installateur et son `.sha256` (elle échoue s'il n'y en a pas
     à garder en tête pour l'essai sans Internet. **Limite** : `ExecAsOriginalUser` n'est pas pris en charge à la désinstallation (documentation d'Inno Setup 7.1) : les retraits sont lancés avec `Exec`, donc avec les
     droits de l'administrateur qui a validé l'élévation. C'est le même profil quand c'est le compte de l'utilisateur ; si un autre administrateur a saisi son mot de passe,
     l'outil, le modèle et la source restent dans le profil de l'utilisateur (à retirer à la main avec les trois commandes ci-dessus).
-- **Journal** : l'installation note le téléchargement de PawnIO, le code de l'assistant des capteurs et, pour le SDK, la recherche de `dotnet` et le code de chaque commande ; la désinstallation, les codes de
+- **Journal** : l'installation note le téléchargement de PawnIO, le code de l'assistant des capteurs et, pour le SDK, la recherche de `dotnet`, le téléchargement du SDK .NET 10 (adresse, raison d'un refus) et le code de chaque commande ; la désinstallation, les codes de
   ses étapes (dont les trois retraits du SDK). Pour l'avoir : `Ashboard-Vision-Setup-<version>.exe /LOG="<fichier>"`.
 - **Désinstallation** : arrête les programmes (dont les hôtes de modules), lance `Trofeo.Display.exe --desinstaller-utilisateur` (avec `--silencieux` si la
   désinstallation l'est : valeur `Run`, mod des quotas, modules complémentaires, question sur les réglages), puis `Trofeo.SensorHelper.exe uninstall` (tâche et
@@ -142,7 +165,7 @@ gratuit, donc sans objet, mais cela vaut d'être su.
 
 ## Points qui restent à essayer sur Windows
 
-Dans le Bac à sable Windows, puis sur le PC d'Alex (jamais lancé depuis ce script) : **la case SDK** (décochée par défaut ; cochée sans SDK .NET → message ; cochée avec
+Dans le Bac à sable Windows, puis sur le PC d'Alex (jamais lancé depuis ce script) : **la case SDK** (décochée par défaut ; cochée sans SDK .NET → téléchargement, vérification et installation du SDK .NET 10 par l'installateur (jamais essayé en vrai : le PC d'Alex en a déjà un, il faut le Bac à sable Windows), puis `dotnet new ashboard-module` ; sans Internet → message avec sa phrase ; cochée avec
 SDK .NET → `dotnet new ashboard-module` et `ashboard-module` disponibles ; mise à jour silencieuse → case reprise ; désinstallation → outil, modèle et source retirés, avec
 `Exec` à la place de `ExecAsOriginalUser`), pages en français avec le thème suivi, entrée dans
 « Applications installées » (icône, éditeur Ashewos), service « déconnecté » sans écran, mise à jour silencieuse
