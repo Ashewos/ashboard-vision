@@ -420,6 +420,131 @@ public sealed class AvmodPackageTests : IDisposable
     private static bool NameAt(byte[] zip, int offset, int length, byte[] name) =>
         length == name.Length && zip.AsSpan(offset, length).SequenceEqual(name);
 
+    // ---- Fichier démesuré ou répertoire central piégé : refusés avant de charger l'archive en mémoire ----
+
+    [Fact]
+    public void Inspect_FileOverTheLimit_IsRefusedBeforeReadingIt()
+    {
+        var path = InRoot("enorme.avmod");
+        using (var file = File.Create(path))
+        {
+            file.SetLength(AvmodPackage.MaxFileBytes + 1); // le contenu n'a pas d'importance : seule la taille compte
+        }
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.Null(result.Manifest);
+        Assert.Contains("51 Mio", Assert.Single(result.Errors));
+    }
+
+    [Fact]
+    public void ExtractTo_FileOverTheLimit_IsRefusedAndWritesNothing()
+    {
+        var path = InRoot("enorme.avmod");
+        using (var file = File.Create(path))
+        {
+            file.SetLength(AvmodPackage.MaxFileBytes + 1);
+        }
+
+        var target = InRoot("cible");
+        var ex = Assert.Throws<InvalidDataException>(() => AvmodPackage.ExtractTo(path, target));
+
+        Assert.Contains("51 Mio", ex.Message);
+        Assert.False(Directory.Exists(target));
+        Assert.Empty(Directory.GetDirectories(_root));
+    }
+
+    [Fact]
+    public void Inspect_EntryCountAnnouncedByTheEndRecordOverTheLimit_IsRefused()
+    {
+        // Une archive valide d'une entrée dont l'enregistrement de fin annonce 100 000 entrées : refusée sur l'annonce, sans lire les entrées.
+        var path = MakeZip("annonce.avmod", ("manifest.json", Bytes(ManifestJson)));
+        var bytes = File.ReadAllBytes(path);
+        var end = LastIndexOf(bytes, 0x06054b50u);
+        BitConverter.GetBytes((ushort)60000).CopyTo(bytes, end + 8);
+        BitConverter.GetBytes((ushort)60000).CopyTo(bytes, end + 10);
+        File.WriteAllBytes(path, bytes);
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.Null(result.Manifest);
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("60000", error);
+        Assert.Contains("2000", error);
+    }
+
+    [Fact]
+    public void Inspect_Zip64EntryCountOverTheLimit_IsRefused()
+    {
+        // Un fichier fait main : enregistrement zip64, son indicateur, puis la fin classique qui renvoie vers lui (65 535 = « voir zip64 »).
+        using var stream = new MemoryStream();
+        var writer = new BinaryWriter(stream);
+        var zip64Offset = stream.Position;
+        writer.Write(0x06064b50u);
+        writer.Write(44UL); // taille du reste de l'enregistrement
+        writer.Write((ushort)45);
+        writer.Write((ushort)45);
+        writer.Write(0u);
+        writer.Write(0u);
+        writer.Write(5_000_000UL); // entrées sur ce disque
+        writer.Write(5_000_000UL); // entrées en tout
+        writer.Write(230_000_000UL); // taille du répertoire central
+        writer.Write(0UL); // son décalage
+        writer.Write(0x07064b50u);
+        writer.Write(0u);
+        writer.Write((ulong)zip64Offset);
+        writer.Write(1u);
+        writer.Write(0x06054b50u);
+        writer.Write((ushort)0);
+        writer.Write((ushort)0);
+        writer.Write((ushort)0xFFFF);
+        writer.Write((ushort)0xFFFF);
+        writer.Write(0xFFFFFFFFu);
+        writer.Write(0xFFFFFFFFu);
+        writer.Write((ushort)0);
+        var path = InRoot("zip64.avmod");
+        File.WriteAllBytes(path, stream.ToArray());
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.Null(result.Manifest);
+        Assert.Contains("5000000", Assert.Single(result.Errors));
+    }
+
+    [Fact]
+    public void Inspect_CentralDirectoryOverTheLimit_IsRefused()
+    {
+        // Peu d'entrées annoncées mais un répertoire central énorme : la bibliothèque le lirait en entier jusqu'au bout.
+        var path = MakeZip("repertoire.avmod", ("manifest.json", Bytes(ManifestJson)));
+        var bytes = File.ReadAllBytes(path);
+        var end = LastIndexOf(bytes, 0x06054b50u);
+        BitConverter.GetBytes(400_000_000u).CopyTo(bytes, end + 12);
+        File.WriteAllBytes(path, bytes);
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.Null(result.Manifest);
+        Assert.Contains("démesuré", Assert.Single(result.Errors));
+    }
+
+    [Fact]
+    public void Inspect_FileWithoutAnEndRecord_IsUnreadableNotACrash()
+    {
+        var path = InRoot("rien.avmod");
+        File.WriteAllBytes(path, new byte[100]);
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.Null(result.Manifest);
+        Assert.Contains("illisible", Assert.Single(result.Errors));
+    }
+
+    private static int LastIndexOf(byte[] bytes, uint signature)
+    {
+        var wanted = BitConverter.GetBytes(signature);
+        return bytes.AsSpan().LastIndexOf(wanted);
+    }
+
     // ---- ExtractTo ----
 
     [Fact]

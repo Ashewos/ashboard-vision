@@ -34,7 +34,7 @@ public sealed record ModuleUpdateCheck(IReadOnlyDictionary<string, ModuleUpdate>
 public sealed class ModuleUpdateChecker(UpdateChecker checker, TimeProvider time)
 {
     /// <summary>La taille maximale du paquet d'une mise à jour : celle d'un paquet décompressé, plus une marge pour l'archive.</summary>
-    public const long MaxPackageBytes = AvmodPackage.MaxUncompressedBytes + 1024 * 1024;
+    public const long MaxPackageBytes = AvmodPackage.MaxFileBytes;
 
     /// <summary>Le nombre maximal de dépôts interrogés par vérification.</summary>
     public const int MaxRepositories = 20;

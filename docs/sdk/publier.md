@@ -47,7 +47,7 @@ Le même dossier donne le même paquet, octet pour octet.
 
 Le paquet est inspecté **avant** d'être écrit. Il est refusé, sans rien laisser sur le disque, si :
 
-- il contient plus de 2 000 fichiers, ou plus de 50 Mio une fois décompressé ;
+- il contient plus de 2 000 fichiers, ou plus de 50 Mio une fois décompressé, ou si le fichier `.avmod` lui-même dépasse 51 Mio ;
 - un chemin dépasse 200 caractères ou 16 niveaux de dossiers ;
 - un chemin est dangereux (`..\`, un chemin absolu) ou porte un nom réservé par Windows (`CON`, `NUL`, `COM1`…) ;
 - le manifeste est invalide.

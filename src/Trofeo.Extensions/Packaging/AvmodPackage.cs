@@ -19,8 +19,21 @@ public static class AvmodPackage
     /// <summary>Taille décompressée maximale du paquet entier (50 Mio).</summary>
     public const long MaxUncompressedBytes = 50L * 1024 * 1024;
 
+    /// <summary>
+    /// Taille maximale du fichier <c>.avmod</c> lui-même : celle d'un paquet décompressé, plus une marge d'un Mio pour les en-têtes
+    /// de l'archive. Vérifiée avant d'ouvrir l'archive ; c'est aussi la limite du téléchargement d'une mise à jour.
+    /// </summary>
+    public const long MaxFileBytes = MaxUncompressedBytes + 1024 * 1024;
+
     /// <summary>Nombre maximal d'entrées (fichiers et dossiers).</summary>
     public const int MaxEntries = 2000;
+
+    /// <summary>
+    /// Taille maximale du répertoire central de l'archive : 2 Kio par entrée au plus (un nom de 200 caractères et les champs
+    /// facultatifs d'horodatage ou de nom Unicode tiennent largement dans 400 octets). Au-delà, la bibliothèque ZIP lirait une
+    /// liste d'entrées démesurée en mémoire.
+    /// </summary>
+    private const long MaxDirectoryBytes = (long)MaxEntries * 2048;
 
     /// <summary>Le nom du manifeste, à la racine du paquet.</summary>
     public const string ManifestFileName = "manifest.json";
@@ -173,10 +186,39 @@ public static class AvmodPackage
         return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
     }
 
+    private const string UnreadableMessage = "Ce fichier n'est pas un paquet .avmod valide (archive ZIP illisible).";
+
+    /// <summary>
+    /// Ouvre l'archive, après deux vérifications qui ne chargent rien : la taille du fichier, puis le nombre d'entrées et la taille
+    /// du répertoire central annoncés par l'enregistrement de fin. <c>ZipArchive</c> et <c>Entries</c> chargent tout le répertoire
+    /// central en mémoire : un fichier de quelques centaines de Mio fait d'entrées minuscules ferait des millions d'objets, dans le service.
+    /// </summary>
     private static bool TryOpenArchive(Stream stream, out ZipArchive archive, out string error)
     {
+        archive = null!;
+        if (stream.Length > MaxFileBytes)
+        {
+            error = $"Le fichier fait {stream.Length / (1024.0 * 1024.0):0.#} Mio : un paquet .avmod ne dépasse pas {MaxFileBytes / (1024 * 1024)} Mio.";
+            return false;
+        }
+
         try
         {
+            if (ReadDirectoryAnnouncement(stream) is { } announced)
+            {
+                if (announced.Entries > MaxEntries)
+                {
+                    error = $"Le paquet contient {announced.Entries} éléments : {MaxEntries} au plus.";
+                    return false;
+                }
+
+                if (announced.Bytes > MaxDirectoryBytes)
+                {
+                    error = $"Le répertoire central du paquet est démesuré ({announced.Bytes / (1024 * 1024)} Mio) : {MaxEntries} éléments au plus.";
+                    return false;
+                }
+            }
+
             archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
             error = "";
             return true;
@@ -184,9 +226,91 @@ public static class AvmodPackage
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
         {
             archive = null!;
-            error = "Ce fichier n'est pas un paquet .avmod valide (archive ZIP illisible).";
+            error = UnreadableMessage;
             return false;
         }
+    }
+
+    private const uint Zip64LocatorSignature = 0x07064b50;
+    private const uint Zip64EndRecordSignature = 0x06064b50;
+    private const int EndRecordSize = 22;
+
+    /// <summary>Ce que l'enregistrement de fin d'une archive annonce du répertoire central : le nombre d'entrées et sa taille en octets.</summary>
+    internal readonly record struct DirectoryAnnouncement(long Entries, long Bytes);
+
+    /// <summary>
+    /// Lit l'enregistrement de fin du répertoire central comme <c>ZipArchive</c> le cherche (la dernière signature dans les 64 Kio
+    /// de la fin), et l'enregistrement zip64 qu'il désigne le cas échéant. <c>null</c> si aucun enregistrement de fin n'est trouvé
+    /// (<c>ZipArchive</c> refusera le fichier à son tour). Laisse le flux au début.
+    /// </summary>
+    /// <exception cref="InvalidDataException">L'enregistrement annonce du zip64 mais l'enregistrement zip64 est introuvable ou faux.</exception>
+    internal static DirectoryAnnouncement? ReadDirectoryAnnouncement(Stream stream)
+    {
+        var length = stream.Length;
+        if (length < EndRecordSize)
+        {
+            return null;
+        }
+
+        var tail = (int)Math.Min(length, ushort.MaxValue + EndRecordSize);
+        var buffer = new byte[tail];
+        stream.Seek(length - tail, SeekOrigin.Begin);
+        stream.ReadExactly(buffer);
+        stream.Seek(0, SeekOrigin.Begin);
+
+        ReadOnlySpan<byte> signature = [0x50, 0x4b, 0x05, 0x06];
+        var at = -1;
+        for (var from = tail - EndRecordSize; from >= 0; from--)
+        {
+            if (buffer.AsSpan(from, 4).SequenceEqual(signature))
+            {
+                at = from;
+                break;
+            }
+        }
+
+        if (at < 0)
+        {
+            return null;
+        }
+
+        long entries = BitConverter.ToUInt16(buffer, at + 10);
+        long bytes = BitConverter.ToUInt32(buffer, at + 12);
+        if (entries != ushort.MaxValue && bytes != uint.MaxValue)
+        {
+            return new DirectoryAnnouncement(entries, bytes);
+        }
+
+        // Zip64 : le localisateur (20 octets) précède l'enregistrement de fin et désigne l'enregistrement zip64 (56 octets).
+        var endPosition = length - tail + at;
+        if (endPosition < 20 + 56)
+        {
+            throw new InvalidDataException("zip64 introuvable");
+        }
+
+        var locator = new byte[20];
+        stream.Seek(endPosition - 20, SeekOrigin.Begin);
+        stream.ReadExactly(locator);
+        var offset = BitConverter.ToInt64(locator, 8);
+        if (BitConverter.ToUInt32(locator, 0) != Zip64LocatorSignature || offset < 0 || offset > endPosition - 20 - 56)
+        {
+            stream.Seek(0, SeekOrigin.Begin);
+            throw new InvalidDataException("zip64 introuvable");
+        }
+
+        var record = new byte[56];
+        stream.Seek(offset, SeekOrigin.Begin);
+        stream.ReadExactly(record);
+        stream.Seek(0, SeekOrigin.Begin);
+        if (BitConverter.ToUInt32(record, 0) != Zip64EndRecordSignature)
+        {
+            throw new InvalidDataException("zip64 introuvable");
+        }
+
+        var entries64 = BitConverter.ToUInt64(record, 32);
+        var bytes64 = BitConverter.ToUInt64(record, 40);
+        return new DirectoryAnnouncement(
+            entries64 > long.MaxValue ? long.MaxValue : (long)entries64, bytes64 > long.MaxValue ? long.MaxValue : (long)bytes64);
     }
 
     private sealed record Item(ZipArchiveEntry Entry, string Path, bool IsDirectory);
