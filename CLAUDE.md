@@ -1,5 +1,7 @@
 # Ashboard Vision — notes pour Claude
 
+> **RÈGLE N° 1 : réponds TOUJOURS à Alex en français.** Chaque message, sans exception : la réponse finale, les petites lignes entre deux outils, le résumé de `wrap_up`, les tableaux, les consignes pas à pas. Même juste après un compte rendu de sous-agent ou une sortie de commande en anglais, même après un `/compact`, même au milieu d'un long travail. Avant d'envoyer un texte, vérifie qu'il est en français. Seuls les briefs des sous-agents peuvent rester en anglais.
+
 Ashboard Vision (identifiant technique `ashboard-vision`, dépôt `Ashewos/ashboard-vision` ; le projet s'est appelé trofeo-HB-dashboard) : tableau de bord modulaire pour l'écran USB Thermalright Trofeo Vision 9,16" (1920×462, rotation 180°), en .NET 10, SkiaSharp, xUnit. Le nom Ashboard Vision s'affiche partout ; le code garde ses noms `Trofeo.*`, et trois identifiants gardent l'ancien nom exprès : l'entropie DPAPI, `FreeboxSource.AppId` et `LayoutTransfer.Format`. Alex, le propriétaire, parle français : on lui répond en français, et les textes affichés à l'écran le tutoient.
 
 ## Où on en est
