@@ -533,6 +533,8 @@ public static class Texts
     public static string PackageNetworkPath => Get();
     /// <summary>Un .avmod ouvert qui n'existe plus (ou dont le chemin est invalide).</summary>
     public static string PackageMissing => Get();
+    /// <summary>Un .avmod dont l'emplacement ne permet pas de dire s'il est sur ce PC (lecteur de type inconnu, nom de périphérique).</summary>
+    public static string PackageUnopenable => Get();
     /// <summary>État d'un module complémentaire.</summary>
     public static string CommunityStateReady => Get();
     /// <summary>État d'un module complémentaire.</summary>

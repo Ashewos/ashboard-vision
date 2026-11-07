@@ -93,6 +93,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             FirstRun.Restart();
         IsFirstRunVisible = show;
         UpdateConsumptionVisibility();
+
+        // L'assistant vient de se fermer : le refus d'un .avmod reçu pendant qu'il était là se montre maintenant.
+        if (!show && _packageProblemDuringFirstRun is { } problem)
+        {
+            _packageProblemDuringFirstRun = null;
+            ShowPackageProblem(problem);
+        }
+    }
+
+    // Le refus d'un .avmod reçu pendant l'assistant de premier lancement (les onglets n'y sont pas) : montré à sa fermeture, pas perdu.
+    private string? _packageProblemDuringFirstRun;
+
+    private void ShowPackageProblem(string problem)
+    {
+        SelectedTab = SettingsTab;
+        SettingsTab.Community.ShowPackageProblem(problem);
     }
 
     /// <summary>Les préférences de la fenêtre (aperçu en rendu réel, première ouverture), écrites dans <c>settings-app.json</c> quand elles changent.</summary>
@@ -156,9 +172,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         else if (resolution.Problem is { } problem)
         {
-            if (!IsFirstRunVisible)
-                SelectedTab = SettingsTab;
-            SettingsTab.Community.ShowPackageProblem(problem);
+            if (IsFirstRunVisible)
+                _packageProblemDuringFirstRun = problem;
+            else
+                ShowPackageProblem(problem);
         }
     }
 

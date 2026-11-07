@@ -21,12 +21,21 @@ public sealed class SingleInstance : IDisposable
     public const string MutexName = @"Local\trofeo-HB-dashboard.settings";
     public const string ShowEventName = @"Local\trofeo-HB-dashboard.settings.show";
 
-    /// <summary>Le tube par lequel un second lancement passe le chemin d'un <c>.avmod</c> au premier (sans le préfixe <c>\\.\pipe\</c>).</summary>
-    public const string PipeName = "trofeo-HB-dashboard.settings.open";
+    /// <summary>
+    /// Le tube par lequel un second lancement passe le chemin d'un <c>.avmod</c> au premier (sans le préfixe <c>\\.\pipe\</c>). Le nom porte
+    /// l'identifiant de la session Windows, comme la portée <c>Local\</c> du mutex : deux sessions ouvertes en même temps (changement
+    /// rapide d'utilisateur, services Bureau à distance) ont chacune leur fenêtre et leur tube, et un tube ne prend jamais la place de l'autre.
+    /// </summary>
+    public static string PipeName => PipeNameForSession(System.Diagnostics.Process.GetCurrentProcess().SessionId);
+
+    /// <summary>Le nom du tube de la session Windows donnée.</summary>
+    public static string PipeNameForSession(int sessionId) => "trofeo-HB-dashboard.settings.open." + sessionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     // Un double-clic donne un seul chemin ; quelques-uns au plus, et 64 Ko en tout : un tube qui déborde est ignoré.
     private const int MaxArguments = 4;
     private const int MaxMessageBytes = 64 * 1024;
+    // Le tube ne peut pas être créé (nom pris par un autre processus de l'utilisateur, droits) : quelques essais, puis on abandonne.
+    private const int MaxPipeCreationFailures = 5;
     private static readonly TimeSpan ReceiveTimeout = TimeSpan.FromSeconds(5);
     private const int SendTimeoutMilliseconds = 3000;
 
@@ -61,6 +70,9 @@ public sealed class SingleInstance : IDisposable
     /// <summary>Vrai pour le premier lancement. Un second lancement a déjà prévenu le premier et doit quitter.</summary>
     public bool IsFirst { get; }
 
+    /// <summary>Vrai tant que le tube des fichiers <c>.avmod</c> est servi (faux pour un second lancement, après <see cref="Dispose"/>, ou si le tube n'a pas pu être créé).</summary>
+    public bool IsListeningForFiles => _server is { IsCompleted: false };
+
     /// <summary>Un second lancement demande de ramener la fenêtre au premier plan. Levé sur un fil d'arrière-plan.</summary>
     public event Action? ShowRequested;
 
@@ -93,8 +105,9 @@ public sealed class SingleInstance : IDisposable
     /// <param name="arguments">
     /// La ligne de commande de ce lancement. Si c'est un second lancement, les chemins <c>.avmod</c> qu'elle contient sont passés au premier.
     /// </param>
-    public static SingleInstance Acquire(string mutexName = MutexName, string showEventName = ShowEventName, string pipeName = PipeName, IReadOnlyList<string>? arguments = null)
+    public static SingleInstance Acquire(string mutexName = MutexName, string showEventName = ShowEventName, string? pipeName = null, IReadOnlyList<string>? arguments = null)
     {
+        pipeName ??= PipeName;
         // Pas de propriété du mutex (premier paramètre faux) : il n'y a rien à libérer, et la sortie du processus suffit.
         var mutex = new Mutex(false, mutexName, out var createdNew);
         var show = OperatingSystem.IsWindows() ? new EventWaitHandle(false, EventResetMode.AutoReset, showEventName) : null;
@@ -166,12 +179,34 @@ public sealed class SingleInstance : IDisposable
     /// <summary>Premier lancement : accepte un client à la fois, lit au plus 64 Ko en 5 s, et transmet les chemins reçus.</summary>
     private async Task ServeAsync(string pipeName, CancellationToken ct)
     {
+        var failures = 0;
         while (!ct.IsCancellationRequested)
         {
+            NamedPipeServerStream pipe;
             try
             {
-                await using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte,
+                pipe = new NamedPipeServerStream(pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                failures = 0;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Pas de boucle silencieuse : quelques essais espacés, puis on abandonne. Le second lancement ramène quand même la fenêtre
+                // (l'événement « show »), sans pouvoir lui passer le chemin : c'est le comportement d'avant le tube.
+                if (++failures >= MaxPipeCreationFailures)
+                {
+                    System.Diagnostics.Trace.TraceWarning("Réglages : le tube de passage des fichiers .avmod n'a pas pu être créé (" + ex.Message + ") ; un second lancement ne pourra pas transmettre son fichier.");
+                    return;
+                }
+
+                try { await Task.Delay(200 * failures, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { return; }
+                continue;
+            }
+
+            try
+            {
+                await using var owner = pipe.ConfigureAwait(false);
                 await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
 
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -210,7 +245,7 @@ public sealed class SingleInstance : IDisposable
         return new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(buffer, 0, length);
     }
 
-    private void Deliver(string[] arguments)
+    internal void Deliver(string[] arguments)
     {
         if (arguments.Length == 0)
             return;

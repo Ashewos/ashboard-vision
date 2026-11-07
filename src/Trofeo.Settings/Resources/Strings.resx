@@ -1025,6 +1025,10 @@
     <value>Ce fichier est introuvable : vérifie qu'il est toujours là.</value>
     <comment>Un .avmod ouvert qui n'existe plus (ou dont le chemin est invalide).</comment>
   </data>
+  <data name="PackageUnopenable" xml:space="preserve">
+    <value>Ce fichier ne peut pas s'ouvrir depuis cet emplacement : copie-le sur un disque de ce PC.</value>
+    <comment>Un .avmod dont l'emplacement ne permet pas de dire s'il est sur ce PC (lecteur de type inconnu, nom de périphérique).</comment>
+  </data>
   <data name="CommunityStateReady" xml:space="preserve">
     <value>Actif</value>
     <comment>État d'un module complémentaire.</comment>

@@ -20,6 +20,16 @@ public partial class App : Application
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
+    /// <summary>
+    /// Ce que fait la fenêtre quand un second lancement se présente : revenir au premier plan, et traiter les chemins <c>.avmod</c> qu'il passe comme
+    /// sa propre ligne de commande (même règle, même boîte, même clic sur « Installer »). <paramref name="post"/> exécute l'action sur le fil de l'interface.
+    /// </summary>
+    internal static void ConnectSecondLaunches(SingleInstance instance, MainViewModel model, Action<Action> post, Action bringToFront)
+    {
+        instance.ShowRequested += () => post(bringToFront);
+        instance.ArgumentsReceived += received => post(() => model.OpenPackageArguments(received));
+    }
+
     public override void OnFrameworkInitializationCompleted()
     {
         // Sans durée de vie de bureau (tests sans affichage, aperçus), l'appelant monte sa propre fenêtre.
@@ -50,12 +60,7 @@ public partial class App : Application
             }
 
             if (Instance is { } instance)
-            {
-                instance.ShowRequested += () => Dispatcher.UIThread.Post(window.BringToFront);
-                // Un double-clic sur un .avmod pendant que la fenêtre est ouverte : le second lancement passe le chemin à celui-ci, qui le
-                // traite comme sa propre ligne de commande (même règle, même boîte, même clic sur « Installer »).
-                instance.ArgumentsReceived += received => Dispatcher.UIThread.Post(() => model.OpenPackageArguments(received));
-            }
+                ConnectSecondLaunches(instance, model, action => Dispatcher.UIThread.Post(action), window.BringToFront);
 
             desktop.Exit += (_, _) =>
             {

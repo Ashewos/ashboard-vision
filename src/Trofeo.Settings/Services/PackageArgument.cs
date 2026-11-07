@@ -37,6 +37,7 @@ public static class PackageArgument
 
         var network = new PackageResolution(null, Texts.PackageNetworkPath);
         var missing = new PackageResolution(null, Texts.PackageMissing);
+        var unopenable = new PackageResolution(null, Texts.PackageUnopenable);
 
         foreach (var raw in args ?? [])
         {
@@ -44,9 +45,18 @@ public static class PackageArgument
             if (string.IsNullOrEmpty(arg) || !arg.EndsWith(".avmod", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            // Un nom de réseau (« \hôte\partage », « //hôte/partage », « \?\UNC\… », « \.\UNC\… ») est refusé sans rien toucher.
+            // Un chemin de disque local écrit avec le préfixe long ou de périphérique (« \\?\C:\x.avmod », « \\.\C:\x.avmod ») reste un
+            // fichier local : le préfixe est retiré, la suite le traite comme « C:\x.avmod ».
+            if ((arg.StartsWith(@"\\?\", StringComparison.Ordinal) || arg.StartsWith(@"\\.\", StringComparison.Ordinal)) && StartsWithDriveRoot(arg.AsSpan(4)))
+                arg = arg[4..];
+
+            // Un nom de réseau (« \hôte\partage », « //hôte/partage », « \\?\UNC\… », « \\.\UNC\… ») est refusé sans rien toucher.
+            // Les autres noms de périphérique (« \\?\Volume{…}\ ») ne disent pas où est le fichier : message neutre.
             if (arg.StartsWith(@"\\", StringComparison.Ordinal) || arg.StartsWith("//", StringComparison.Ordinal))
-                return network;
+            {
+                var device = arg.StartsWith(@"\\?\", StringComparison.Ordinal) || arg.StartsWith(@"\\.\", StringComparison.Ordinal);
+                return device && !arg.AsSpan(4).StartsWith(@"UNC\", StringComparison.OrdinalIgnoreCase) ? unopenable : network;
+            }
 
             try
             {
@@ -58,7 +68,9 @@ public static class PackageArgument
                 var drive = driveType(root);
                 if (drive == DriveType.Network)
                     return network;
-                if (drive is DriveType.Unknown or DriveType.NoRootDirectory)
+                if (drive == DriveType.Unknown)
+                    return unopenable; // Windows ne sait pas dire de quel genre de lecteur il s'agit : ni « réseau » ni « introuvable » ne serait juste
+                if (drive == DriveType.NoRootDirectory)
                     return missing;
                 return fileExists(full) ? new PackageResolution(full, null) : missing;
             }
@@ -70,4 +82,8 @@ public static class PackageArgument
 
         return default;
     }
+
+    // « C:\… » ou « C:/… ».
+    private static bool StartsWithDriveRoot(ReadOnlySpan<char> path) =>
+        path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/');
 }
