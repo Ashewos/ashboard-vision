@@ -72,7 +72,15 @@ public static class AvmodPackage
 
         using (archive)
         {
-            return InspectArchive(archive, out _);
+            try
+            {
+                return InspectArchive(archive, out _);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
+            {
+                // Une fin qui ment par le bas, ou un répertoire tronqué : ZipArchive ne s'en aperçoit qu'en lisant Entries.
+                return new AvmodInspection(null, [UnreadableMessage], 0);
+            }
         }
     }
 

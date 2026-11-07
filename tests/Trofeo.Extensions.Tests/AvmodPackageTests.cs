@@ -474,6 +474,24 @@ public sealed class AvmodPackageTests : IDisposable
     }
 
     [Fact]
+    public void Inspect_EndRecordAnnouncingFewerEntriesThanTheDirectory_IsRefusedWithoutException()
+    {
+        // Une fin qui ment par le bas (1 entrée annoncée, 3 dans le répertoire) : ZipArchive ne s'en aperçoit qu'en lisant Entries.
+        var path = MakeZip("ment.avmod", ("manifest.json", Bytes(ManifestJson)), ("Demo.dll", Bytes("dll")), ("lib/Other.dll", Bytes("other")));
+        var bytes = File.ReadAllBytes(path);
+        var end = LastIndexOf(bytes, 0x06054b50u);
+        BitConverter.GetBytes((ushort)1).CopyTo(bytes, end + 8);
+        BitConverter.GetBytes((ushort)1).CopyTo(bytes, end + 10);
+        File.WriteAllBytes(path, bytes);
+
+        var result = AvmodPackage.Inspect(path);
+
+        Assert.Null(result.Manifest);
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("illisible", error);
+    }
+
+    [Fact]
     public void Inspect_Zip64EntryCountOverTheLimit_IsRefused()
     {
         // Un fichier fait main : enregistrement zip64, son indicateur, puis la fin classique qui renvoie vers lui (65 535 = « voir zip64 »).
