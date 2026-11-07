@@ -537,6 +537,9 @@ begin
   if WizardSilent() then Exit;
   WizardForm.ProgressGauge.Position := (Done * 1000) div Total; // l'échelle (0 à 1000) est posée par InstallDotnetSdk
   WizardForm.StatusLabel.Caption := 'Installation du SDK .NET 10 (' + IntToStr(Done) + ' sur ' + IntToStr(Total) + ')…';
+  // Repeint tout de suite : la documentation d'Inno Setup ne dit pas que la fenêtre est repeinte pendant ExecAndLogOutput, et un paquet prend des minutes.
+  WizardForm.ProgressGauge.Repaint;
+  WizardForm.StatusLabel.Repaint;
 end;
 
 // Lance l'aide PowerShell avec <Arguments> ; rend son code de sortie (-1 si elle n'a pas pu être lancée) et les lignes de son fichier de résultat.
@@ -709,16 +712,19 @@ begin
 end;
 
 // Recopie le journal du setup de Microsoft dans le journal de Setup (le dossier de travail, donc ce fichier, est effacé à la fin) : on peut le lire après un échec.
-procedure LogSdkSetupLog;
+// Appelée dans un finally, donc aussi quand le lancement a levé une exception : elle ne lève rien. SetupRan : le setup a été lancé et s'est terminé ; sinon l'absence
+// de journal est normale (le fichier a été refusé avant son lancement) et n'est pas signalée.
+procedure LogSdkSetupLog(const SetupRan: Boolean);
 var
   Lines: TArrayOfString;
   I: Integer;
   Path: String;
 begin
+  if SdkWorkDir = '' then Exit;
   Path := SdkWorkDir + '\' + DotnetSdkSetupLogFile;
   if not LoadStringsFromFile(Path, Lines) then
   begin
-    Log('Le setup du SDK .NET 10 n''a pas écrit de journal (' + Path + ').');
+    if SetupRan then Log('Le setup du SDK .NET 10 n''a pas écrit de journal (' + Path + ').');
     Exit;
   end;
   Log('--- Journal du setup du SDK .NET 10 (' + Path + ') ---');
@@ -740,6 +746,7 @@ var
   OldMin, OldMax, OldPosition: Integer;
 begin
   Result := False;
+  Code := -1;
   if not WizardSilent() then
   begin
     // La barre de l'assistant devient celle de l'installation du SDK (échelle de 0 à 1000, remplie par OnSdkSetupOutput), puis reprend ce qu'elle montrait.
@@ -767,8 +774,8 @@ begin
         WizardForm.ProgressGauge.Position := OldPosition;
         WizardForm.StatusLabel.Caption := OldCaption;
       end;
+      LogSdkSetupLog(Code = 0); // aussi si le lancement a levé une exception : le journal est ce qui permet de comprendre
     end;
-    LogSdkSetupLog;
   except
     Log('Le setup du SDK .NET 10 n''a pas pu être lancé : ' + GetExceptionMessage);
     SdkFailure := 'Le SDK .NET 10 n''a pas pu s''installer.';

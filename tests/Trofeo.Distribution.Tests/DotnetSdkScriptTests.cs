@@ -756,6 +756,58 @@ public sealed class DotnetSdkScriptTests : IDisposable
         Assert.Empty(ProgressLines(stdout));
     }
 
+    // --- les arguments du setup, et ses tubes -----------------------------------------------------------------------------------------
+
+    [WindowsPowerShellFact]
+    public void SetupArguments_WithALogPath_AreInstallQuietNoRestartAndTheQuotedLog()
+    {
+        // Un dossier de travail réel contient des espaces (Program Files) : le chemin du journal doit être entre guillemets.
+        const string log = @"C:\Program Files\Ashboard Vision Setup 0a1b2c3d4e5f6a7b\sdk-setup.log";
+
+        var (code, result) = Run("-ShowSetupArguments", "-SetupLog", log);
+
+        Assert.Equal(0, code);
+        Assert.Equal("arguments=/install /quiet /norestart /log \"" + log + "\"", result.Trim().TrimStart('\uFEFF'));
+    }
+
+    [WindowsPowerShellFact]
+    public void SetupArguments_LogPathWithAQuote_IsRefused()
+    {
+        var (code, result) = Run("-ShowSetupArguments", "-SetupLog", "C:\\x\" /uninstall \"y.log");
+
+        Assert.Equal(20, code);
+        Assert.StartsWith("error=", result.TrimStart('\uFEFF'), StringComparison.Ordinal);
+    }
+
+    // Un processus qui dure 8 secondes (ping), lancé comme le setup, puis le script se termine sans l'attendre. Le lecteur du tube de sortie du script (Inno Setup, ici RunFull)
+    // voit la fin du flux tout de suite si le processus n'a pas hérité de ce tube ; sinon, il attend la fin du processus.
+    private TimeSpan TimeUntilTheScriptOutputEnds(params string[] arguments)
+    {
+        var clock = Stopwatch.StartNew();
+        var (code, _, stdout) = RunFull(arguments);
+        clock.Stop();
+        Assert.Equal(0, code);
+        Assert.Equal(["progress=1/1"], ProgressLines(stdout));
+        return clock.Elapsed;
+    }
+
+    [WindowsPowerShellFact]
+    public void Install_TheSetupDoesNotKeepTheSetupPipeOpen()
+    {
+        var elapsed = TimeUntilTheScriptOutputEnds("-InheritanceProbe");
+
+        Assert.True(elapsed < TimeSpan.FromSeconds(6), $"Le flux de sortie du script a duré {elapsed.TotalSeconds:N1} s : le processus lancé a hérité du tube.");
+    }
+
+    [WindowsPowerShellFact]
+    public void Install_WithoutClosingTheInheritableHandles_TheOutputWaitsForTheProcess()
+    {
+        // Le témoin : sans la fermeture des handles héritables (la redirection des trois flux seule ne suffit pas), la fin du flux attend la fin du processus de 8 secondes.
+        var elapsed = TimeUntilTheScriptOutputEnds("-InheritanceProbe", "-Unprotected");
+
+        Assert.True(elapsed > TimeSpan.FromSeconds(6), $"Le flux de sortie du script a duré seulement {elapsed.TotalSeconds:N1} s : le témoin ne prouve plus rien.");
+    }
+
     // --- -Install : le fichier reste ouvert, sans partage en écriture, jusqu'à la fin du setup ----------------------------------
 
     [MicrosoftSignedFileFact]

@@ -21,6 +21,8 @@
                lignes pendant l'exécution pour faire avancer sa barre.
     -CheckSubject, -CheckSubjectHex, -CheckRoot : les deux décisions du signataire, sur des valeurs, pour les tests.
     -ReadProgress <journal>, -FollowLog <journal> -ProcessId <pid> : la lecture du journal Burn (une fois, ou jusqu'à la fin d'un processus), pour les tests.
+    -ShowSetupArguments -SetupLog <journal> : les arguments que -Install passerait au setup, pour les tests.
+    Le setup est lancé avec ses propres tubes d'entrée, de sortie et d'erreur (vidés et jetés) et sans hériter des handles de ce script, dont le tube par lequel l'installateur lit.
 
     Les vérifications (-Verify et -Install), toutes obligatoires :
       1. l'empreinte SHA-512 du fichier est celle de releases.json ;
@@ -60,7 +62,19 @@ param(
 
     # -Install : le journal du setup de Microsoft (« /log »), lu pendant l'exécution pour écrire les lignes « progress= ». Sans lui, pas de suivi.
     [Parameter(ParameterSetName = 'Install')]
+    [Parameter(ParameterSetName = 'ShowArguments', Mandatory)]
     [string] $SetupLog,
+
+    # Pour les tests : lance un processus durable comme -Install lance le setup, puis se termine sans l'attendre (-Unprotected : sans fermer les handles héritables, témoin).
+    [Parameter(ParameterSetName = 'InheritanceProbe', Mandatory)]
+    [switch] $InheritanceProbe,
+
+    [Parameter(ParameterSetName = 'InheritanceProbe')]
+    [switch] $Unprotected,
+
+    # Pour les tests : écrit dans -Output les arguments que -Install passerait au setup (avec -SetupLog).
+    [Parameter(ParameterSetName = 'ShowArguments', Mandatory)]
+    [switch] $ShowSetupArguments,
 
     # Pour les tests : lit un journal Burn (une fois), ou le suit jusqu'à la fin du processus -ProcessId.
     [Parameter(ParameterSetName = 'ReadProgress', Mandatory)]
@@ -444,21 +458,68 @@ function Follow-LogProgress {
     Watch-BurnLog $process $FollowLog
 }
 
+# Les arguments passés au setup : « /install /quiet /norestart », puis « /log "<journal>" » quand on suit sa progression.
+function Get-SetupArguments([string] $setupLog) {
+    $arguments = '/install /quiet /norestart'
+    if ($setupLog) {
+        if ($setupLog.Contains('"')) { throw [Refusal]::new(20, 'Le chemin du journal du setup contient un guillemet.') }
+        $arguments += ' /log "' + $setupLog + '"'
+    }
+    return $arguments
+}
+
+function Show-SetupArguments {
+    Write-Result @("arguments=$(Get-SetupArguments $SetupLog)")
+}
+
+# Le setup de Microsoft (et ses enfants) ne doivent pas garder ouvert le tube par lequel Setup nous lit : Windows hérite TOUS les handles marqués héritables, y compris
+# la sortie standard de ce script (le tube d'Inno Setup), même quand on redirige les flux du setup ; un enfant resté vivant ferait attendre Setup après la fin du script.
+# On retire donc l'héritage de chaque handle héritable de CE processus (ils restent utilisables ici). Essayé : retirer seulement les trois flux standard ne suffit pas.
+function Disable-HandleInheritance {
+    try {
+        if (-not ('AshboardNative.Handles' -as [type])) {
+            Add-Type -Namespace AshboardNative -Name Handles -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool GetHandleInformation(System.IntPtr handle, out int flags);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool SetHandleInformation(System.IntPtr handle, int mask, int flags);
+'@
+        }
+        for ($value = 4; $value -le 0x10000; $value += 4) {
+            $flags = 0
+            if ([AshboardNative.Handles]::GetHandleInformation([IntPtr] $value, [ref] $flags) -and ($flags -band 1)) {
+                [void] [AshboardNative.Handles]::SetHandleInformation([IntPtr] $value, 1, 0)
+            }
+        }
+    }
+    catch {
+        # Sans conséquence pour l'installation : au pire, Setup attend un enfant du setup qui garderait le tube. Dit sur la sortie d'erreur (au journal de Setup).
+        [Console]::Error.WriteLine("Les handles héritables n'ont pas pu être fermés : $($_.Exception.Message)")
+    }
+}
+
+# Lance un processus avec ses PROPRES tubes d'entrée, de sortie et d'erreur (jamais ceux de Setup), sans qu'il hérite des handles de ce script ; la sortie et l'erreur sont
+# vidées sans bloquer et jetées (le setup n'écrit rien d'utile : son journal est celui de /log). N'ouvre ni ne ferme aucun fichier : le verrou du setup n'est pas touché.
+function Start-DrainedProcess([System.Diagnostics.ProcessStartInfo] $info, [bool] $protect = $true) {
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardInput = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    if ($protect) { Disable-HandleInheritance }
+    $process = [System.Diagnostics.Process]::Start($info)
+    $process.StandardInput.Close()
+    # Les tâches restent référencées tant que le script vit.
+    $script:Drains = @($process.StandardOutput.BaseStream.CopyToAsync([System.IO.Stream]::Null), $process.StandardError.BaseStream.CopyToAsync([System.IO.Stream]::Null))
+    return $process
+}
+
 function Install-Sdk {
     $script:FilePath = $Install
     $stream = Open-VerifiedSdkFile
     try {
         # Le fichier reste ouvert (en lecture, sans partage en écriture ni suppression) jusqu'à la fin du setup.
-        $arguments = '/install /quiet /norestart'
-        if ($SetupLog) {
-            if ($SetupLog.Contains('"')) { throw [Refusal]::new(20, 'Le chemin du journal du setup contient un guillemet.') }
-            $arguments += ' /log "' + $SetupLog + '"'
-        }
-        $info = New-Object System.Diagnostics.ProcessStartInfo($script:FilePath, $arguments)
-        $info.UseShellExecute = $false
-        $info.CreateNoWindow = $true
+        $info = New-Object System.Diagnostics.ProcessStartInfo($script:FilePath, (Get-SetupArguments $SetupLog))
         $process = $null
-        try { $process = [System.Diagnostics.Process]::Start($info) }
+        try { $process = Start-DrainedProcess $info }
         catch { throw [Refusal]::new(20, "Le setup n'a pas pu être lancé : $($_.Exception.Message)") }
         if ($SetupLog) { Watch-BurnLog $process $SetupLog } else { $process.WaitForExit() }
         $process.WaitForExit()
@@ -466,6 +527,14 @@ function Install-Sdk {
         $process.Dispose()
     }
     finally { $stream.Dispose() }
+}
+
+# Pour les tests : lance un processus qui dure (ping, une dizaine de secondes) comme Install-Sdk lance le setup, écrit une ligne et se termine SANS l'attendre. Si le processus
+# n'hérite pas du tube de sortie de ce script, le lecteur de ce tube (Inno Setup, ici le test) voit la fin du flux tout de suite ; sinon il attend la fin du processus.
+function Start-InheritanceProbe {
+    $info = New-Object System.Diagnostics.ProcessStartInfo((Join-Path $env:SystemRoot 'System32\ping.exe'), '-n 9 127.0.0.1')
+    $null = Start-DrainedProcess $info (-not $Unprotected)
+    Write-ProgressLine '1/1'
 }
 
 function Test-SubjectText {
@@ -499,6 +568,8 @@ try {
         'CheckRoot' { Test-RootText }
         'ReadProgress' { Show-LogProgress }
         'FollowLog' { Follow-LogProgress }
+        'ShowArguments' { Show-SetupArguments }
+        'InheritanceProbe' { Start-InheritanceProbe }
         default { Resolve-Sdk }
     }
     exit 0
