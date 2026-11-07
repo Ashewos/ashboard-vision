@@ -357,6 +357,35 @@ public sealed class ModuleTestHostTests : IDisposable
         Assert.Null(secrets.Get("jeton"));
     }
 
+    [Fact]
+    public void Secrets_AreCappedLikeTheService()
+    {
+        var secrets = new FakeSecrets();
+        for (var i = 0; i < 64; i++)
+        {
+            secrets.Set($"cle{i}", "v");
+        }
+
+        secrets.Set("de-trop", "refusée"); // la 65e clé
+        Assert.Null(secrets.Get("de-trop"));
+        secrets.Set("cle3", "w"); // remplacer, même taille : permis au plafond
+        Assert.Equal("w", secrets.Get("cle3"));
+        secrets.Set("cle4", null); // effacer libère une place
+        secrets.Set("de-trop", "ok");
+        Assert.Equal("ok", secrets.Get("de-trop"));
+
+        var other = new FakeSecrets();
+        var biggest = new string('v', 64 * 1024);
+        for (var i = 0; i < 3; i++)
+        {
+            other.Set($"g{i}", biggest);
+        }
+
+        other.Set("g3", biggest); // 256 Kio dépassés
+        Assert.Null(other.Get("g3"));
+        Assert.Equal(biggest, other.Get("g2"));
+    }
+
     // Le module créé par le dernier StartAsync : les tests d'une même classe s'exécutent l'un après l'autre, et seule cette classe se sert de ProbeModule.
     private static ProbeModule Probe => ProbeModule.Last ?? throw new InvalidOperationException("Aucun module n'a été créé.");
 

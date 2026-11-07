@@ -218,7 +218,7 @@ Un jeton ne doit pas traîner dans `layout.json`. Un champ `secret` n'écrit **r
 
 - Chaque appel passe par le logiciel : lis le secret quand tu en as besoin, pas à chaque image.
 - Le coffre est **propre à ton module**, partagé par toutes ses cases. Deux cases « Dépôt GitHub » utilisent le même jeton.
-- Une clé fait 200 caractères au plus, une valeur 65 536.
+- Une clé fait 200 caractères au plus, une valeur 65 536. Au total, ton coffre garde 64 clés et 256 Kio au plus ; au-delà, l'écriture est refusée sans erreur (relis ce que tu viens d'écrire si tu dois être sûr qu'elle est passée). Remplacer une clé par une valeur de même taille ou plus courte, ou l'effacer, reste permis.
 - Les secrets ne sont pas dans une disposition exportée.
 - Ils sont **effacés à toute désinstallation du module**, même quand l'utilisateur garde ses réglages.
 - N'écris jamais un secret dans le journal.

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using System.Threading.Channels;
 using Trofeo.Extensions.Protocol;
 
@@ -11,17 +12,21 @@ namespace Trofeo.Extensions.Service;
 /// </summary>
 internal sealed class HostConnection
 {
-    private readonly Channel<(HostMessage Message, HostMessage? Fallback)> _outbox =
-        Channel.CreateUnbounded<(HostMessage, HostMessage?)>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<(HostMessage Message, HostMessage? Fallback, long Weight)> _outbox =
+        Channel.CreateUnbounded<(HostMessage, HostMessage?, long)>(new UnboundedChannelOptions { SingleReader = true });
 
     private readonly ConcurrentDictionary<int, TaskCompletionSource<HostMessage?>> _pending = new();
     private int _nextRequest;
     private volatile bool _closed;
     private int _queued;
+    private long _queuedBytes;
     private volatile bool _overflowed;
 
     /// <summary>Le plus de messages qu'on laisse attendre dans la file d'envoi : au-delà, l'hôte ne lit plus (ou inonde) et il est arrêté.</summary>
     public const int MaxQueuedMessages = 4000;
+
+    /// <summary>Le plus d'octets (32 Mio) qu'on laisse attendre dans la file d'envoi : des messages un par un petits mais chargés (valeurs de secrets, données) ne doivent pas non plus remplir la mémoire du service.</summary>
+    public const long MaxQueuedBytes = 32L * 1024 * 1024;
 
     public HostConnection(IHostProcess process, ModuleFileLock? fileLock, MessageChannel link, DateTimeOffset startedAt)
     {
@@ -42,7 +47,21 @@ internal sealed class HostConnection
     /// <summary>Appelée avec ce qu'il faut journaliser quand l'écriture vers l'hôte a un souci.</summary>
     public Action<string>? Warn { get; set; }
 
-    /// <summary>Vrai si l'hôte a été arrêté parce que la file d'envoi dépassait <see cref="MaxQueuedMessages"/>.</summary>
+    /// <summary>Ce qui attend dans la file d'envoi, en octets (voir <see cref="WeightOf"/>).</summary>
+    public long PendingBytes => Interlocked.Read(ref _queuedBytes);
+
+    /// <summary>
+    /// Ce qu'un message pèse en mémoire pendant qu'il attend : deux octets par caractère des chaînes de <see cref="SecretValue"/> et de
+    /// <see cref="DataValue"/> (les seuls messages qui peuvent être gros) ; les autres comptent pour rien, ils sont bornés en nombre.
+    /// </summary>
+    public static long WeightOf(HostMessage message) => message switch
+    {
+        SecretValue { Value: { } value } => (long)value.Length * 2,
+        DataValue { Value: { } value } => value.ValueKind is JsonValueKind.Undefined ? 0 : (long)value.GetRawText().Length * 2,
+        _ => 0,
+    };
+
+    /// <summary>Vrai si l'hôte a été arrêté parce que la file d'envoi dépassait <see cref="MaxQueuedMessages"/> ou <see cref="MaxQueuedBytes"/>.</summary>
     public bool Overflowed => _overflowed;
 
     /// <summary>Le verrou sur les fichiers du module ; <c>null</c> pour un dossier de développement. Libéré à la fin du processus.</summary>
@@ -79,9 +98,12 @@ internal sealed class HostConnection
     /// <summary>Met un message dans la file d'envoi. Sans effet une fois la file fermée.</summary>
     public void Post(HostMessage message, HostMessage? fallback = null)
     {
-        if (Interlocked.Increment(ref _queued) > MaxQueuedMessages)
+        var weight = WeightOf(message);
+        var bytes = Interlocked.Add(ref _queuedBytes, weight);
+        if (Interlocked.Increment(ref _queued) > MaxQueuedMessages || bytes > MaxQueuedBytes)
         {
             Interlocked.Decrement(ref _queued);
+            Interlocked.Add(ref _queuedBytes, -weight);
             if (!_overflowed)
             {
                 _overflowed = true;
@@ -91,9 +113,10 @@ internal sealed class HostConnection
             return;
         }
 
-        if (!_outbox.Writer.TryWrite((message, fallback)))
+        if (!_outbox.Writer.TryWrite((message, fallback, weight)))
         {
             Interlocked.Decrement(ref _queued);
+            Interlocked.Add(ref _queuedBytes, -weight);
         }
     }
 
@@ -105,9 +128,10 @@ internal sealed class HostConnection
     {
         try
         {
-            await foreach (var (message, fallback) in _outbox.Reader.ReadAllAsync().ConfigureAwait(false))
+            await foreach (var (message, fallback, weight) in _outbox.Reader.ReadAllAsync().ConfigureAwait(false))
             {
                 Interlocked.Decrement(ref _queued);
+                Interlocked.Add(ref _queuedBytes, -weight);
                 try
                 {
                     await Link.SendAsync(message, CancellationToken.None).ConfigureAwait(false);

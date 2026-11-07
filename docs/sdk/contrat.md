@@ -161,7 +161,7 @@ Après la fermeture, `Invalidate()` et `SetStatus()` ne font plus rien : un appe
 | Membre | Ce que c'est |
 |---|---|
 | `Settings` | Les réglages de **cette case**, un objet JSON (`JsonElement`). Voir [les réglages](reglages.md). |
-| `Secrets` | Ton coffre à secrets (jetons, mots de passe), chiffré par le logiciel et propre à ton module. `Get(clé)` et `Set(clé, valeur)`. Une clé fait 200 caractères au plus, une valeur 65 536. |
+| `Secrets` | Ton coffre à secrets (jetons, mots de passe), chiffré par le logiciel et propre à ton module. `Get(clé)` et `Set(clé, valeur)`. Une clé fait 200 caractères au plus, une valeur 65 536. Le coffre est plafonné : 64 clés et 256 Kio en tout (la taille en octets UTF-8 des clés et des valeurs). Une écriture qui dépasserait est refusée **sans erreur** : `Set` rend la main comme si tout allait bien et `Get` rend ensuite l'ancienne valeur (ou `null`). Remplacer une clé par une valeur de même taille ou plus courte, ou l'effacer, reste permis. |
 | `Log` | Ton journal : `Info`, `Warning`, `Error`. Il va dans le journal d'Ashboard Vision (`logs\display.log`, dans `%AppData%\ashboard-vision`), préfixé du type de module. 20 messages par seconde au plus. **N'y écris jamais un secret.** |
 | `Time` | Ta source de temps (`TimeProvider`). Utilise-la plutôt que `DateTime.Now` : tes tests peuvent alors faire avancer l'heure. |
 | `DataDirectory` | Un dossier à toi, privé, où tu peux lire et écrire. Il est effacé avec le module. |

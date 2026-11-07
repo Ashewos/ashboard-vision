@@ -39,22 +39,37 @@ public sealed class DpapiSecretVault
     /// Enregistre la valeur ; <c>null</c> efface la clé. Lève si le fichier est verrouillé ou ne peut pas être écrit :
     /// partir d'un coffre vu comme vide écraserait les autres secrets.
     /// </summary>
-    public void Set(string scope, string key, string? value)
+    public void Set(string scope, string key, string? value) => TrySet(scope, key, value, _ => true);
+
+    /// <summary>
+    /// Comme <see cref="Set"/>, mais n'écrit que si <paramref name="accept"/> accepte l'écriture d'après le contenu actuel de la portée
+    /// (clé -> valeur ; vide si la portée n'existe pas). Vérification et écriture se font sous le même verrou. Rend faux, sans rien
+    /// écrire, si <paramref name="accept"/> refuse.
+    /// </summary>
+    public bool TrySet(string scope, string key, string? value, Func<IReadOnlyDictionary<string, string>, bool> accept)
     {
+        ArgumentNullException.ThrowIfNull(accept);
         using var _ = Lock();
         var data = Read(failOnLockedFile: true);
+        data.TryGetValue(scope, out var current);
+        if (!accept(current ?? (IReadOnlyDictionary<string, string>)new Dictionary<string, string>()))
+        {
+            return false;
+        }
+
         if (value is null)
         {
-            if (!data.TryGetValue(scope, out var existing) || !existing.Remove(key)) return;
-            if (existing.Count == 0) data.Remove(scope);
+            if (current is null || !current.Remove(key)) return true;
+            if (current.Count == 0) data.Remove(scope);
         }
         else
         {
-            if (!data.TryGetValue(scope, out var keys)) data[scope] = keys = [];
-            keys[key] = value;
+            if (current is null) data[scope] = current = [];
+            current[key] = value;
         }
 
         Write(data);
+        return true;
     }
 
     /// <summary>
@@ -71,7 +86,7 @@ public sealed class DpapiSecretVault
     }
 
     /// <summary>Une vue du coffre limitée à une portée (un type de module).</summary>
-    public ISecretStore Scope(string scope) => new ScopedStore(this, scope);
+    public IGuardedSecretStore Scope(string scope) => new ScopedStore(this, scope);
 
     private Dictionary<string, Dictionary<string, string>> Read(bool failOnLockedFile)
     {
@@ -173,10 +188,13 @@ public sealed class DpapiSecretVault
         }
     }
 
-    private sealed class ScopedStore(DpapiSecretVault vault, string scope) : ISecretStore
+    private sealed class ScopedStore(DpapiSecretVault vault, string scope) : IGuardedSecretStore
     {
         public string? Get(string key) => vault.Get(scope, key);
 
         public void Set(string key, string? value) => vault.Set(scope, key, value);
+
+        public bool TrySet(string key, string? value, Func<IReadOnlyDictionary<string, string>, bool> accept) =>
+            vault.TrySet(scope, key, value, accept);
     }
 }

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Trofeo.ModuleKit;
 using Trofeo.Shared;
 
@@ -11,17 +10,28 @@ namespace AshboardVision.Sdk.Testing;
 /// <para>
 /// Il applique les limites du service : une clé vide ou de plus de 200 caractères, ou une valeur de plus de 64 Kio (65 536 caractères),
 /// est ignorée en écriture (rien n'est enregistré, l'ancienne valeur reste) et se lit comme <c>null</c>, sans exception.
+/// Le coffre est aussi plafonné : 64 clés au plus et 256 Kio en tout (la taille en octets UTF-8 de toutes les clés et de toutes les
+/// valeurs). Une écriture qui dépasserait est ignorée de la même façon ; remplacer une clé existante par une valeur de même taille
+/// ou plus courte reste permis, et effacer l'est toujours.
 /// </para>
 /// </summary>
 public sealed class FakeSecrets : ISecretStore
 {
-    private readonly ConcurrentDictionary<string, string> _values = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _values = new(StringComparer.Ordinal);
 
     /// <inheritdoc />
     public string? Get(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
-        return key.Length is > 0 and <= SecretLimits.MaxKeyLength && _values.TryGetValue(key, out var value) ? value : null;
+        if (key.Length is 0 or > SecretLimits.MaxKeyLength)
+        {
+            return null;
+        }
+
+        lock (_values)
+        {
+            return _values.GetValueOrDefault(key);
+        }
     }
 
     /// <inheritdoc />
@@ -33,13 +43,21 @@ public sealed class FakeSecrets : ISecretStore
             return;
         }
 
-        if (value is null)
+        lock (_values)
         {
-            _values.TryRemove(key, out _);
-        }
-        else
-        {
-            _values[key] = value;
+            if (!SecretLimits.Fits(_values, key, value))
+            {
+                return;
+            }
+
+            if (value is null)
+            {
+                _values.Remove(key);
+            }
+            else
+            {
+                _values[key] = value;
+            }
         }
     }
 }

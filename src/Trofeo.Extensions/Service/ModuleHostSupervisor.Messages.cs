@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using AshboardVision.Sdk;
 using SkiaSharp;
+using Trofeo.Core.Secrets;
 using Trofeo.Extensions.Protocol;
 using Trofeo.ModuleKit;
 using Trofeo.Shared;
@@ -259,7 +260,17 @@ public sealed partial class ModuleHostSupervisor
                 }
                 else if (value is null || value.Length <= SecretLimits.MaxValueLength)
                 {
-                    _secrets.Set(key, value);
+                    // Le coffre d'un module a des plafonds (clés, octets) : au-delà, l'écriture est refusée, mais acquittée comme les
+                    // autres (voir docs/sdk/contrat.md). Seul le coffre réel les applique ; les faux des tests simples ne sont pas gardés.
+                    // Pas de journal pour un refus : un module qui inonde ne doit pas inonder aussi le journal du service.
+                    if (_secrets is IGuardedSecretStore guarded)
+                    {
+                        guarded.TrySet(key, value, current => SecretLimits.Fits(current, key, value));
+                    }
+                    else
+                    {
+                        _secrets.Set(key, value);
+                    }
                 }
             }
         }
