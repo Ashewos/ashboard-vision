@@ -2,6 +2,34 @@
 
 Les versions sont numérotées selon [SemVer](https://semver.org/lang/fr/) : les bêtas s'écrivent `1.0.0-beta.N`, les stables `1.0.0`, `1.1.0`, etc. Le texte de chaque section sert de notes à la version GitHub du même numéro.
 
+## 1.1.0-beta.1
+
+Première bêta de la 1.1.0 : les **modules complémentaires**, créés par la communauté, et le **SDK** pour en écrire.
+
+### Modules complémentaires
+
+- Un module complémentaire est un fichier `.avmod`. Tu l'installes d'un double-clic, ou depuis **Paramètres, section Modules complémentaires, « Installer un module… »**.
+- Avant l'installation, la fenêtre te montre ce que le module demande. Tu accordes ses permissions **une par une** : réseau local, Internet, un service de ce PC sur les ports que tu choisis, capteurs, musique en cours.
+- Chaque module tourne dans **son propre processus, enfermé par Windows** (AppContainer et job object). S'il plante, l'écran et les autres modules continuent.
+- Le logiciel enregistre l'empreinte du module à l'installation et la revérifie à chaque lancement, même hors ligne. Un module modifié depuis ta validation ne démarre pas. Ses fichiers sont verrouillés pendant qu'il tourne.
+- Un **point d'exclamation jaune** signale les modules complémentaires partout dans la fenêtre de réglage.
+- Les mises à jour d'un module sont cherchées sur GitHub et **te sont proposées**. Elles ne se téléchargent que si tu cliques.
+- Paramètres montre ce que consomme chaque module, et signale ceux qui consomment beaucoup.
+- Les modules sont rangés dans `Documents\Ashboard Vision\Modules`. Tu peux changer ce dossier.
+- Un mode développeur permet d'essayer un module en cours d'écriture.
+- Sans module complémentaire, rien ne tourne en plus : le logiciel reste aussi discret qu'avant.
+- À la désinstallation, si tu effaces tes réglages, le dossier des modules est effacé aussi, s'il est à son emplacement par défaut. Les secrets des modules (clés, jetons) sont effacés dans tous les cas, même si tu gardes tes réglages.
+
+> **Avertissement.** Un module complémentaire n'est pas fait par Ashboard Vision et **peut contenir du code malveillant**. L'enfermement limite les dégâts, mais ne les exclut pas. Installe seulement un module dont tu connais et fais confiance à l'auteur.
+
+### SDK pour créer des modules
+
+- Le SDK permet d'écrire un module en C# : un modèle de projet (`dotnet new ashboard-module`), des aides de test et un banc d'essai (`ashboard-module check` et `ashboard-module pack`).
+- L'installateur le propose à la page des options : « Outils pour créer des modules (SDK) », décoché par défaut. S'il ne trouve pas de SDK .NET 10 sur ton PC, il télécharge la dernière version chez Microsoft et l'installe, après avoir vérifié son empreinte et sa signature. La barre de l'installateur suit l'installation paquet par paquet.
+- Les quatre paquets du SDK sont aussi joints à chaque version GitHub. Ils ne sont pas publiés sur nuget.org.
+- Toute la documentation est en français, dans `docs/sdk`.
+- Le dépôt contient trois modules d'exemple, dans `examples` : Dépôt GitHub, Démo et Serveur Minecraft.
+
 ## 1.0.0
 
 Première version stable d'Ashboard Vision. Elle réunit tout ce que les quatre bêtas ont apporté (voir leurs sections ci-dessous) :
