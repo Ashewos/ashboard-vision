@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -188,7 +190,8 @@ public sealed class DotnetSdkScriptTests : IDisposable
         var (code, result) = Resolve(RealisticReleases(SdkFiles(winX64Url: url)));
 
         Assert.Equal(0, code);
-        Assert.Equal(url, Lines(result)["url"]);
+        // La forme analysée (Uri.AbsoluteUri : hôte en minuscules, par exemple), pas la chaîne d'origine.
+        Assert.Equal(new Uri(url).AbsoluteUri, Lines(result)["url"]);
     }
 
     [WindowsPowerShellFact]
@@ -257,10 +260,22 @@ public sealed class DotnetSdkScriptTests : IDisposable
     [WindowsPowerShellFact]
     public void Resolve_HttpSource_IsRefusedWithoutAnyRequest()
     {
-        var (code, result) = Run("-Resolve", "-ReleasesSource", "http://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json");
+        // Un serveur local qui note toute connexion : le script ne doit même pas le joindre.
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var (code, result) = Run("-Resolve", "-ReleasesSource", $"http://127.0.0.1:{port}/releases.json");
 
-        Assert.Equal(4, code);
-        Assert.StartsWith("error=", result, StringComparison.Ordinal);
+            Assert.Equal(4, code);
+            Assert.Equal("error=releases.json : l'adresse doit être en https://.", result.Trim().TrimStart('\uFEFF'));
+            Assert.False(listener.Pending(), "Le script a ouvert une connexion vers l'adresse refusée.");
+        }
+        finally
+        {
+            listener.Stop();
+        }
     }
 
     // --- -Verify ----------------------------------------------------------------------------------------------------------------
@@ -284,15 +299,17 @@ public sealed class DotnetSdkScriptTests : IDisposable
         return OperatingSystem.IsWindows() ? candidates.FirstOrDefault(File.Exists) : null;
     }
 
+    // dotnet.exe est signé par Microsoft (CN=.NET) mais n'est pas un setup du SDK : ses tests passent -ProductNamePrefix .NET (réservé aux tests).
+    private (int ExitCode, string Result) VerifyDotnetExe(string path, string? sha512 = null, string productPrefix = ".NET") =>
+        Run("-Verify", path, "-Sha512", sha512 ?? Sha512Of(path), "-ProductNamePrefix", productPrefix);
+
     [MicrosoftSignedFileFact]
     public void Verify_FileSignedByMicrosoftWithTheRightHash_IsAccepted()
     {
-        var signed = MicrosoftSignedFile()!;
-
-        var (code, result) = Run("-Verify", signed, "-Sha512", Sha512Of(signed));
+        var (code, result) = VerifyDotnetExe(MicrosoftSignedFile()!);
 
         Assert.Equal(0, code);
-        Assert.Equal("ok", result.Trim());
+        Assert.Equal("ok", result.Trim().TrimStart('\uFEFF'));
     }
 
     [MicrosoftSignedFileFact]
@@ -300,7 +317,7 @@ public sealed class DotnetSdkScriptTests : IDisposable
     {
         var signed = MicrosoftSignedFile()!;
 
-        var (code, _) = Run("-Verify", signed, "-Sha512", Sha512Of(signed).ToUpperInvariant());
+        var (code, _) = VerifyDotnetExe(signed, Sha512Of(signed).ToUpperInvariant());
 
         Assert.Equal(0, code);
     }
@@ -308,12 +325,22 @@ public sealed class DotnetSdkScriptTests : IDisposable
     [MicrosoftSignedFileFact]
     public void Verify_WrongHash_IsRefusedEvenWhenSignedByMicrosoft()
     {
-        var signed = MicrosoftSignedFile()!;
-
-        var (code, result) = Run("-Verify", signed, "-Sha512", OtherHash);
+        var (code, result) = VerifyDotnetExe(MicrosoftSignedFile()!, OtherHash);
 
         Assert.Equal(11, code);
-        Assert.StartsWith("error=", result, StringComparison.Ordinal);
+        Assert.Contains("n'est pas celle de releases.json", result, StringComparison.Ordinal);
+    }
+
+    [MicrosoftSignedFileFact]
+    public void Verify_SignedByMicrosoftButNotADotnetSdkSetup_IsRefused()
+    {
+        // Sans -ProductNamePrefix, le défaut de l'installateur s'applique : « Microsoft .NET ». dotnet.exe s'appelle « .NET ».
+        var signed = MicrosoftSignedFile()!;
+
+        var (code, result) = Run("-Verify", signed, "-Sha512", Sha512Of(signed));
+
+        Assert.Equal(14, code);
+        Assert.Contains("pas un setup du SDK .NET", result, StringComparison.Ordinal);
     }
 
     [WindowsPowerShellFact]
@@ -322,27 +349,38 @@ public sealed class DotnetSdkScriptTests : IDisposable
         var path = _dir.Combine("dotnet-sdk-win-x64.exe");
         File.WriteAllBytes(path, Encoding.ASCII.GetBytes("MZ pas un vrai programme, et sans signature"));
 
-        var (code, result) = Run("-Verify", path, "-Sha512", Sha512Of(path));
+        var (code, result) = VerifyDotnetExe(path);
 
         Assert.Equal(12, code);
-        Assert.StartsWith("error=", result, StringComparison.Ordinal);
+        Assert.Contains("type : None", result, StringComparison.Ordinal);
     }
 
     [MicrosoftSignedFileFact]
-    public void Verify_SignedFileAlteredAfterSigning_IsRefused()
+    public void Verify_SignedFileAlteredAfterSigning_IsRefusedForItsSignature()
     {
-        var signed = MicrosoftSignedFile()!;
-
-        // Un octet de plus en fin de fichier : l'empreinte donnée est celle du fichier modifié, mais la signature ne tient plus.
+        // Un octet modifié au milieu du fichier : l'empreinte donnée est celle du fichier modifié, mais la signature ne tient plus.
         var path = _dir.Combine("dotnet-sdk-win-x64.exe");
-        File.Copy(signed, path);
-        using (var stream = new FileStream(path, FileMode.Append))
-        {
-            stream.WriteByte(0);
-        }
-        var (code, _) = Run("-Verify", path, "-Sha512", Sha512Of(path));
+        var bytes = File.ReadAllBytes(MicrosoftSignedFile()!);
+        bytes[bytes.Length / 2] ^= 0xFF;
+        File.WriteAllBytes(path, bytes);
+
+        var (code, result) = VerifyDotnetExe(path);
 
         Assert.Equal(12, code);
+        Assert.Contains("état : HashMismatch", result, StringComparison.Ordinal);
+    }
+
+    [WindowsPowerShellFact]
+    public void Verify_FileSignedByCatalogOnly_IsRefusedBecauseTheSignatureIsNotEmbedded()
+    {
+        // notepad.exe est signé par Microsoft, mais seulement par catalogue : Get-AuthenticodeSignature le dit « Valid ». On exige une signature intégrée.
+        var notepad = Path.Combine(Environment.SystemDirectory, "notepad.exe");
+        Assert.True(File.Exists(notepad));
+
+        var (code, result) = VerifyDotnetExe(notepad);
+
+        Assert.Equal(12, code);
+        Assert.Contains("type : Catalog", result, StringComparison.Ordinal);
     }
 
     [OtherPublisherSignedFileFact]
@@ -350,10 +388,10 @@ public sealed class DotnetSdkScriptTests : IDisposable
     {
         var other = OtherPublisherSignedFile()!;
 
-        var (code, result) = Run("-Verify", other, "-Sha512", Sha512Of(other));
+        var (code, result) = VerifyDotnetExe(other);
 
         Assert.Equal(13, code);
-        Assert.Contains("pas signé par Microsoft", result, StringComparison.Ordinal);
+        Assert.Contains("n'est pas celui de Microsoft Corporation", result, StringComparison.Ordinal);
     }
 
     [WindowsPowerShellFact]
@@ -373,6 +411,102 @@ public sealed class DotnetSdkScriptTests : IDisposable
         var (code, _) = Run("-Verify", path, "-Sha512", "abc");
 
         Assert.Equal(11, code);
+    }
+
+    // --- le signataire : le sujet est lu dans son encodage DER, jamais découpé dans un texte ---------------------------------------
+
+    [WindowsPowerShellTheory]
+    [InlineData("CN=.NET, O=Microsoft Corporation, L=Redmond, S=Washington, C=US")]
+    [InlineData("CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US")]
+    public void CheckSubject_MicrosoftSubjects_AreAccepted(string subject)
+    {
+        var (code, _) = Run("-CheckSubject", subject);
+
+        Assert.Equal(0, code);
+    }
+
+    [WindowsPowerShellTheory]
+    // Le sujet piégé de la relecture : la chaîne « O=Microsoft Corporation » est DANS une valeur entre guillemets, la vraie organisation est Evil Ltd.
+    [InlineData("CN=.NET, OU=\"x, O=Microsoft Corporation, y\", O=Evil Ltd, C=US")]
+    [InlineData("OU=\"x, O=Microsoft Corporation, y\", O=Evil Ltd, C=US")]
+    [InlineData("CN=.NET, O=\"Evil, O=Microsoft Corporation\"")]
+    [InlineData("CN=.NET, O=Microsoft Corporation Fake, C=US")]
+    [InlineData("CN=.NET, O=Microsoft Corp, C=US")]
+    [InlineData("CN=.NET, o=microsoft corporation, C=US")]                              // la casse compte
+    [InlineData("CN=.NET, O=Microsoft Corporation, O=Evil Ltd, C=US")]                  // deux organisations
+    [InlineData("CN=.NET, O=Evil Ltd, O=Microsoft Corporation, C=US")]
+    [InlineData("O=Microsoft Corporation, C=US")]                                       // pas de CN
+    [InlineData("CN=Evil, O=Microsoft Corporation, C=US")]                              // CN autre
+    [InlineData("CN=.NET, CN=Evil, O=Microsoft Corporation, C=US")]                     // deux CN
+    [InlineData("CN=.NET, C=US")]                                                       // pas d'organisation
+    public void CheckSubject_TrickySubjects_AreRefused(string subject)
+    {
+        var (code, result) = Run("-CheckSubject", subject);
+
+        Assert.Equal(13, code);
+        Assert.StartsWith("error=", result.TrimStart('\uFEFF'), StringComparison.Ordinal);
+    }
+
+    [WindowsPowerShellTheory]
+    [InlineData("847DF6A78497943F27FC72EB93F9A637320A02B561D0A91B09E87A7807ED7C61")]   // Microsoft Root Certificate Authority 2011
+    [InlineData("df545bf919a2439c36983b54cdfc903dfa4f37d3996d8d84b4c31eec6f3c163e")]   // Microsoft Root Certificate Authority 2010
+    public void CheckRoot_KnownMicrosoftRoots_AreAccepted(string sha256)
+    {
+        var (code, _) = Run("-CheckRoot", sha256);
+
+        Assert.Equal(0, code);
+    }
+
+    [WindowsPowerShellTheory]
+    [InlineData("0000000000000000000000000000000000000000000000000000000000000000")]
+    [InlineData("885DE64C340E3EA70658F01E1145F957FCDA27AABEEA1AB9FAA9FDB0102D4077")]   // une autre racine de confiance de Windows (Microsoft Root Certificate Authority, 2001), hors liste
+    [InlineData("abc")]
+    public void CheckRoot_RootsOutsideTheList_AreRefused(string sha256)
+    {
+        var (code, result) = Run("-CheckRoot", sha256);
+
+        Assert.Equal(15, code);
+        Assert.StartsWith("error=", result.TrimStart('\uFEFF'), StringComparison.Ordinal);
+    }
+
+    // --- -Install : le fichier reste ouvert, sans partage en écriture, jusqu'à la fin du setup ----------------------------------
+
+    [MicrosoftSignedFileFact]
+    public void Install_VerifiedFile_IsLaunchedAndItsExitCodeReported()
+    {
+        // Un faux setup : dotnet.exe copié seul, sans ses bibliothèques. Il se lance, échoue (hostfxr introuvable) et rend un code de sortie.
+        var path = _dir.Combine("dotnet-sdk-win-x64.exe");
+        File.Copy(MicrosoftSignedFile()!, path);
+
+        var (code, result) = Run("-Install", path, "-Sha512", Sha512Of(path), "-ProductNamePrefix", ".NET");
+
+        Assert.Equal(0, code);
+        Assert.Matches(@"exitcode=-?\d+", result);
+        File.Delete(path); // plus ouvert après la fin
+    }
+
+    [MicrosoftSignedFileFact]
+    public void Install_WrongHash_IsNeverLaunched()
+    {
+        var path = _dir.Combine("dotnet-sdk-win-x64.exe");
+        File.Copy(MicrosoftSignedFile()!, path);
+
+        var (code, result) = Run("-Install", path, "-Sha512", OtherHash, "-ProductNamePrefix", ".NET");
+
+        Assert.Equal(11, code);
+        Assert.DoesNotContain("exitcode=", result, StringComparison.Ordinal);
+    }
+
+    [WindowsPowerShellFact]
+    public void Install_UnsignedFile_IsNeverLaunched()
+    {
+        var path = _dir.Combine("dotnet-sdk-win-x64.exe");
+        File.WriteAllBytes(path, Encoding.ASCII.GetBytes("MZ"));
+
+        var (code, result) = Run("-Install", path, "-Sha512", Sha512Of(path));
+
+        Assert.Equal(12, code);
+        Assert.DoesNotContain("exitcode=", result, StringComparison.Ordinal);
     }
 }
 

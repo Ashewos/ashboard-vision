@@ -25,6 +25,9 @@
   #define SdkDir SourceDir + "\sdk"
 #endif
 
+; L'empreinte SHA-256 de l'aide du SDK .NET 10 (installer/dotnet-sdk.ps1), calculée sur le fichier même que celui qui est embarqué : Setup la vérifie avant de s'en servir.
+#define DotnetSdkScriptSha256 GetSHA256OfFile(SourcePath + "dotnet-sdk.ps1")
+
 #define AppName "Ashboard Vision"
 #define AppPublisher "Ashewos"
 #define AppUrl "https://github.com/Ashewos/ashboard-vision"
@@ -158,6 +161,7 @@ const
   // Le SDK .NET 10 téléchargé quand il manque : l'aide PowerShell (extraite dans {tmp}) trouve l'adresse et l'empreinte dans releases.json de
   // Microsoft, puis vérifie le fichier (empreinte SHA-512 et signature Authenticode de Microsoft). Aucune version ni empreinte n'est écrite ici.
   DotnetSdkScript = 'dotnet-sdk.ps1';
+  DotnetSdkScriptSha256 = '{#DotnetSdkScriptSha256}';
   DotnetSdkSetupName = 'dotnet-sdk-win-x64.exe';
   DotnetSdkResolveFile = 'dotnet-sdk-resolve.txt';
   DotnetSdkVerifyFile = 'dotnet-sdk-verify.txt';
@@ -219,7 +223,9 @@ var
   DotnetCommand: String; // la commande qui a répondu pour « dotnet » : « dotnet » (PATH) ou le chemin complet entre guillemets
   DotnetAsOriginalUser: Boolean; // vrai à l'installation (utilisateur d'origine) ; faux à la désinstallation (Exec, mêmes droits que le désinstallateur)
   SdkSetupPath: String; // le setup du SDK .NET 10, téléchargé dans {tmp} et vérifié (empreinte et signature) ; vide sinon
-  SdkSetupSha512: String; // l'empreinte SHA-512 de releases.json pour ce fichier, revérifiée juste avant le lancement
+  SdkSetupSha512: String; // l'empreinte SHA-512 de releases.json pour ce fichier, revérifiée par -Install sur le fichier verrouillé
+  SdkWorkDir: String; // le sous-dossier de {tmp} réservé aux administrateurs, où l'aide du SDK .NET 10 et ses résultats vivent ; vide tant qu'il n'est pas prêt
+  SdkBusy: Boolean; // vrai pendant « Recherche… » et « Vérification… » (appels bloquants à PowerShell) : Annuler y est ignoré
   SdkFailure: String; // une phrase pour l'utilisateur quand le SDK .NET 10 n'a pas pu être obtenu ou installé (la raison exacte est au journal) ; vide sinon
 
 function OnPawnIoProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
@@ -435,12 +441,64 @@ end;
 // Seulement si la case « sdk » est cochée, qu'aucun SDK .NET 10 n'est là et que Setup n'est pas silencieux (une mise à jour lancée par le logiciel
 // ne télécharge jamais plus de 200 Mo : le journal seul le dit). Inno Setup 7.1 ne lit pas le JSON, ne vérifie que des empreintes SHA-256 et ne
 // contrôle pas les signatures Authenticode : l'aide installer/dotnet-sdk.ps1 (Windows PowerShell 5.1) lit releases.json, puis vérifie le fichier
-// (SHA-512 de releases.json et signature de Microsoft). Le téléchargement lui-même est fait par Inno Setup (page de progression, bouton Annuler).
+// (SHA-512 de releases.json, signature de Microsoft, chaîne jusqu'à une racine de Microsoft, produit « Microsoft .NET ») et le lance. Le
+// téléchargement lui-même est fait par Inno Setup (page de progression, bouton Annuler).
 // Un échec à n'importe quelle étape ne lance rien, est journalisé et se dit par une phrase (SdkFailure) ; l'installation continue. Le SDK .NET n'est
 // jamais retiré à la désinstallation : c'est un programme à part (« Applications installées »).
+// Le dossier temporaire de Setup est, quand l'utilisateur est lui-même administrateur, celui de son compte : tout programme non élevé du compte peut y
+// écrire. L'aide et ses fichiers de résultat sont donc copiés dans un sous-dossier réservé aux administrateurs (SecureSdkWorkDir), l'aide copiée est
+// comparée à son empreinte SHA-256 calculée à la compilation, et le setup téléchargé (qui reste dans le dossier temporaire, Inno Setup ne le
+// télécharge pas ailleurs) est ouvert par l'aide sans partage en écriture ni en suppression avant d'être vérifié, puis lancé sans être lâché (-Install).
 
 function OnDotnetSdkProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
 begin
+  Result := True;
+end;
+
+// Clic sur Annuler : pendant « Recherche… » et « Vérification… » (SdkBusy), il est ignoré. Ces deux étapes sont des appels bloquants à PowerShell
+// que Setup ne sait pas interrompre : un clic ne doit ni quitter tout Setup ni demander de le quitter. Pendant le téléchargement, Annuler est géré par
+// la page d'Inno Setup (il abandonne le SDK seulement) : SdkBusy y est faux.
+procedure CancelButtonClick(CurPageID: Integer; var Cancel, Confirm: Boolean);
+begin
+  if SdkBusy then Cancel := False;
+end;
+
+// Le sous-dossier de {tmp} réservé aux administrateurs et à SYSTEM (héritage coupé), où l'aide travaille. Créé une fois ; rend Vrai s'il est prêt.
+function SecureSdkWorkDir: Boolean;
+var
+  ResultCode: Integer;
+  Directory: String;
+begin
+  Result := SdkWorkDir <> '';
+  if Result then Exit;
+  Directory := ExpandConstant('{tmp}\ashboard-sdk');
+  if not ForceDirectories(Directory) then
+  begin
+    Log('Le dossier de travail du SDK .NET 10 n''a pas pu être créé : ' + Directory);
+    Exit;
+  end;
+  // *S-1-5-32-544 = Administrateurs, *S-1-5-18 = SYSTEM : des identifiants (SID), valables dans toutes les langues de Windows.
+  if not Exec(ExpandConstant('{sys}\icacls.exe'), '"' + Directory + '" /inheritance:r /grant:r *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+  begin
+    Log('Les droits du dossier de travail du SDK .NET 10 n''ont pas pu être restreints (icacls, code ' + IntToStr(ResultCode) + ') : le SDK n''est pas téléchargé.');
+    Exit;
+  end;
+  // L'aide : extraite dans {tmp} (qui reste ouvert au compte), copiée dans le dossier réservé, et comparée à l'empreinte de la compilation. Une
+  // copie qui n'est pas celle qu'Inno Setup a embarquée est refusée.
+  ExtractTemporaryFile(DotnetSdkScript);
+  if not CopyFile(ExpandConstant('{tmp}\' + DotnetSdkScript), Directory + '\' + DotnetSdkScript, False) then
+  begin
+    Log('L''aide du SDK .NET 10 n''a pas pu être copiée dans ' + Directory);
+    Exit;
+  end;
+  if not SameText(GetSHA256OfFile(Directory + '\' + DotnetSdkScript), DotnetSdkScriptSha256) then
+  begin
+    Log('L''aide du SDK .NET 10 copiée n''a pas l''empreinte attendue : elle n''est pas lancée.');
+    DeleteFile(Directory + '\' + DotnetSdkScript);
+    Exit;
+  end;
+  SdkWorkDir := Directory;
   Result := True;
 end;
 
@@ -448,16 +506,15 @@ end;
 function RunSdkHelper(const Arguments, ResultFile: String; var Lines: TArrayOfString): Integer;
 var
   ResultCode: Integer;
-  ScriptPath, ResultPath: String;
+  ResultPath: String;
 begin
   Result := -1;
   SetArrayLength(Lines, 0);
-  ExtractTemporaryFile(DotnetSdkScript);
-  ScriptPath := ExpandConstant('{tmp}\' + DotnetSdkScript);
-  ResultPath := ExpandConstant('{tmp}\' + ResultFile);
+  if not SecureSdkWorkDir then Exit;
+  ResultPath := SdkWorkDir + '\' + ResultFile;
   DeleteFile(ResultPath);
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ScriptPath + '" ' + Arguments + ' -Output "' + ResultPath + '"',
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + SdkWorkDir + '\' + DotnetSdkScript + '" ' + Arguments + ' -Output "' + ResultPath + '"',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
     Log('Windows PowerShell n''a pas pu être lancé : ' + SysErrorMessage(ResultCode));
@@ -488,6 +545,21 @@ begin
   if Result = '' then Result := 'code de sortie ' + IntToStr(Code);
 end;
 
+// Vrai si <Value> fait exactement 128 caractères hexadécimaux (une empreinte SHA-512) : la valeur part telle quelle dans une ligne de commande.
+function IsSha512(const Value: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := Length(Value) = 128;
+  if not Result then Exit;
+  for I := 1 to Length(Value) do
+    if Pos(Value[I], '0123456789abcdefABCDEF') = 0 then
+    begin
+      Result := False;
+      Exit;
+    end;
+end;
+
 // Cherche la dernière version du SDK .NET 10, la télécharge dans {tmp} et la vérifie. En cas de réussite, SdkSetupPath est le fichier à lancer ;
 // sinon SdkSetupPath est vide et SdkFailure dit pourquoi, en une phrase.
 procedure DownloadDotnetSdk;
@@ -500,6 +572,7 @@ begin
   SdkSetupPath := '';
   SdkSetupSha512 := '';
   SdkFailure := '';
+  SdkBusy := False;
   if not WizardIsTaskSelected('sdk') then Exit;
   if WizardSilent() then
   begin
@@ -522,10 +595,12 @@ begin
     Page.Show;
     try
       // 1. L'adresse et l'empreinte de la dernière version (releases.json de Microsoft).
+      SdkBusy := True;
       Page.SetText('Recherche de la dernière version du SDK .NET 10…', '');
       Page.ProgressBar.Style := npbstMarquee;
       Code := RunSdkHelper('-Resolve', DotnetSdkResolveFile, Lines);
       Page.ProgressBar.Style := npbstNormal;
+      SdkBusy := False;
       Url := SdkHelperValue(Lines, 'url');
       Sha512 := SdkHelperValue(Lines, 'sha512');
       Version := SdkHelperValue(Lines, 'version');
@@ -533,6 +608,12 @@ begin
       begin
         SdkFailure := 'Le SDK .NET 10 n''a pas pu être téléchargé.';
         RaiseException('La version à télécharger n''a pas pu être déterminée : ' + SdkHelperFailure(Lines, Code));
+      end;
+      // Ces deux valeurs viennent d'un fichier écrit par l'aide dans un dossier réservé, mais partent telles quelles dans une adresse et une ligne de commande.
+      if (Pos('https://', Url) <> 1) or not IsSha512(Sha512) then
+      begin
+        SdkFailure := 'Le SDK .NET 10 n''a pas pu être téléchargé.';
+        RaiseException('Le résultat de l''aide est mal formé (adresse ou empreinte).');
       end;
       Log('SDK .NET ' + Version + ' : ' + Url);
 
@@ -551,21 +632,24 @@ begin
         RaiseException(GetExceptionMessage);
       end;
 
-      // 3. La vérification, avant tout lancement : l'empreinte vient du même serveur que le fichier, la signature de Microsoft est la vraie protection.
+      // 3. Une première vérification, pour refuser tôt un mauvais fichier (la vraie vérification est celle de -Install, sur le fichier verrouillé).
+      SdkBusy := True;
       Page.SetText('Vérification du fichier téléchargé…', '');
       Page.ProgressBar.Style := npbstMarquee;
       Code := RunSdkHelper('-Verify "' + FilePath + '" -Sha512 ' + Sha512, DotnetSdkVerifyFile, Lines);
       Page.ProgressBar.Style := npbstNormal;
+      SdkBusy := False;
       if Code <> 0 then
       begin
         DeleteFile(FilePath);
-        SdkFailure := 'Le fichier du SDK .NET 10 téléchargé n''a pas passé la vérification (empreinte et signature de Microsoft) : il n''a pas été lancé.';
+        SdkFailure := 'Le fichier du SDK .NET 10 téléchargé n''a pas passé la vérification (empreinte, signature et signataire de Microsoft) : il n''a pas été lancé.';
         RaiseException('Le fichier du SDK .NET 10 est refusé : ' + SdkHelperFailure(Lines, Code));
       end;
       SdkSetupPath := FilePath;
       SdkSetupSha512 := Sha512;
-      Log('SDK .NET 10 téléchargé et vérifié (empreinte SHA-512 et signature de Microsoft).');
+      Log('SDK .NET 10 téléchargé et vérifié (empreinte SHA-512, signature, signataire et racine de Microsoft).');
     finally
+      SdkBusy := False;
       Page.Hide;
     end;
   except
@@ -575,38 +659,47 @@ begin
   end;
 end;
 
-// Installe le SDK .NET 10 téléchargé, pour toute la machine (Setup est déjà administrateur) : codes 0, 3010 et 1641 = réussi (les deux derniers
-// demandent un redémarrage, sans importance pour « dotnet »), tout autre code = échec. Rend Vrai si c'est réussi ; sinon SdkFailure le dit.
-// Le fichier est revérifié juste avant d'être lancé : il est resté dans {tmp} pendant la copie des fichiers, et rien ne doit pouvoir le remplacer entre-temps.
+// Installe le SDK .NET 10 téléchargé, pour toute la machine (Setup est déjà administrateur). L'aide (-Install) ouvre le fichier sans partage en
+// écriture ni en suppression, le vérifie (empreinte, signature, signataire, racine, produit) et le lance (« /install /quiet /norestart ») en le gardant
+// ouvert jusqu'à la fin du setup : rien ne peut le remplacer entre la vérification et le lancement. Elle rend le code de sortie du setup.
+// Codes 0, 3010 et 1641 = réussi (les deux derniers demandent un redémarrage, sans importance pour « dotnet »). 1638 = une version égale ou plus
+// récente est déjà là : pas un échec, la recherche de « dotnet » qui suit tranche. Tout autre code = échec.
+// Rend Vrai s'il faut chercher « dotnet » ensuite ; sinon SdkFailure le dit.
 function InstallDotnetSdk: Boolean;
 var
-  ResultCode: Integer;
+  Code, SetupCode: Integer;
   Lines: TArrayOfString;
 begin
   Result := False;
   if not WizardSilent() then WizardForm.StatusLabel.Caption := 'Installation du SDK .NET 10…';
   try
-    ResultCode := RunSdkHelper('-Verify "' + SdkSetupPath + '" -Sha512 ' + SdkSetupSha512, DotnetSdkVerifyFile, Lines);
-    if ResultCode <> 0 then
-    begin
-      Log('Le fichier du SDK .NET 10 est refusé avant son lancement : ' + SdkHelperFailure(Lines, ResultCode));
-      SdkFailure := 'Le fichier du SDK .NET 10 téléchargé n''a pas passé la vérification (empreinte et signature de Microsoft) : il n''a pas été lancé.';
-      Exit;
-    end;
-    if not Exec(SdkSetupPath, '/install /quiet /norestart', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-    begin
-      Log('Le setup du SDK .NET 10 n''a pas pu être lancé : ' + SysErrorMessage(ResultCode));
-      SdkFailure := 'Le SDK .NET 10 n''a pas pu s''installer.';
-      Exit;
-    end;
+    Code := RunSdkHelper('-Install "' + SdkSetupPath + '" -Sha512 ' + SdkSetupSha512, DotnetSdkVerifyFile, Lines);
   except
     Log('Le setup du SDK .NET 10 n''a pas pu être lancé : ' + GetExceptionMessage);
     SdkFailure := 'Le SDK .NET 10 n''a pas pu s''installer.';
     Exit;
   end;
-  Log('Setup du SDK .NET 10 : code de sortie ' + IntToStr(ResultCode));
-  Result := (ResultCode = 0) or (ResultCode = 3010) or (ResultCode = 1641);
-  if not Result then SdkFailure := 'Le SDK .NET 10 n''a pas pu s''installer (code ' + IntToStr(ResultCode) + ').';
+  if Code <> 0 then
+  begin
+    Log('Le setup du SDK .NET 10 n''a pas été lancé : ' + SdkHelperFailure(Lines, Code));
+    if (Code >= 10) and (Code <= 15) then
+      SdkFailure := 'Le fichier du SDK .NET 10 téléchargé n''a pas passé la vérification (empreinte, signature et signataire de Microsoft) : il n''a pas été lancé.'
+    else
+      SdkFailure := 'Le SDK .NET 10 n''a pas pu s''installer.';
+    Exit;
+  end;
+  SetupCode := StrToIntDef(SdkHelperValue(Lines, 'exitcode'), -1);
+  Log('Setup du SDK .NET 10 : code de sortie ' + IntToStr(SetupCode));
+  if SetupCode = 1638 then
+  begin
+    Log('Code 1638 : une version égale ou plus récente du SDK .NET est déjà installée. Ce n''est pas un échec : la recherche de « dotnet » tranche.');
+    Result := True;
+  end
+  else
+  begin
+    Result := (SetupCode = 0) or (SetupCode = 3010) or (SetupCode = 1641);
+    if not Result then SdkFailure := 'Le SDK .NET 10 n''a pas pu s''installer (code ' + IntToStr(SetupCode) + ').';
+  end;
 end;
 
 // Branche les paquets du SDK sur le compte de l'utilisateur. Sans SDK .NET 10, rien n'est branché : seuls les fichiers sont copiés (un
@@ -635,8 +728,8 @@ begin
         Log('SDK .NET 10 installé par Ashboard Vision (« dotnet » : ' + DotnetCommand + '). Il reste installé à la désinstallation.')
       else
       begin
-        SdkFailure := 'Le SDK .NET 10 a été installé, mais « dotnet » ne le trouve pas encore : Windows demande peut-être de redémarrer.';
-        Log('Le SDK .NET 10 est installé, mais « dotnet --list-sdks » n''a pas de ligne 10.x ensuite.');
+        SdkFailure := 'Le setup du SDK .NET 10 s''est terminé, mais « dotnet » ne trouve pas encore de SDK .NET 10 : Windows demande peut-être de redémarrer.';
+        Log('Le setup du SDK .NET 10 est terminé, mais « dotnet --list-sdks » n''a pas de ligne 10.x ensuite.');
       end;
     end;
   end;
