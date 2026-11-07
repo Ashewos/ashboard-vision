@@ -81,6 +81,9 @@ public sealed class DotnetSdkScriptTests : IDisposable
     }
 
     /// <summary>Lance le script avec Windows PowerShell 5.1, comme l'installateur ; rend le code de sortie et le texte du fichier de résultat.</summary>
+    // Le PSModulePath dont le script hérite (null : celui du test) ; voir Verify_InheritedModulePathOfPowerShell7_IsIgnored.
+    private string? _inheritedModulePath;
+
     private (int ExitCode, string Result) Run(params string[] arguments)
     {
         var (code, result, _) = RunFull(arguments);
@@ -98,6 +101,11 @@ public sealed class DotnetSdkScriptTests : IDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
+        if (_inheritedModulePath is not null)
+        {
+            info.Environment["PSModulePath"] = _inheritedModulePath;
+        }
+
         foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", ScriptPath() }.Concat(arguments).Concat(["-Output", resultPath]))
         {
             info.ArgumentList.Add(argument);
@@ -351,6 +359,27 @@ public sealed class DotnetSdkScriptTests : IDisposable
 
         Assert.Equal(14, code);
         Assert.Contains("pas un setup du SDK .NET", result, StringComparison.Ordinal);
+    }
+
+    [WindowsPowerShellFact]
+    public void Verify_InheritedModulePathOfPowerShell7_IsIgnored()
+    {
+        // Cas de GitHub Actions (dotnet test lancé depuis pwsh), ou de Setup ouvert depuis une fenêtre PowerShell 7 : le script hérite d'un
+        // PSModulePath étranger. Ici, un dossier de l'utilisateur qui fournit un faux Microsoft.PowerShell.Security : le script ne doit charger
+        // que les modules de Windows PowerShell, et refuser le fichier non signé avec la vraie commande.
+        var modules = _dir.Combine("modules-pieges");
+        var fake = Path.Combine(modules, "Microsoft.PowerShell.Security");
+        Directory.CreateDirectory(fake);
+        File.WriteAllText(Path.Combine(fake, "Microsoft.PowerShell.Security.psm1"),
+            "function Get-AuthenticodeSignature { throw 'module piégé chargé' }" + Environment.NewLine + "Export-ModuleMember -Function Get-AuthenticodeSignature");
+        _inheritedModulePath = modules;
+        var path = _dir.Combine("dotnet-sdk-win-x64.exe");
+        File.WriteAllBytes(path, Encoding.ASCII.GetBytes("MZ pas un vrai programme, et sans signature"));
+
+        var (code, result) = VerifyDotnetExe(path);
+
+        Assert.Equal(12, code);
+        Assert.Contains("type : None", result, StringComparison.Ordinal);
     }
 
     [WindowsPowerShellFact]

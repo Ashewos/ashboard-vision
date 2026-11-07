@@ -454,7 +454,9 @@ public sealed class PackageOpeningTests : IDisposable
             PipeOptions.CurrentUserOnly, TokenImpersonationLevel.None, HandleInheritability.None);
         await client.ConnectAsync(5000, TestContext.Current.CancellationToken);
 
-        var me = WindowsIdentity.GetCurrent().User!;
+        // CurrentUserOnly réserve le tube au propriétaire du jeton : l'utilisateur lui-même, ou le groupe Administrateurs quand le
+        // processus tourne élevé (machines de GitHub Actions). Dans les deux cas, personne d'autre.
+        var me = WindowsIdentity.GetCurrent().Owner!;
         var rules = client.GetAccessControl().GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<AuthorizationRule>().ToList();
         Assert.NotEmpty(rules);
         Assert.All(rules, rule => Assert.Equal(me, rule.IdentityReference));

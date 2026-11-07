@@ -111,6 +111,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $script:EmbeddedCertificateCount = 0
 
+# Seuls les modules livrés avec Windows PowerShell (dossier système, réservé aux administrateurs). Lancé par un programme qui vient de PowerShell 7
+# (Setup ouvert depuis une fenêtre pwsh, dotnet test), ce script hériterait de ses dossiers de modules, et Get-AuthenticodeSignature ne se
+# chargerait plus. Et le dossier Documents de l'utilisateur n'a rien à fournir à un script qui tourne en administrateur.
+$env:PSModulePath = Join-Path $PSHOME 'Modules'
+
 # Les seuls hôtes d'où le SDK peut venir (Microsoft). L'adresse doit aussi être en https://, sans identifiant ni port particulier.
 $AllowedHosts = @('builds.dotnet.microsoft.com', 'dotnetcli.blob.core.windows.net', 'download.visualstudio.microsoft.com')
 
