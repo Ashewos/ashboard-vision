@@ -39,8 +39,8 @@ public partial class App : Application
             desktop.MainWindow = window;
 
             // Trofeo.Settings.exe <chemin.avmod> : la boîte d'installation s'ouvre dès que le service est joint (rien ne s'installe sans clic).
-            if (PackageArgument.Find(desktop.Args) is { } package)
-                model.OpenPackage(package);
+            // Un fichier qui ne peut pas s'ouvrir (partage réseau, fichier disparu) est dit dans la section des modules.
+            model.OpenPackageArguments(desktop.Args);
 
             // Une exception de l'interface ne ferme plus la fenêtre : elle va au journal et sur la ligne ambre.
             if (Guard is { } guard)
@@ -50,7 +50,12 @@ public partial class App : Application
             }
 
             if (Instance is { } instance)
+            {
                 instance.ShowRequested += () => Dispatcher.UIThread.Post(window.BringToFront);
+                // Un double-clic sur un .avmod pendant que la fenêtre est ouverte : le second lancement passe le chemin à celui-ci, qui le
+                // traite comme sa propre ligne de commande (même règle, même boîte, même clic sur « Installer »).
+                instance.ArgumentsReceived += received => Dispatcher.UIThread.Post(() => model.OpenPackageArguments(received));
+            }
 
             desktop.Exit += (_, _) =>
             {

@@ -529,6 +529,10 @@ public static class Texts
     public static string CommunityNone => Get();
     /// <summary>Bandeau quand la liste scellée a été trouvée altérée.</summary>
     public static string CommunityTampered => Get();
+    /// <summary>Un .avmod ouvert depuis un partage réseau : la fenêtre ne se connecte pas à un hôte, elle demande de copier le fichier.</summary>
+    public static string PackageNetworkPath => Get();
+    /// <summary>Un .avmod ouvert qui n'existe plus (ou dont le chemin est invalide).</summary>
+    public static string PackageMissing => Get();
     /// <summary>État d'un module complémentaire.</summary>
     public static string CommunityStateReady => Get();
     /// <summary>État d'un module complémentaire.</summary>

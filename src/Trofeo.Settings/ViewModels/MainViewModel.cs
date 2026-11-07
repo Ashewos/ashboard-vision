@@ -143,6 +143,26 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// La ligne de commande du premier lancement, ou les chemins qu'un second lancement lui passe : le fichier <c>.avmod</c> s'ouvre
+    /// (<see cref="OpenPackage"/>) s'il est un fichier local existant ; sinon la section des modules dit pourquoi il ne s'ouvre pas
+    /// (partage réseau, fichier introuvable). Sans argument <c>.avmod</c>, rien ne se passe. Rien ne s'installe sans le clic sur « Installer ».
+    /// </summary>
+    public void OpenPackageArguments(IEnumerable<string>? args)
+    {
+        var resolution = PackageArgument.Resolve(args);
+        if (resolution.Path is { } path)
+        {
+            OpenPackage(path);
+        }
+        else if (resolution.Problem is { } problem)
+        {
+            if (!IsFirstRunVisible)
+                SelectedTab = SettingsTab;
+            SettingsTab.Community.ShowPackageProblem(problem);
+        }
+    }
+
+    /// <summary>
     /// La ligne <c>Amber</c> sous la bande, dans tous les onglets : le message de la dernière modification (refus du
     /// service, écriture impossible) puis les avertissements du rechargement qui ne regardent pas l'apparence. Les autres
     /// avertissements sont sous le réglage concerné, dans l'onglet Personnalisation.

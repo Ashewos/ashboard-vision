@@ -1017,6 +1017,14 @@
     <value>La liste des modules validés a été modifiée hors du logiciel : valide de nouveau tes modules.</value>
     <comment>Bandeau quand la liste scellée a été trouvée altérée.</comment>
   </data>
+  <data name="PackageNetworkPath" xml:space="preserve">
+    <value>Copie ce fichier sur ce PC pour l'installer.</value>
+    <comment>Un .avmod ouvert depuis un partage réseau : la fenêtre ne se connecte pas à un hôte, elle demande de copier le fichier.</comment>
+  </data>
+  <data name="PackageMissing" xml:space="preserve">
+    <value>Ce fichier est introuvable : vérifie qu'il est toujours là.</value>
+    <comment>Un .avmod ouvert qui n'existe plus (ou dont le chemin est invalide).</comment>
+  </data>
   <data name="CommunityStateReady" xml:space="preserve">
     <value>Actif</value>
     <comment>État d'un module complémentaire.</comment>

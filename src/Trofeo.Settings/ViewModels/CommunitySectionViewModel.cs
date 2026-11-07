@@ -235,6 +235,15 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
             _packageWhenConnected = path;
     }
 
+    /// <summary>
+    /// Un .avmod demandé par la ligne de commande ne peut pas s'ouvrir (fichier d'un partage réseau, fichier disparu) : la section le dit,
+    /// avec la phrase que <see cref="Services.PackageArgument"/> a choisie. Rien n'est envoyé au service.
+    /// </summary>
+    public void ShowPackageProblem(string problem)
+    {
+        Message = problem;
+    }
+
     /// <summary>Fait lire le paquet au service (sans rien écrire sur le disque) et ouvre la boîte avec ce qu'il y a vu.</summary>
     public async Task OpenPackageAsync(string path)
     {
