@@ -475,6 +475,160 @@ public sealed class CommunityCatalogTests : IDisposable
         Assert.Equal(CommunityState.Unavailable, entry.State);
     }
 
+    // ---- Dossiers qui ne sont pas des modules ----
+
+    [Fact]
+    public void Scan_FolderWhoseNameIsNotAModuleId_IsIgnored()
+    {
+        Directory.CreateDirectory(Path.Combine(ModulesRoot, "Photos", "2024"));
+        File.WriteAllText(Path.Combine(ModulesRoot, "Photos", "2024", "vacances.jpg"), "x");
+        Directory.CreateDirectory(Path.Combine(ModulesRoot, "network", "1.0.0")); // un type d'origine n'est pas un module de la communauté
+        var directory = Install("alex.demo", "1.0.0");
+
+        var entry = Assert.Single(Catalog(State([Approve("alex.demo", "1.0.0", directory)])).Scan());
+
+        Assert.Equal("alex.demo", entry.Id);
+    }
+
+    // ---- Modules validés dans l'ancien dossier des modules ----
+
+    /// <summary>Crée un module dans un ancien dossier des modules (<c>ancien\id\version</c>), comme après un changement de dossier.</summary>
+    private string InstallInOldRoot(string id, string version, string content = "code")
+    {
+        var directory = Path.Combine(_root, "ancien", id, version);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "manifest.json"), Manifest(id, version));
+        File.WriteAllText(Path.Combine(directory, "Mod.dll"), content);
+        return directory;
+    }
+
+    [Fact]
+    public void Scan_ApprovedModuleInAnotherRoot_IsStillListedAndReady()
+    {
+        var old = InstallInOldRoot("alex.demo", "1.0.0");
+
+        var entry = Assert.Single(Catalog(State([Approve("alex.demo", "1.0.0", old)])).Scan());
+
+        Assert.Equal(CommunityState.Ready, entry.State);
+        Assert.Equal(old, entry.Directory);
+        Assert.NotNull(entry.Approval);
+    }
+
+    [Fact]
+    public void Scan_ApprovedModuleInAnotherRoot_ChangedContent_IsChanged()
+    {
+        var old = InstallInOldRoot("alex.demo", "1.0.0");
+        var approval = Approve("alex.demo", "1.0.0", old);
+        File.WriteAllText(Path.Combine(old, "Mod.dll"), "autre code");
+
+        var entry = Assert.Single(Catalog(State([approval])).Scan());
+
+        Assert.Equal(CommunityState.Changed, entry.State);
+    }
+
+    [Fact]
+    public void Scan_ApprovedModuleInAnotherRoot_SetAside_StaysSetAside()
+    {
+        var old = InstallInOldRoot("alex.demo", "1.0.0");
+
+        var entry = Assert.Single(Catalog(State([Approve("alex.demo", "1.0.0", old, setAside: "Plantages répétés.")])).Scan());
+
+        Assert.Equal(CommunityState.SetAside, entry.State);
+    }
+
+    [Fact]
+    public void Scan_ApprovedModuleWhoseFolderIsGone_IsNotListed()
+    {
+        var old = InstallInOldRoot("alex.demo", "1.0.0");
+        var approval = Approve("alex.demo", "1.0.0", old);
+        Directory.Delete(old, recursive: true);
+
+        Assert.Empty(Catalog(State([approval])).Scan());
+    }
+
+    [Fact]
+    public void Scan_ApprovedModuleInAnotherRoot_AndTheSameIdInTheRoot_ChoosesTheOneWhoseHashMatches()
+    {
+        var old = InstallInOldRoot("alex.demo", "1.0.0", content: "code validé");
+        var approval = Approve("alex.demo", "1.0.0", old);
+        Install("alex.demo", "1.0.0", content: "code déposé à la main"); // même identifiant, même version, autre contenu
+
+        var entry = Assert.Single(Catalog(State([approval])).Scan());
+
+        Assert.Equal(CommunityState.Ready, entry.State);
+        Assert.Equal(old, entry.Directory);
+    }
+
+    [Fact]
+    public void Scan_ApprovedModuleInAnotherRoot_ChangedAndACopyInTheRoot_ShowsTheCopyInTheRoot()
+    {
+        var old = InstallInOldRoot("alex.demo", "1.0.0");
+        var approval = Approve("alex.demo", "1.0.0", old);
+        File.WriteAllText(Path.Combine(old, "Mod.dll"), "abîmé");
+        var copy = Install("alex.demo", "1.0.0");
+
+        var entry = Assert.Single(Catalog(State([approval])).Scan());
+
+        Assert.Equal(copy, entry.Directory);
+        Assert.Equal(CommunityState.Ready, entry.State); // la copie a l'empreinte validée : elle prend la place de l'original abîmé
+    }
+
+    [Fact]
+    public void Scan_ApprovedModuleInAnotherRoot_ChangedAndADifferentCopyInTheRoot_ShowsTheCopyInTheRootAsChanged()
+    {
+        var old = InstallInOldRoot("alex.demo", "1.0.0");
+        var approval = Approve("alex.demo", "1.0.0", old);
+        File.WriteAllText(Path.Combine(old, "Mod.dll"), "abîmé");
+        var copy = Install("alex.demo", "1.0.0", content: "autre contenu");
+
+        var entry = Assert.Single(Catalog(State([approval])).Scan());
+
+        Assert.Equal(copy, entry.Directory);
+        Assert.Equal(CommunityState.Changed, entry.State);
+    }
+
+    [Fact]
+    public void Scan_ApprovedModuleInAnotherRoot_SortsById()
+    {
+        var old = InstallInOldRoot("zed.demo", "1.0.0");
+        var inRoot = Install("alex.demo", "1.0.0");
+
+        var entries = Catalog(State([Approve("zed.demo", "1.0.0", old), Approve("alex.demo", "1.0.0", inRoot)])).Scan();
+
+        Assert.Equal(["alex.demo", "zed.demo"], entries.Select(e => e.Id));
+    }
+
+    [Theory]
+    [InlineData("pas-le-bon-id", "1.0.0")] // le dossier de l'identifiant ne porte pas l'identifiant
+    [InlineData("alex.demo", "9.9.9")] // le dossier de la version ne porte pas la version
+    public void Scan_ApprovalWhoseFolderDoesNotEndWithIdAndVersion_IsIgnored(string idFolder, string versionFolder)
+    {
+        var folder = Path.Combine(_root, "ailleurs", idFolder, versionFolder);
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "manifest.json"), Manifest("alex.demo", "1.0.0"));
+        File.WriteAllText(Path.Combine(folder, "Mod.dll"), "code");
+
+        Assert.Empty(Catalog(State([Approve("alex.demo", "1.0.0", folder)])).Scan());
+    }
+
+    [Fact]
+    public void Scan_ApprovalWithARelativeOrHostileFolder_IsIgnored()
+    {
+        var documents = Path.Combine(_root, "Documents");
+        Directory.CreateDirectory(documents);
+        var approvals = new[]
+        {
+            new ApprovedModule("alex.demo", "1.0.0", documents, "h", [], null, null),
+            new ApprovedModule("alex.demo", "1.0.0", @"alex.demo\1.0.0", "h", [], null, null),
+            new ApprovedModule("alex.demo", "1.0.0", "", "h", [], null, null),
+        };
+
+        foreach (var approval in approvals)
+        {
+            Assert.Empty(Catalog(State([approval])).Scan());
+        }
+    }
+
     [Fact]
     public void ModulesFolder_Resolve_UsesChosenRootOrDefault()
     {

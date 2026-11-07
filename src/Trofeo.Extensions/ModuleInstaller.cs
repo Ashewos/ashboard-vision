@@ -103,8 +103,12 @@ internal sealed class ModuleInstaller
         }
     }
 
-    /// <summary>Supprime un dossier d'installation (extraction ratée, version remplacée). <c>null</c> : supprimé ou absent ; sinon, la raison.</summary>
-    public static string? TryDelete(string directory)
+    /// <summary>
+    /// Supprime un dossier d'installation (extraction ratée, version remplacée, module désinstallé). <c>null</c> : supprimé ou absent ;
+    /// sinon, la raison. Le dossier qui le contient est retiré lui aussi s'il est vide (<c>&lt;racine&gt;\&lt;id&gt;</c> quand on supprime une
+    /// version), sauf si <paramref name="removeEmptyParent"/> est faux (on supprime alors <c>&lt;id&gt;</c> : sa racine n'est pas à nous).
+    /// </summary>
+    public static string? TryDelete(string directory, bool removeEmptyParent = true)
     {
         try
         {
@@ -113,7 +117,11 @@ internal sealed class ModuleInstaller
                 Directory.Delete(directory, recursive: true);
             }
 
-            RemoveEmptyParent(directory);
+            if (removeEmptyParent)
+            {
+                RemoveEmptyParent(directory);
+            }
+
             return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

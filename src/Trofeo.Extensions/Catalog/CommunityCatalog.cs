@@ -86,6 +86,11 @@ public sealed class CommunityCatalog(Func<ApprovedLoad> load)
         foreach (var idDirectory in idDirectories)
         {
             var id = Path.GetFileName(idDirectory);
+            if (!ManifestReader.IsValidId(id))
+            {
+                continue; // un dossier qui n'a pas la forme d'un identifiant n'est pas un module : il n'a rien à faire dans le catalogue (ni à être désinstallé)
+            }
+
             string[] versionDirectories;
             try
             {
@@ -138,7 +143,86 @@ public sealed class CommunityCatalog(Func<ApprovedLoad> load)
             entries.Add(Evaluate(id, chosen.Name, chosen.Directory, approval, judgement));
         }
 
+        AddModulesOutsideTheRoot(root, entries, judgement);
         return entries;
+    }
+
+    /// <summary>
+    /// Les modules validés qui ont été installés dans un autre dossier des modules (avant que l'utilisateur change de dossier) restent
+    /// là où ils sont, comme la fenêtre le promet : chacun est jugé à son dossier enregistré, avec les mêmes contrôles (empreinte, manifeste,
+    /// compatibilité). Si le même identifiant se trouve aussi dans le dossier courant, l'entrée validée est celle qui correspond à l'empreinte
+    /// enregistrée : la copie de l'ancien dossier prend la place de l'autre quand elle est prête (empreinte conforme), et sinon le dossier
+    /// courant garde la place (une copie déposée à la main se valide depuis la liste). Un dossier disparu n'est pas listé.
+    /// </summary>
+    private static void AddModulesOutsideTheRoot(string root, List<CommunityEntry> entries, Judgement judgement)
+    {
+        var added = false;
+        foreach (var approval in judgement.Approvals.Modules)
+        {
+            if (ForeignVersionDirectory(approval, root) is not { } directory || !Directory.Exists(directory))
+            {
+                continue;
+            }
+
+            var entry = Evaluate(approval.Id, approval.Version, directory, approval, judgement);
+            var rivals = entries.Where(e => e.Id == approval.Id && e.Manifest is not null).ToList();
+            if (rivals.Count > 0)
+            {
+                if (entry.State != CommunityState.Ready)
+                {
+                    continue;
+                }
+
+                entries.RemoveAll(rivals.Contains);
+            }
+
+            entries.Add(entry);
+            added = true;
+        }
+
+        if (added)
+        {
+            var sorted = entries.OrderBy(e => e.Id, StringComparer.Ordinal).ToList(); // OrderBy est stable : l'ordre des entrées d'un même identifiant est gardé
+            entries.Clear();
+            entries.AddRange(sorted);
+        }
+    }
+
+    /// <summary>
+    /// Le dossier <c>&lt;autre dossier&gt;\&lt;id&gt;\&lt;version&gt;</c> d'un module validé installé hors du dossier des modules courant, ou
+    /// <c>null</c> si son dossier enregistré est sous le dossier courant (cas ordinaire) ou n'a pas cette forme exacte (identifiant et
+    /// version valides, chemin complet) : la liste scellée est de confiance, mais on ne lit ni ne supprime rien qui ne soit un dossier de module.
+    /// </summary>
+    internal static string? ForeignVersionDirectory(ApprovedModule approval, string root)
+    {
+        if (!ManifestReader.IsValidId(approval.Id) || string.IsNullOrWhiteSpace(approval.Directory) || !Path.IsPathFullyQualified(approval.Directory))
+        {
+            return null;
+        }
+
+        try
+        {
+            var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(approval.Directory));
+            var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+            if (full.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var idDirectory = Path.GetDirectoryName(full);
+            if (idDirectory is null || Path.GetDirectoryName(idDirectory) is null
+                || !string.Equals(Path.GetFileName(full), approval.Version, StringComparison.Ordinal)
+                || !string.Equals(Path.GetFileName(idDirectory), approval.Id, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            return full;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
     }
 
     private static List<CommunityEntry> ScanDevFolders(IReadOnlyList<DevFolder> folders, List<CommunityEntry> installed)

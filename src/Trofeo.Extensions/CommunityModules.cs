@@ -605,8 +605,16 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             await CompleteAsync(pending).ConfigureAwait(false);
 
             // L'ancienne version n'est retirée qu'une fois la nouvelle en place, et que son hôte (qui verrouillait ses fichiers) est arrêté.
-            if (previous is not null && previous.Version != written.Version
-                && ModuleInstaller.VersionDirectory(root, previous.Id, previous.Version) is { } old)
+            // Si elle vivait dans un autre dossier des modules (le dossier a été changé depuis), c'est ce dossier-là qui est vidé, même
+            // pour la même version : la liste scellée ne désigne plus que la copie du dossier courant.
+            string? oldDirectory = null;
+            if (previous is not null)
+            {
+                oldDirectory = CommunityCatalog.ForeignVersionDirectory(previous, root)
+                    ?? (previous.Version != written.Version ? ModuleInstaller.VersionDirectory(root, previous.Id, previous.Version) : null);
+            }
+
+            if (previous is not null && oldDirectory is { } old)
             {
                 if (ModuleInstaller.TryDelete(old) is { } problem)
                 {
@@ -769,6 +777,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         try
         {
             string? root = null;
+            string? foreignModuleDirectory = null;
             var (result, pending) = Transact(current =>
             {
                 var entries = _catalog.Scan();
@@ -781,6 +790,13 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
                 }
 
                 root = _catalog.ResolveRoot(_snapshot);
+
+                // Un module installé avant un changement de dossier des modules vit dans l'ancien dossier : c'est <ancien dossier>\<id> qu'on
+                // supprimera, jamais rien au-dessus.
+                var approval = current.Modules.FirstOrDefault(m => m.Id == id);
+                foreignModuleDirectory = approval is not null && CommunityCatalog.ForeignVersionDirectory(approval, root) is { } version
+                    ? Path.GetDirectoryName(version)
+                    : null;
                 return new Outcome(WithoutModule(current, id), new ActionResult(true, ""));
             });
 
@@ -792,9 +808,22 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
             // Plus validé : l'hôte (et le verrou sur ses fichiers) s'arrête d'abord, puis le dossier, le conteneur et les secrets partent.
             await CompleteAsync(pending).ConfigureAwait(false);
             var problems = new List<string>();
-            if (ModuleInstaller.ModuleDirectory(root!, id) is { } directory)
+            // Le nom du dossier doit être un identifiant de module : on ne supprime jamais un autre dossier du dossier des modules (« Photos »).
+            // Et seul <id> est supprimé : le dossier qui le contient (le dossier des modules, courant ou ancien) n'est pas à nous.
+            var folders = new List<string>();
+            if (ManifestReader.IsValidId(id) && ModuleInstaller.ModuleDirectory(root!, id) is { } directory)
             {
-                if (ModuleInstaller.TryDelete(directory) is { } folderProblem)
+                folders.Add(directory);
+            }
+
+            if (foreignModuleDirectory is not null)
+            {
+                folders.Add(foreignModuleDirectory);
+            }
+
+            foreach (var folder in folders)
+            {
+                if (ModuleInstaller.TryDelete(folder, removeEmptyParent: false) is { } folderProblem)
                 {
                     problems.Add($"le dossier du module n'a pas pu être supprimé ({folderProblem})");
                 }

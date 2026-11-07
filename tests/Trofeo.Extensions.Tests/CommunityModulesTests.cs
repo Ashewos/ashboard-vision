@@ -693,10 +693,10 @@ public sealed class CommunityModulesTests : IAsyncLifetime
     }
 
     [WindowsHostFact]
-    public async Task Uninstall_FolderNamedLikeABuiltInType_NeverTouchesItsSecretsOrProfile()
+    public async Task Uninstall_FolderThatIsNotAModule_IsNeitherListedNorDeleted()
     {
-        // Un dossier « network » n'est pas un module de la communauté (pas de point) : le catalogue en fait une entrée invalide,
-        // mais le coffre « network » est celui du module Réseau d'origine.
+        // Un dossier « network » n'est pas un module de la communauté (pas de point) : il n'est pas dans le catalogue, il n'est jamais supprimé,
+        // et le coffre « network » est celui du module Réseau d'origine.
         var rig = NewRig();
         var folder = Path.Combine(rig.Root, "network", "1.0.0");
         Directory.CreateDirectory(folder);
@@ -706,10 +706,50 @@ public sealed class CommunityModulesTests : IAsyncLifetime
 
         var result = await rig.Community.UninstallAsync("network");
 
-        Assert.True(result.Ok, result.Message);
-        Assert.False(Directory.Exists(Path.Combine(rig.Root, "network")), "le dossier déposé disparaît");
+        Assert.Empty(rig.Community.Entries);
+        Assert.False(result.Ok);
+        Assert.True(File.Exists(Path.Combine(folder, "fichier.txt")), "le dossier déposé reste");
         Assert.Equal("jeton-freebox", rig.Vault.Get("network", "freebox"));
         Assert.Empty(rig.Profiles);
+    }
+
+    [WindowsHostFact]
+    public async Task Uninstall_FolderOfPhotosInTheModulesFolder_DeletesNothing()
+    {
+        // Choisir un dossier qui contient déjà des choses (« Photos\2024 ») ne fait pas de ces choses des modules à désinstaller.
+        var rig = NewRig();
+        var photos = Path.Combine(rig.Root, "Photos", "2024");
+        Directory.CreateDirectory(photos);
+        File.WriteAllText(Path.Combine(photos, "vacances.jpg"), "x");
+        await InstallAsync(rig, rig.Package());
+        rig.Community.Refresh();
+
+        var result = await rig.Community.UninstallAsync("Photos");
+
+        Assert.Equal(["alex.demo"], rig.Community.Entries.Select(e => e.Id));
+        Assert.False(result.Ok);
+        Assert.True(File.Exists(Path.Combine(photos, "vacances.jpg")));
+        Assert.Single(rig.Approved.Modules);
+    }
+
+    [WindowsHostFact]
+    public async Task Uninstall_WithAForeignFolderInTheSealedList_NeverDeletesAboveTheModuleFolder()
+    {
+        // La liste scellée est de confiance, mais un dossier qui ne finit pas par <id>\<version> n'est pas celui d'un module installé.
+        var rig = NewRig();
+        var documents = rig.NewFolder("Documents");
+        File.WriteAllText(Path.Combine(documents, "important.txt"), "x");
+        rig.Store.Save(rig.Approved with
+        {
+            Modules = [new ApprovedModule("alex.demo", "1.0.0", documents, "h", Internet, null, null)],
+        });
+        rig.Community.Refresh();
+
+        var result = await rig.Community.UninstallAsync("alex.demo");
+
+        Assert.True(result.Ok, result.Message);
+        Assert.True(File.Exists(Path.Combine(documents, "important.txt")));
+        Assert.Empty(rig.Approved.Modules);
     }
 
     [WindowsHostFact]
@@ -765,9 +805,99 @@ public sealed class CommunityModulesTests : IAsyncLifetime
         Assert.True(result.Ok, result.Message);
         Assert.Equal(elsewhere, rig.Approved.ModulesRoot);
         Assert.Equal(elsewhere, rig.Community.StoreInfo.ModulesRoot);
-        Assert.Empty(rig.Community.Entries); // les modules sont dans l'ancien dossier
+        // « Ceux qui sont déjà installés restent où ils sont » : ils continuent d'être lus, validés, depuis leur dossier.
+        var kept = rig.Entry("alex.demo");
+        Assert.Equal(CommunityState.Ready, kept.State);
+        Assert.Equal(Path.Combine(rig.Root, "alex.demo", "1.0.0"), kept.Directory);
         await InstallAsync(rig, rig.Package(id: "alex.autre"));
         Assert.True(Directory.Exists(Path.Combine(elsewhere, "alex.autre", "1.0.0")));
+        Assert.Equal(["alex.autre", "alex.demo"], rig.Community.Entries.Select(e => e.Id));
+    }
+
+    [WindowsHostFact]
+    public async Task SetModulesRoot_AnInstalledModuleStillRunsFromItsOldFolder()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package());
+        Assert.True(rig.Community.SetModulesRoot(Path.Combine(rig.NewFolder(), "autres-modules")).Ok);
+
+        Assert.IsType<RemoteModuleFactory>(rig.Factory("alex.demo"));
+        rig.Open("alex.demo");
+        var host = await rig.Launcher.WaitForStartAsync();
+        var hello = await host.WaitAsync<Hello>();
+
+        Assert.Equal(Path.Combine(rig.Root, "alex.demo", "1.0.0"), hello.ModuleDirectory);
+    }
+
+    [WindowsHostFact]
+    public async Task Uninstall_AfterTheModulesFolderChanged_RemovesTheModuleFolderInTheOldRootAndNothingElse()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package());
+        await InstallAsync(rig, rig.Package(id: "alex.autre"));
+        File.WriteAllText(Path.Combine(rig.Root, "garder.txt"), "x"); // à côté des modules, dans l'ancien dossier
+        rig.Vault.Scope("alex.demo").Set("jeton", "secret");
+        var elsewhere = Path.Combine(rig.NewFolder(), "autres-modules");
+        Assert.True(rig.Community.SetModulesRoot(elsewhere).Ok);
+
+        var result = await rig.Community.UninstallAsync("alex.demo");
+
+        Assert.True(result.Ok, result.Message);
+        Assert.False(Directory.Exists(Path.Combine(rig.Root, "alex.demo")), "<ancien dossier>\\<id> est supprimé");
+        Assert.True(Directory.Exists(Path.Combine(rig.Root, "alex.autre", "1.0.0")), "les autres modules de l'ancien dossier restent");
+        Assert.True(File.Exists(Path.Combine(rig.Root, "garder.txt")), "rien au-dessus de <id>");
+        Assert.True(Directory.Exists(elsewhere));
+        Assert.Equal(["alex.demo"], rig.Profiles);
+        Assert.Null(rig.Vault.Get("alex.demo", "jeton"));
+        Assert.Equal(["alex.autre"], rig.Approved.Modules.Select(m => m.Id));
+        Assert.Equal(["alex.autre"], rig.Community.Entries.Select(e => e.Id));
+    }
+
+    [WindowsHostFact]
+    public async Task Uninstall_LastModuleOfTheOldRoot_LeavesTheRootFolder()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package());
+        Assert.True(rig.Community.SetModulesRoot(Path.Combine(rig.NewFolder(), "autres-modules")).Ok);
+
+        var result = await rig.Community.UninstallAsync("alex.demo");
+
+        Assert.True(result.Ok, result.Message);
+        Assert.True(Directory.Exists(rig.Root), "le dossier des modules d'avant n'est pas à nous : on ne supprime que <id>");
+        Assert.False(Directory.Exists(Path.Combine(rig.Root, "alex.demo")));
+    }
+
+    [WindowsHostFact]
+    public async Task Install_NewVersionAfterTheModulesFolderChanged_RemovesTheOldVersionFromTheOldRoot()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package(version: "1.0.0"));
+        var elsewhere = Path.Combine(rig.NewFolder(), "autres-modules");
+        Assert.True(rig.Community.SetModulesRoot(elsewhere).Ok);
+
+        await InstallAsync(rig, rig.Package(version: "1.1.0"));
+
+        var approved = Assert.Single(rig.Approved.Modules);
+        Assert.Equal(Path.Combine(elsewhere, "alex.demo", "1.1.0"), approved.Directory);
+        Assert.False(Directory.Exists(Path.Combine(rig.Root, "alex.demo", "1.0.0")), "l'ancienne version, dans l'ancien dossier, est retirée");
+        Assert.False(Directory.Exists(Path.Combine(rig.Root, "alex.demo")), "son dossier <id> vide aussi");
+        Assert.True(Directory.Exists(rig.Root));
+        Assert.Equal(CommunityState.Ready, rig.Entry("alex.demo").State);
+    }
+
+    [WindowsHostFact]
+    public async Task Install_SameVersionAgainAfterTheModulesFolderChanged_MovesItAndRemovesTheOldCopy()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package(version: "1.0.0"));
+        var elsewhere = Path.Combine(rig.NewFolder(), "autres-modules");
+        Assert.True(rig.Community.SetModulesRoot(elsewhere).Ok);
+
+        await InstallAsync(rig, rig.Package(version: "1.0.0"));
+
+        Assert.Equal(Path.Combine(elsewhere, "alex.demo", "1.0.0"), Assert.Single(rig.Approved.Modules).Directory);
+        Assert.False(Directory.Exists(Path.Combine(rig.Root, "alex.demo")));
+        Assert.Equal(Path.Combine(elsewhere, "alex.demo", "1.0.0"), rig.Entry("alex.demo").Directory);
     }
 
     [WindowsHostFact]
