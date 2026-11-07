@@ -83,6 +83,13 @@ public sealed class DotnetSdkScriptTests : IDisposable
     /// <summary>Lance le script avec Windows PowerShell 5.1, comme l'installateur ; rend le code de sortie et le texte du fichier de résultat.</summary>
     private (int ExitCode, string Result) Run(params string[] arguments)
     {
+        var (code, result, _) = RunFull(arguments);
+        return (code, result);
+    }
+
+    /// <summary>Comme <see cref="Run"/>, avec en plus la sortie standard du script (les lignes « progress= »).</summary>
+    private (int ExitCode, string Result, string Stdout) RunFull(params string[] arguments)
+    {
         var resultPath = _dir.Combine("resultat-" + Guid.NewGuid().ToString("N") + ".txt");
         var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"))
         {
@@ -102,7 +109,7 @@ public sealed class DotnetSdkScriptTests : IDisposable
         Assert.True(process.WaitForExit(120_000), "Le script ne s'est pas terminé à temps.");
         Task.WaitAll(stdout, stderr);
         var result = File.Exists(resultPath) ? File.ReadAllText(resultPath) : "";
-        return (process.ExitCode, result);
+        return (process.ExitCode, result, stdout.Result);
     }
 
     private (int ExitCode, string Result) Resolve(string releasesJson)
@@ -572,6 +579,181 @@ public sealed class DotnetSdkScriptTests : IDisposable
 
         Assert.True(code == 13, description + " : code " + code + ", " + result);
         Assert.StartsWith("error=", result.TrimStart('\uFEFF'), StringComparison.Ordinal);
+    }
+
+    // --- la progression d'après le journal du setup de Microsoft (Burn) ------------------------------------------------------------
+
+    // Un extrait réduit du vrai journal de l'essai d'Alex dans le Bac à sable (07/11/2026) : i009, i200, les 28 « Planned package » (tous « execute: Install »),
+    // i299/i300, puis les « Applying » et « Applied execute package » des cinq premiers paquets (le sixième est en cours).
+    private static string BurnFixture() => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "burn-sdk-setup.log"));
+
+    private string WriteLog(string content)
+    {
+        var path = _dir.Combine("sdk-setup-" + Guid.NewGuid().ToString("N") + ".log");
+        File.WriteAllText(path, content, new UTF8Encoding(false));
+        return path;
+    }
+
+    private static string[] ProgressLines(string stdout) =>
+        stdout.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries).Where(line => line.StartsWith("progress=", StringComparison.Ordinal)).ToArray();
+
+    [WindowsPowerShellFact]
+    public void ReadProgress_RealLogExtract_CountsAppliedOverPlannedPackages()
+    {
+        var (code, _, stdout) = RunFull("-ReadProgress", WriteLog(BurnFixture()));
+
+        Assert.Equal(0, code);
+        Assert.Equal(["progress=5/28"], ProgressLines(stdout));
+    }
+
+    [WindowsPowerShellFact]
+    public void ReadProgress_PlanOnly_IsZeroOverTheTotal()
+    {
+        var fixture = BurnFixture();
+        var planOnly = fixture[..fixture.IndexOf("i300: Apply begin", StringComparison.Ordinal)];
+
+        var (code, _, stdout) = RunFull("-ReadProgress", WriteLog(planOnly));
+
+        Assert.Equal(0, code);
+        Assert.Equal(["progress=0/28"], ProgressLines(stdout));
+    }
+
+    [WindowsPowerShellFact]
+    public void ReadProgress_PackagesPlannedWithExecuteNone_AreNotCounted()
+    {
+        // Deux paquets passent à « execute: None » (déjà installés) : le total tombe à 26 et leurs « Applied » ne comptent plus (Finalizer et hostfxr étaient finis).
+        var fixture = BurnFixture()
+            .Replace("Planned package: Finalizer, state: Absent, default requested: Present, ba requested: Present, execute: Install", "Planned package: Finalizer, state: Present, default requested: Present, ba requested: Present, execute: None", StringComparison.Ordinal)
+            .Replace("Planned package: dotnet_hostfxr_10.0.14_win_x64.msi, state: Absent, default requested: Present, ba requested: Present, execute: Install", "Planned package: dotnet_hostfxr_10.0.14_win_x64.msi, state: Present, default requested: Present, ba requested: Present, execute: None", StringComparison.Ordinal);
+        Assert.Equal(26, fixture.Split('\n').Count(line => line.Contains("Planned package", StringComparison.Ordinal) && line.Contains("execute: Install", StringComparison.Ordinal)));
+
+        var (code, _, stdout) = RunFull("-ReadProgress", WriteLog(fixture));
+
+        Assert.Equal(0, code);
+        Assert.Equal(["progress=3/26"], ProgressLines(stdout));
+    }
+
+    [WindowsPowerShellFact]
+    public void ReadProgress_ANewPlan_StartsTheCountAgain()
+    {
+        var text = BurnFixture() + "[1DDC:1DB8][2026-11-07T18:00:00]i200: Plan begin, 2 packages, action: Install\r\n"
+            + "[1DDC:1DB8][2026-11-07T18:00:00]i201: Planned package: a.msi, state: Absent, execute: Install, rollback: Uninstall,\r\n"
+            + "[1DDC:1DB8][2026-11-07T18:00:00]i201: Planned package: b.msi, state: Absent, execute: Install, rollback: Uninstall,\r\n";
+
+        var (_, _, stdout) = RunFull("-ReadProgress", WriteLog(text));
+
+        Assert.Equal(["progress=0/2"], ProgressLines(stdout));
+    }
+
+    [WindowsPowerShellFact]
+    public void ReadProgress_LogWithoutAPlan_WritesNothing()
+    {
+        var (code, _, stdout) = RunFull("-ReadProgress", WriteLog("[103C:0638][2026-11-07T17:47:21]i009: Command Line: '/install /quiet /norestart'\r\n"));
+
+        Assert.Equal(0, code);
+        Assert.Empty(ProgressLines(stdout));
+    }
+
+    [WindowsPowerShellFact]
+    public void ReadProgress_MissingLog_WritesNothingAndDoesNotFail()
+    {
+        var (code, result, stdout) = RunFull("-ReadProgress", _dir.Combine("n-existe-pas.log"));
+
+        Assert.Equal(0, code);
+        Assert.Empty(ProgressLines(stdout));
+        Assert.DoesNotContain("error=", result, StringComparison.Ordinal);
+    }
+
+    [WindowsPowerShellFact]
+    public void ReadProgress_UnreadableLog_WritesNothingAndDoesNotFail()
+    {
+        // Un journal tenu par un autre programme sans aucun partage : illisible.
+        var path = WriteLog(BurnFixture());
+        using var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var (code, _, stdout) = RunFull("-ReadProgress", path);
+
+        Assert.Equal(0, code);
+        Assert.Empty(ProgressLines(stdout));
+    }
+
+    [WindowsPowerShellFact]
+    public void ReadProgress_LogBeingWrittenWithShareRead_IsStillReadable()
+    {
+        // Burn écrit son journal en le gardant ouvert : le script doit pouvoir le lire en même temps.
+        var path = WriteLog(BurnFixture());
+        using var writer = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.Read);
+
+        var (code, _, stdout) = RunFull("-ReadProgress", path);
+
+        Assert.Equal(0, code);
+        Assert.Equal(["progress=5/28"], ProgressLines(stdout));
+    }
+
+    [WindowsPowerShellFact]
+    public async Task FollowLog_GrowingLog_WritesEachChangeUntilTheProcessEnds()
+    {
+        // Un faux processus (il dort) tient la place du setup ; le test fait grandir le journal et attend chaque ligne avant d'écrire la suivante.
+        var fixtureLines = BurnFixture().Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries);
+        var plan = fixtureLines.Where(line => line.Contains("i200:", StringComparison.Ordinal) || line.Contains("Planned package", StringComparison.Ordinal)).Take(4).ToArray();
+        var applied = fixtureLines.Where(line => line.Contains("Applied execute package", StringComparison.Ordinal)).Take(3).ToArray();
+        var logPath = WriteLog(string.Join("\r\n", plan) + "\r\n");
+
+        using var fake = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"))
+        {
+            ArgumentList = { "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 120" },
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        })!;
+        var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", ScriptPath(), "-FollowLog", logPath, "-ProcessId", fake.Id.ToString() })
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        using var follower = Process.Start(info)!;
+        var seen = new List<string>();
+        try
+        {
+            async Task<string> NextLineAsync() => await follower.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(60)) ?? "(fin du flux)";
+
+            seen.Add(await NextLineAsync());
+            Assert.Equal("progress=0/3", seen[^1]);
+            foreach (var line in applied)
+            {
+                File.AppendAllText(logPath, line + "\r\n");
+                seen.Add(await NextLineAsync());
+            }
+
+            Assert.Equal(["progress=0/3", "progress=1/3", "progress=2/3", "progress=3/3"], seen);
+        }
+        finally
+        {
+            fake.Kill();
+        }
+
+        Assert.True(follower.WaitForExit(30_000), "Le script n'a pas fini après la fin du processus suivi.");
+        Assert.Equal(0, follower.ExitCode);
+    }
+
+    [MicrosoftSignedFileFact]
+    public void Install_SetupLogThatNeverAppears_DoesNotStopTheInstallation()
+    {
+        // Le « setup » (dotnet.exe copié) n'écrit aucun journal : pas de ligne progress=, et le code de sortie du setup est rendu comme d'habitude.
+        var path = _dir.Combine("dotnet-sdk-win-x64.exe");
+        File.Copy(MicrosoftSignedFile()!, path);
+
+        var (code, result, stdout) = RunFull("-Install", path, "-Sha512", Sha512Of(path), "-ProductNamePrefix", ".NET", "-SetupLog", _dir.Combine("sdk-setup.log"));
+
+        Assert.Equal(0, code);
+        Assert.Matches(@"exitcode=-?\d+", result);
+        Assert.Empty(ProgressLines(stdout));
     }
 
     // --- -Install : le fichier reste ouvert, sans partage en écriture, jusqu'à la fin du setup ----------------------------------

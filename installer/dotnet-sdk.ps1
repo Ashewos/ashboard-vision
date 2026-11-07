@@ -15,7 +15,12 @@
     -Install : ouvre le fichier SANS partage en écriture ni en suppression (le temps de tout le travail), le vérifie sur ce fichier ouvert, puis lance
                « <fichier> /install /quiet /norestart » en le gardant ouvert jusqu'à la fin du setup. Code de sortie 0 : le setup a été lancé et il est
                fini, son propre code de sortie est dans -Output (ligne « exitcode=… »). Un fichier qui échoue à une vérification n'est jamais lancé.
+    -Install écrit aussi, sur la SORTIE STANDARD et à chaque changement, une ligne « progress=<faits>/<total> » : le setup de Microsoft (Burn) reçoit « /log <fichier> »
+               (-SetupLog), son journal est relu toutes les 500 ms environ, <total> est le nombre de paquets planifiés avec « execute: Install » et <faits> le nombre
+               de lignes « Applied execute package ». Journal absent ou illisible : rien n'est écrit, et l'installation continue normalement. L'installateur lit ces
+               lignes pendant l'exécution pour faire avancer sa barre.
     -CheckSubject, -CheckSubjectHex, -CheckRoot : les deux décisions du signataire, sur des valeurs, pour les tests.
+    -ReadProgress <journal>, -FollowLog <journal> -ProcessId <pid> : la lecture du journal Burn (une fois, ou jusqu'à la fin d'un processus), pour les tests.
 
     Les vérifications (-Verify et -Install), toutes obligatoires :
       1. l'empreinte SHA-512 du fichier est celle de releases.json ;
@@ -52,6 +57,20 @@ param(
 
     [Parameter(ParameterSetName = 'Install', Mandatory)]
     [string] $Install,
+
+    # -Install : le journal du setup de Microsoft (« /log »), lu pendant l'exécution pour écrire les lignes « progress= ». Sans lui, pas de suivi.
+    [Parameter(ParameterSetName = 'Install')]
+    [string] $SetupLog,
+
+    # Pour les tests : lit un journal Burn (une fois), ou le suit jusqu'à la fin du processus -ProcessId.
+    [Parameter(ParameterSetName = 'ReadProgress', Mandatory)]
+    [string] $ReadProgress,
+
+    [Parameter(ParameterSetName = 'FollowLog', Mandatory)]
+    [string] $FollowLog,
+
+    [Parameter(ParameterSetName = 'FollowLog', Mandatory)]
+    [int] $ProcessId,
 
     [Parameter(ParameterSetName = 'Verify', Mandatory)]
     [Parameter(ParameterSetName = 'Install', Mandatory)]
@@ -355,17 +374,93 @@ function Test-SdkFile {
     Write-Result @('ok', "embedded-certificates=$($script:EmbeddedCertificateCount)")
 }
 
+# --- La progression d'après le journal de Burn ---------------------------------------------------------------------------------
+
+# Le texte d'un journal Burn -> { Done, Total } : Total = les paquets planifiés avec « execute: Install » (« execute: None » ne compte pas), Done = ceux que
+# « Applied execute package » dit finis. Un nouveau « Plan begin » repart de zéro. Chaque paquet compte une fois, même si sa ligne revient.
+function Get-BurnProgress([string] $text) {
+    $planned = @{}
+    $applied = @{}
+    foreach ($line in ($text -split "\r?\n")) {
+        if ($line -match 'i200: Plan begin') { $planned.Clear(); $applied.Clear() }
+        elseif ($line -match 'Planned package: (?<name>[^,]+),.*\bexecute: Install\b') { $planned[$Matches['name']] = $true }
+        elseif ($line -match 'Applied execute package: (?<name>[^,]+),') { $applied[$Matches['name']] = $true }
+    }
+    $done = 0
+    foreach ($name in $applied.Keys) { if ($planned.ContainsKey($name)) { $done++ } }
+    return [pscustomobject] @{ Done = $done; Total = $planned.Count }
+}
+
+# Lit le journal (ouvert avec partage en lecture et en écriture : Burn l'écrit en même temps) ; $null s'il manque ou ne se lit pas.
+function Read-BurnLog([string] $path) {
+    try {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+        $file = New-Object System.IO.FileStream($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            $reader = New-Object System.IO.StreamReader($file, [System.Text.Encoding]::UTF8)
+            return $reader.ReadToEnd()
+        }
+        finally { $file.Dispose() }
+    }
+    catch { return $null }
+}
+
+function Write-ProgressLine([string] $key) {
+    [Console]::Out.WriteLine("progress=$key")
+    [Console]::Out.Flush()
+}
+
+# Écrit « progress=<faits>/<total> » à chaque changement, toutes les 500 ms environ, jusqu'à la fin du processus (une dernière lecture après sa fin).
+# Aucune erreur de lecture n'en sort : le suivi n'est qu'un confort, l'installation ne dépend pas de lui.
+function Watch-BurnLog([System.Diagnostics.Process] $process, [string] $logPath) {
+    $last = ''
+    while ($true) {
+        $finished = $process.HasExited   # lu AVANT le journal : la lecture qui suit est alors la dernière
+        try {
+            $text = Read-BurnLog $logPath
+            if ($null -ne $text) {
+                $progress = Get-BurnProgress $text
+                if ($progress.Total -gt 0) {
+                    $key = "$($progress.Done)/$($progress.Total)"
+                    if ($key -ne $last) { Write-ProgressLine $key; $last = $key }
+                }
+            }
+        }
+        catch { }
+        if ($finished) { return }
+        [void] $process.WaitForExit(500)
+    }
+}
+
+function Show-LogProgress {
+    $text = Read-BurnLog $ReadProgress
+    if ($null -eq $text) { return }
+    $progress = Get-BurnProgress $text
+    if ($progress.Total -gt 0) { Write-ProgressLine "$($progress.Done)/$($progress.Total)" }
+}
+
+function Follow-LogProgress {
+    $process = Get-Process -Id $ProcessId -ErrorAction Stop
+    Watch-BurnLog $process $FollowLog
+}
+
 function Install-Sdk {
     $script:FilePath = $Install
     $stream = Open-VerifiedSdkFile
     try {
         # Le fichier reste ouvert (en lecture, sans partage en écriture ni suppression) jusqu'à la fin du setup.
-        $info = New-Object System.Diagnostics.ProcessStartInfo($script:FilePath, '/install /quiet /norestart')
+        $arguments = '/install /quiet /norestart'
+        if ($SetupLog) {
+            if ($SetupLog.Contains('"')) { throw [Refusal]::new(20, 'Le chemin du journal du setup contient un guillemet.') }
+            $arguments += ' /log "' + $SetupLog + '"'
+        }
+        $info = New-Object System.Diagnostics.ProcessStartInfo($script:FilePath, $arguments)
         $info.UseShellExecute = $false
         $info.CreateNoWindow = $true
         $process = $null
         try { $process = [System.Diagnostics.Process]::Start($info) }
         catch { throw [Refusal]::new(20, "Le setup n'a pas pu être lancé : $($_.Exception.Message)") }
+        if ($SetupLog) { Watch-BurnLog $process $SetupLog } else { $process.WaitForExit() }
         $process.WaitForExit()
         Write-Result @("exitcode=$($process.ExitCode)")
         $process.Dispose()
@@ -402,6 +497,8 @@ try {
         'CheckSubject' { Test-SubjectText }
         'CheckSubjectHex' { Test-SubjectHex }
         'CheckRoot' { Test-RootText }
+        'ReadProgress' { Show-LogProgress }
+        'FollowLog' { Follow-LogProgress }
         default { Resolve-Sdk }
     }
     exit 0

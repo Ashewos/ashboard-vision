@@ -165,6 +165,7 @@ const
   DotnetSdkSetupName = 'dotnet-sdk-win-x64.exe';
   DotnetSdkResolveFile = 'dotnet-sdk-resolve.txt';
   DotnetSdkVerifyFile = 'dotnet-sdk-verify.txt';
+  DotnetSdkSetupLogFile = 'sdk-setup.log'; // le journal du setup de Microsoft (Burn), écrit dans le dossier de travail
   // La clé de désinstallation d'Inno Setup : elle garde les cases cochées la fois d'avant (valeur « Inno Setup: Selected Tasks »).
   // Même identifiant que AppId plus haut (qui ne change jamais), avec le suffixe _is1 de Setup.
   SetupUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{111C6025-5DD9-4E18-8B24-7A08FDA9E7AA}_is1';
@@ -512,11 +513,39 @@ begin
   Result := True;
 end;
 
+// Reçoit, ligne par ligne et PENDANT l'exécution, la sortie de l'aide lancée par -Install (ExecAndLogOutput) : les lignes « progress=<faits>/<total> » (le setup
+// de Microsoft installe ses paquets un par un ; l'aide relit son journal) font avancer la barre de l'assistant de 0 à son maximum, et le texte d'état dit où l'on
+// en est. Toute autre ligne (un message d'erreur de l'aide) va au journal de Setup.
+procedure OnSdkSetupOutput(const S: String; const Error, FirstLine: Boolean);
+var
+  Line: String;
+  Slash, Done, Total: Integer;
+begin
+  if Error then Exit;
+  Line := Trim(S);
+  if Pos('progress=', Line) <> 1 then
+  begin
+    if Line <> '' then Log('Aide du SDK .NET 10 : ' + Line);
+    Exit;
+  end;
+  Line := Copy(Line, Length('progress=') + 1, Length(Line));
+  Slash := Pos('/', Line);
+  if Slash = 0 then Exit;
+  Done := StrToIntDef(Copy(Line, 1, Slash - 1), -1);
+  Total := StrToIntDef(Copy(Line, Slash + 1, Length(Line)), 0);
+  if (Done < 0) or (Total <= 0) or (Done > Total) then Exit;
+  if WizardSilent() then Exit;
+  WizardForm.ProgressGauge.Position := (Done * 1000) div Total; // l'échelle (0 à 1000) est posée par InstallDotnetSdk
+  WizardForm.StatusLabel.Caption := 'Installation du SDK .NET 10 (' + IntToStr(Done) + ' sur ' + IntToStr(Total) + ')…';
+end;
+
 // Lance l'aide PowerShell avec <Arguments> ; rend son code de sortie (-1 si elle n'a pas pu être lancée) et les lignes de son fichier de résultat.
-function RunSdkHelper(const Arguments, ResultFile: String; var Lines: TArrayOfString): Integer;
+// Live : la sortie de l'aide est lue ligne par ligne pendant qu'elle tourne (OnSdkSetupOutput), au lieu d'attendre sa fin.
+function RunSdkHelper(const Arguments, ResultFile: String; const Live: Boolean; var Lines: TArrayOfString): Integer;
 var
   ResultCode: Integer;
-  ResultPath, Script: String;
+  ResultPath, Script, CommandLine: String;
+  Started: Boolean;
 begin
   Result := -1;
   SetArrayLength(Lines, 0);
@@ -530,9 +559,12 @@ begin
   end;
   ResultPath := SdkWorkDir + '\' + ResultFile;
   DeleteFile(ResultPath);
-  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + Script + '" ' + Arguments + ' -Output "' + ResultPath + '"',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  CommandLine := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + Script + '" ' + Arguments + ' -Output "' + ResultPath + '"';
+  if Live then
+    Started := ExecAndLogOutput(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), CommandLine, '', SW_HIDE, ewWaitUntilTerminated, ResultCode, @OnSdkSetupOutput)
+  else
+    Started := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), CommandLine, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if not Started then
   begin
     Log('Windows PowerShell n''a pas pu être lancé : ' + SysErrorMessage(ResultCode));
     Exit;
@@ -615,7 +647,7 @@ begin
       SdkBusy := True;
       Page.SetText('Recherche de la dernière version du SDK .NET 10…', '');
       Page.ProgressBar.Style := npbstMarquee;
-      Code := RunSdkHelper('-Resolve', DotnetSdkResolveFile, Lines);
+      Code := RunSdkHelper('-Resolve', DotnetSdkResolveFile, False, Lines);
       Page.ProgressBar.Style := npbstNormal;
       SdkBusy := False;
       Url := SdkHelperValue(Lines, 'url');
@@ -653,7 +685,7 @@ begin
       SdkBusy := True;
       Page.SetText('Vérification du fichier téléchargé…', '');
       Page.ProgressBar.Style := npbstMarquee;
-      Code := RunSdkHelper('-Verify "' + FilePath + '" -Sha512 ' + Sha512, DotnetSdkVerifyFile, Lines);
+      Code := RunSdkHelper('-Verify "' + FilePath + '" -Sha512 ' + Sha512, DotnetSdkVerifyFile, False, Lines);
       Page.ProgressBar.Style := npbstNormal;
       SdkBusy := False;
       if Code <> 0 then
@@ -676,6 +708,24 @@ begin
   end;
 end;
 
+// Recopie le journal du setup de Microsoft dans le journal de Setup (le dossier de travail, donc ce fichier, est effacé à la fin) : on peut le lire après un échec.
+procedure LogSdkSetupLog;
+var
+  Lines: TArrayOfString;
+  I: Integer;
+  Path: String;
+begin
+  Path := SdkWorkDir + '\' + DotnetSdkSetupLogFile;
+  if not LoadStringsFromFile(Path, Lines) then
+  begin
+    Log('Le setup du SDK .NET 10 n''a pas écrit de journal (' + Path + ').');
+    Exit;
+  end;
+  Log('--- Journal du setup du SDK .NET 10 (' + Path + ') ---');
+  for I := 0 to GetArrayLength(Lines) - 1 do Log(Lines[I]);
+  Log('--- Fin du journal du setup du SDK .NET 10 ---');
+end;
+
 // Installe le SDK .NET 10 téléchargé, pour toute la machine (Setup est déjà administrateur). L'aide (-Install) ouvre le fichier sans partage en
 // écriture ni en suppression, le vérifie (empreinte, signature, signataire, racine, produit) et le lance (« /install /quiet /norestart ») en le gardant
 // ouvert jusqu'à la fin du setup : rien ne peut le remplacer entre la vérification et le lancement. Elle rend le code de sortie du setup.
@@ -686,16 +736,39 @@ function InstallDotnetSdk: Boolean;
 var
   Code, SetupCode: Integer;
   Lines: TArrayOfString;
+  OldCaption: String;
+  OldMin, OldMax, OldPosition: Integer;
 begin
   Result := False;
-  if not WizardSilent() then WizardForm.StatusLabel.Caption := 'Installation du SDK .NET 10…';
-  SdkBusy := True; // Annuler est ignoré aussi pendant l'installation du SDK (plusieurs minutes, sans rien à abandonner proprement)
+  if not WizardSilent() then
+  begin
+    // La barre de l'assistant devient celle de l'installation du SDK (échelle de 0 à 1000, remplie par OnSdkSetupOutput), puis reprend ce qu'elle montrait.
+    OldCaption := WizardForm.StatusLabel.Caption;
+    OldMin := WizardForm.ProgressGauge.Min;
+    OldMax := WizardForm.ProgressGauge.Max;
+    OldPosition := WizardForm.ProgressGauge.Position;
+    WizardForm.StatusLabel.Caption := 'Installation du SDK .NET 10…';
+    WizardForm.ProgressGauge.Position := 0;
+    WizardForm.ProgressGauge.Min := 0;
+    WizardForm.ProgressGauge.Max := 1000;
+  end;
+  SdkBusy := True; // Annuler est ignoré aussi pendant l'installation du SDK, dont la barre avance désormais
   try
     try
-      Code := RunSdkHelper('-Install "' + SdkSetupPath + '" -Sha512 ' + SdkSetupSha512, DotnetSdkVerifyFile, Lines);
+      Code := RunSdkHelper('-Install "' + SdkSetupPath + '" -Sha512 ' + SdkSetupSha512 + ' -SetupLog "' + SdkWorkDir + '\' + DotnetSdkSetupLogFile + '"',
+        DotnetSdkVerifyFile, True, Lines);
     finally
       SdkBusy := False;
+      if not WizardSilent() then
+      begin
+        WizardForm.ProgressGauge.Position := 0;
+        WizardForm.ProgressGauge.Min := OldMin;
+        WizardForm.ProgressGauge.Max := OldMax;
+        WizardForm.ProgressGauge.Position := OldPosition;
+        WizardForm.StatusLabel.Caption := OldCaption;
+      end;
     end;
+    LogSdkSetupLog;
   except
     Log('Le setup du SDK .NET 10 n''a pas pu être lancé : ' + GetExceptionMessage);
     SdkFailure := 'Le SDK .NET 10 n''a pas pu s''installer.';
