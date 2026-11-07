@@ -138,25 +138,40 @@ internal sealed class ModuleInstaller
     /// </summary>
     public static string? TryDelete(string directory, bool removeEmptyParent = true)
     {
-        try
+        // OneDrive, l'antivirus ou l'indexation gardent souvent un fichier ou le dossier ouvert un court instant juste après l'arrêt de
+        // l'hôte (« accès refusé » sur le dossier vidé, vu dans un dossier des modules synchronisé par OneDrive) : on réessaie avant de renoncer.
+        for (var attempt = 1; ; attempt++)
         {
-            if (Directory.Exists(directory))
+            try
             {
-                Directory.Delete(directory, recursive: true);
-            }
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
 
-            if (removeEmptyParent)
+                if (removeEmptyParent)
+                {
+                    RemoveEmptyParent(directory);
+                }
+
+                return null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                RemoveEmptyParent(directory);
-            }
+                if (attempt >= DeleteAttempts)
+                {
+                    return ex.Message;
+                }
 
-            return null;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return ex.Message;
+                Thread.Sleep(DeleteRetryDelay);
+            }
         }
     }
+
+    /// <summary>Essais de <see cref="TryDelete"/> avant de renoncer, espacés de <see cref="DeleteRetryDelay"/> (3 secondes en tout).</summary>
+    private const int DeleteAttempts = 16;
+
+    private static readonly TimeSpan DeleteRetryDelay = TimeSpan.FromMilliseconds(200);
 
     private (ModuleManifest? Manifest, string? ContentHash, string? Error) Fail(string directory, string error)
     {
