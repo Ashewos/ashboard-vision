@@ -49,6 +49,7 @@ public sealed partial class CommunityCleanupTests : IDisposable
             }
         }
 
+        folder.Attributes &= ~FileAttributes.ReadOnly; // les essais « OneDrive » marquent des dossiers en lecture seule
         folder.Delete();
     }
 
@@ -439,6 +440,39 @@ public sealed partial class CommunityCleanupTests : IDisposable
         Cleanup().Run(deleteSettings: true);
 
         Assert.False(Directory.Exists(DefaultFolder));
+    }
+
+    [Fact]
+    public void Cleanup_Erase_RemovesReadOnlyFolders_AsOneDriveMarksThem()
+    {
+        // OneDrive marque ses dossiers « lecture seule » : RemoveDirectory les refuse (« accès refusé ») tant que l'attribut est là.
+        FillDefaultFolder();
+        foreach (var folder in new[] { ProductFolder, DefaultFolder, Path.Combine(DefaultFolder, "alex.demo"), Path.Combine(DefaultFolder, "alex.demo", "1.0.0") })
+        {
+            File.SetAttributes(folder, FileAttributes.Directory | FileAttributes.ReadOnly);
+        }
+
+        SaveList(null, []);
+
+        Cleanup().Run(deleteSettings: true);
+
+        Assert.False(Directory.Exists(DefaultFolder));
+    }
+
+    [Fact]
+    public void Cleanup_Erase_LeavesTheAttributesOfAJunctionTargetAlone()
+    {
+        var outside = Outside("cible");
+        File.SetAttributes(outside, FileAttributes.Directory | FileAttributes.ReadOnly);
+        FillDefaultFolder();
+        Junction(Path.Combine(DefaultFolder, "lien"), outside);
+        SaveList(null, []);
+
+        Cleanup().Run(deleteSettings: true);
+
+        Assert.False(Directory.Exists(DefaultFolder));
+        Assert.True(File.GetAttributes(outside).HasFlag(FileAttributes.ReadOnly)); // la cible, hors de l'arbre, n'est pas touchée
+        File.SetAttributes(outside, FileAttributes.Directory);
     }
 
     // --- Chaque étape est tentée --------------------------------------------------------------------------------------------------------

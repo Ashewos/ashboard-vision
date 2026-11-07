@@ -138,14 +138,16 @@ internal sealed class ModuleInstaller
     /// </summary>
     public static string? TryDelete(string directory, bool removeEmptyParent = true)
     {
-        // OneDrive, l'antivirus ou l'indexation gardent souvent un fichier ou le dossier ouvert un court instant juste après l'arrêt de
-        // l'hôte (« accès refusé » sur le dossier vidé, vu dans un dossier des modules synchronisé par OneDrive) : on réessaie avant de renoncer.
+        // OneDrive marque ses dossiers « lecture seule », et Windows refuse alors de les supprimer (« accès refusé ») : l'attribut est retiré
+        // d'abord. OneDrive, l'antivirus ou l'indexation gardent aussi parfois un fichier ouvert un court instant juste après l'arrêt de
+        // l'hôte : on réessaie avant de renoncer.
         for (var attempt = 1; ; attempt++)
         {
             try
             {
                 if (Directory.Exists(directory))
                 {
+                    ClearReadOnlyTree(new DirectoryInfo(directory));
                     Directory.Delete(directory, recursive: true);
                 }
 
@@ -187,12 +189,47 @@ internal sealed class ModuleInstaller
             var parent = Path.GetDirectoryName(versionDirectory);
             if (parent is not null && Directory.Exists(parent) && !Directory.EnumerateFileSystemEntries(parent).Any())
             {
+                ClearReadOnlyTree(new DirectoryInfo(parent));
                 Directory.Delete(parent);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Un dossier vide qui reste ne gêne personne.
+        }
+    }
+
+    /// <summary>
+    /// Retire l'attribut « lecture seule » d'un dossier et de tout ce qu'il contient, sans jamais suivre un lien (jonction ou lien
+    /// symbolique) : changer les attributs d'un lien changerait ceux de sa cible, hors de cet arbre. Un dossier OneDrive (point d'analyse
+    /// « fichiers à la demande ») n'est pas un lien : il est traité comme un dossier ordinaire.
+    /// </summary>
+    internal static void ClearReadOnlyTree(DirectoryInfo folder)
+    {
+        if (CommunityCleanup.IsRedirecting(() => folder.LinkTarget))
+        {
+            return;
+        }
+
+        ClearReadOnly(folder);
+        foreach (var entry in folder.EnumerateFileSystemInfos())
+        {
+            if (entry is DirectoryInfo child)
+            {
+                ClearReadOnlyTree(child);
+            }
+            else if (!CommunityCleanup.IsRedirecting(() => entry.LinkTarget))
+            {
+                ClearReadOnly(entry);
+            }
+        }
+    }
+
+    internal static void ClearReadOnly(FileSystemInfo entry)
+    {
+        if (entry.Attributes.HasFlag(FileAttributes.ReadOnly))
+        {
+            entry.Attributes &= ~FileAttributes.ReadOnly;
         }
     }
 

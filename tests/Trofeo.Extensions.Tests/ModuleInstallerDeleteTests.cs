@@ -36,6 +36,36 @@ public sealed class ModuleInstallerDeleteTests : IDisposable
     }
 
     [Fact]
+    public void TryDelete_ReadOnlyFoldersAndFiles_AsOneDriveMarksThem_AreDeleted()
+    {
+        // Cas vu chez Alex : dans un dossier des modules synchronisé par OneDrive, chaque dossier porte l'attribut « lecture seule ».
+        var module = Path.Combine(_root, "alex.demo");
+        var folder = Path.Combine(module, "1.0.0");
+        Directory.CreateDirectory(folder);
+        var file = Path.Combine(folder, "module.dll");
+        File.WriteAllText(file, "x");
+        File.SetAttributes(file, FileAttributes.ReadOnly);
+        File.SetAttributes(folder, FileAttributes.Directory | FileAttributes.ReadOnly);
+        File.SetAttributes(module, FileAttributes.Directory | FileAttributes.ReadOnly);
+
+        Assert.Null(ModuleInstaller.TryDelete(module, removeEmptyParent: false));
+        Assert.False(Directory.Exists(module));
+    }
+
+    [Fact]
+    public void TryDelete_Version_RemovesTheEmptyReadOnlyParent()
+    {
+        var module = Path.Combine(_root, "alex.demo");
+        var folder = Path.Combine(module, "1.0.0");
+        Directory.CreateDirectory(folder);
+        File.SetAttributes(folder, FileAttributes.Directory | FileAttributes.ReadOnly);
+        File.SetAttributes(module, FileAttributes.Directory | FileAttributes.ReadOnly);
+
+        Assert.Null(ModuleInstaller.TryDelete(folder));
+        Assert.False(Directory.Exists(module));
+    }
+
+    [Fact]
     public void TryDelete_FileHeldForGood_GivesUpWithTheReason()
     {
         var folder = Path.Combine(_root, "alex.demo", "1.0.0");

@@ -218,6 +218,7 @@ public sealed class CommunityCleanup
                 var product = new DirectoryInfo(parent);
                 if (product.Exists && !product.EnumerateFileSystemInfos().Any())
                 {
+                    ModuleInstaller.ClearReadOnly(product); // OneDrive le marque « lecture seule » (ce n'est pas un lien : vérifié plus haut)
                     product.Delete();
                 }
             }, $"{parent} n'a pas pu être supprimé");
@@ -273,7 +274,17 @@ public sealed class CommunityCleanup
         }
 
         // Pour un lien, Delete ne retire que le lien ; sinon le dossier est vide ici (ou il reste un fichier qui résiste, et Delete échoue).
-        return gone && TryDelete(folder.Delete, $"{folder.FullName} n'a pas pu être supprimé");
+        // OneDrive marque ses dossiers « lecture seule », que Windows refuse de supprimer : l'attribut part d'abord (jamais celui d'un lien,
+        // qui est celui de sa cible).
+        return gone && TryDelete(() =>
+        {
+            if (!IsLink(folder))
+            {
+                ModuleInstaller.ClearReadOnly(folder);
+            }
+
+            folder.Delete();
+        }, $"{folder.FullName} n'a pas pu être supprimé");
     }
 
     private bool TryList(DirectoryInfo folder, out List<FileSystemInfo> entries)
