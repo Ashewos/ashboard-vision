@@ -66,7 +66,11 @@ la version, avec l'installateur et son `.sha256` (elle échoue s'il n'y en a pas
     clé soit réécrite) ; si `sdk` y est et que la case est maintenant décochée, les mêmes retraits qu'à la désinstallation sont faits.
   - **Désinstallation** (`CurUninstallStepChanged`, après le nettoyage de l'utilisateur et le retrait de l'assistant des capteurs) : `dotnet tool uninstall -g AshboardVision.Sdk.Tool`,
     `dotnet new uninstall AshboardVision.Sdk.Templates`, `dotnet nuget remove source AshboardVision`, chacun tenté même si le précédent échoue, tout échec journalisé et jamais
-    bloquant. **Limite** : `ExecAsOriginalUser` n'est pas pris en charge à la désinstallation (documentation d'Inno Setup 7.1) : les retraits sont lancés avec `Exec`, donc avec les
+    bloquant. **Seulement si le SDK a été installé** : la case `sdk` fait partie des choix que Setup a retenus (valeur `Inno Setup: Selected Tasks` de la clé de désinstallation,
+    encore présente à ce moment) **ou** le dossier `{app}\sdk` existe (clé illisible) ; sinon `dotnet` n'est pas lancé et le journal le dit.
+    **Pas de délai limite** : Inno Setup n'en offre pas pour `Exec` ni `ExecAsOriginalUser` (ils attendent la fin du programme, sans poignée pour l'arrêter). Les commandes n'utilisent que le
+    disque (source locale, fichier du modèle, `--source`), mais un `dotnet` qui se bloquerait (première utilisation, antivirus) ferait attendre l'installateur ou le désinstallateur :
+    à garder en tête pour l'essai sans Internet. **Limite** : `ExecAsOriginalUser` n'est pas pris en charge à la désinstallation (documentation d'Inno Setup 7.1) : les retraits sont lancés avec `Exec`, donc avec les
     droits de l'administrateur qui a validé l'élévation. C'est le même profil quand c'est le compte de l'utilisateur ; si un autre administrateur a saisi son mot de passe,
     l'outil, le modèle et la source restent dans le profil de l'utilisateur (à retirer à la main avec les trois commandes ci-dessus).
 - **Journal** : l'installation note le téléchargement de PawnIO, le code de l'assistant des capteurs et, pour le SDK, la recherche de `dotnet` et le code de chaque commande ; la désinstallation, les codes de

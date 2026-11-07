@@ -325,6 +325,9 @@ end;
 // retraits avec Exec, donc avec les droits de l'administrateur qui a validé l'élévation. C'est le même profil quand c'est le compte
 // de l'utilisateur ; si un autre administrateur a saisi son mot de passe, l'outil reste dans le profil de l'utilisateur (installer/README.md).
 // Aucun échec ne bloque l'installation ni la désinstallation : chaque code de sortie est journalisé.
+// Pas de délai limite par commande : Exec et ExecAsOriginalUser attendent la fin du programme (ewWaitUntilTerminated) et Inno Setup ne
+// donne ni délai ni poignée de processus pour l'arrêter. Les commandes n'utilisent que le disque (source locale, fichier du modèle,
+// --source) : la limite est écrite dans installer/README.md.
 
 // « cmd /s /c "<ligne>" » dans {sys} (aucun global.json ni NuGet.Config voisin), avec les droits de l'utilisateur d'origine à l'installation.
 function RunAsUser(const CommandLine: String; var ResultCode: Integer): Boolean;
@@ -505,6 +508,11 @@ begin
   else
     Log('Retrait de l''assistant des capteurs : code de sortie ' + IntToStr(ResultCode));
 
-  // Le SDK des modules : seulement les retraits du profil de l'utilisateur (les paquets de {app}\sdk partent avec les fichiers).
-  RemoveSdkTools(True);
+  // Le SDK des modules : seulement les retraits du profil de l'utilisateur (les paquets de {app}\sdk partent avec les fichiers), et seulement
+  // si le SDK a été installé : la case « sdk » est dans les choix que Setup a retenus (clé de désinstallation, encore là à ce stade), ou le
+  // dossier {app}\sdk existe (clé illisible). Sans l'un ni l'autre, « dotnet » n'est pas lancé : une désinstallation ordinaire n'y touche pas.
+  if SdkTaskWasSelected or DirExists(ExpandConstant('{app}\sdk')) then
+    RemoveSdkTools(True)
+  else
+    Log('Le SDK des modules n''a pas été installé (ni case « sdk » retenue, ni dossier sdk) : aucun retrait.');
 end;
