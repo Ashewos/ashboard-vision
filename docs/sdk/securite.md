@@ -35,7 +35,7 @@ Chaque module est aussi dans un **job object** Windows, qui plafonne :
 
 Le job object arrête aussi le module avec le service, et s'il lève une exception que personne n'attrape.
 
-Ce sont des garde-fous contre les énormités. Le repère « Consommation élevée » est plus bas : 2 % du processeur ou 150 Mo de mémoire, en moyenne sur une minute.
+Ce sont des garde-fous contre les énormités. Le repère « Consommation élevée » est plus bas : 2 % du processeur ou 150 Mio de mémoire, en moyenne sur une minute.
 
 ### Les secrets
 

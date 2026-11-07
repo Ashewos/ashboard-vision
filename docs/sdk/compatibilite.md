@@ -6,7 +6,7 @@ Question simple : **si j'écris mon module aujourd'hui, marchera-t-il encore dan
 
 | Numéro | Exemple | Où il est écrit |
 |---|---|---|
-| La version **d'Ashboard Vision** (le logiciel) | `1.0.0` | Les versions GitHub du logiciel. |
+| La version **d'Ashboard Vision** (le logiciel) | `1.0.0` | Les versions GitHub du logiciel (les quatre paquets `.nupkg` du SDK y sont joints, voir [Démarrer](demarrer.md#installer-le-sdk)). |
 | La version **du SDK** | `1.0` (paquet `1.0.0`) | `"sdk": "1.0"` dans ton manifeste, et la version du paquet `AshboardVision.Sdk` dans ton `.csproj`. |
 | La version **de ton module** | `1.2.3` | `"version"` dans ton manifeste. |
 

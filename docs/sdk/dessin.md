@@ -243,8 +243,8 @@ Un module qui ne s'anime pas n'a aucune raison de laisser `IsAnimating` à `true
 ### Ce que ça coûte
 
 - Chaque module actif est un processus de plus, avec sa propre mémoire : le banc d'essai te dit combien le tien en prend (la ligne « Mémoire »), et la limite à ne pas dépasser est le repère de 150 Mio ci-dessous.
-- La fenêtre de réglage affiche la consommation de chaque module (Paramètres, **Consommation des modules**) et signale **Consommation élevée** quand un module dépasse **2 % du processeur de la machine** ou **150 Mo de mémoire**, en moyenne sur une minute. C'est un avertissement, pas un blocage.
-- Windows arrête de force un module qui dépasse **512 Mo de mémoire**, et lui plafonne le processeur à **25 %** de la machine. Ce sont des garde-fous contre les énormités, pas des objectifs.
+- La fenêtre de réglage affiche la consommation de chaque module (Paramètres, **Consommation des modules**) et signale **Consommation élevée** quand un module dépasse **2 % du processeur de la machine** ou **150 Mio de mémoire**, en moyenne sur une minute. C'est un avertissement, pas un blocage.
+- Windows arrête de force un module qui dépasse **512 Mio de mémoire**, et lui plafonne le processeur à **25 %** de la machine. Ce sont des garde-fous contre les énormités, pas des objectifs.
 
 Le banc d'essai mesure ces trois choses pour toi : voir [Tester](tests.md#le-banc-dessai).
 

@@ -29,9 +29,11 @@ Pendant l'installation, la page des options propose **« Outils pour créer des 
 
 1. copie les quatre paquets dans le dossier `sdk` du dossier d'installation (par défaut `C:\Program Files\Ashboard Vision\sdk`) ;
 2. si le SDK .NET 10 est installé sur le PC, ajoute ce dossier comme source de paquets NuGet de ton compte (elle s'appelle `AshboardVision`), installe le modèle de projet et l'outil `ashboard-module`, avec tes droits (pas ceux de l'administrateur) ;
-3. sinon, te dit d'installer le SDK .NET 10 pour créer des modules.
+3. sinon, te dit d'installer le SDK .NET 10 pour créer des modules (une boîte de message, avec l'adresse <https://dotnet.microsoft.com/download>). Les quatre paquets sont tout de même copiés dans `sdk` ; le modèle et l'outil ne sont pas installés. Pour finir, installe le SDK .NET 10, puis soit tu relances l'installateur d'Ashboard Vision en cochant la case, soit tu tapes les trois commandes de « À la main » ci-dessous en prenant `C:\Program Files\Ashboard Vision\sdk` comme dossier des paquets (au lieu de `C:\paquets-ashboard`).
 
-Lors d'une mise à jour d'Ashboard Vision, la case reprend ton choix précédent : cochée si le SDK était déjà installé. La désinstallation retire la source, le modèle et l'outil.
+Lors d'une mise à jour d'Ashboard Vision, la case reprend ton choix précédent : cochée si le SDK était déjà installé. Décochée alors qu'elle était cochée, elle fait retirer la source, le modèle et l'outil. Quand la mise à jour est lancée par le logiciel (mode silencieux), l'installateur n'affiche **aucune boîte** : si le SDK .NET 10 manque, seul son journal le dit.
+
+La désinstallation d'Ashboard Vision retire la source, le modèle et l'outil, si tu avais installé le SDK. Une limite : elle le fait avec le compte qui a validé la demande d'administrateur. Si c'est un autre compte que le tien (un administrateur qui a saisi son mot de passe), ils restent dans ton profil : retire-les toi-même avec `dotnet tool uninstall -g AshboardVision.Sdk.Tool`, `dotnet new uninstall AshboardVision.Sdk.Templates` et `dotnet nuget remove source AshboardVision`.
 
 ### À la main, depuis une version GitHub
 
@@ -40,10 +42,10 @@ Chaque version d'Ashboard Vision sur GitHub porte ces quatre fichiers `.nupkg`, 
 ```powershell
 dotnet nuget add source "C:\paquets-ashboard" --name AshboardVision
 dotnet new install "C:\paquets-ashboard\AshboardVision.Sdk.Templates.1.0.0.nupkg"
-dotnet tool install -g AshboardVision.Sdk.Tool --add-source "C:\paquets-ashboard"
+dotnet tool install -g AshboardVision.Sdk.Tool --source "C:\paquets-ashboard"
 ```
 
-La première commande dit à .NET où trouver les paquets du SDK. La deuxième installe le modèle de projet. La troisième installe la commande `ashboard-module`.
+La première commande dit à .NET où trouver les paquets du SDK. La deuxième installe le modèle de projet. La troisième installe la commande `ashboard-module` ; elle utilise `--source` (et non `--add-source`) pour ne chercher que dans ce dossier : ça marche hors ligne, et aucun paquet du même nom ne peut venir d'une autre source.
 
 Pour vérifier, tape `ashboard-module --help` : l'aide s'affiche en français.
 
