@@ -60,13 +60,7 @@ internal sealed class InMemorySecrets : ISecretStore
 /// <summary>De fausses données de capteurs et de musique, toujours les mêmes : l'essai ne lit pas le matériel de ce PC.</summary>
 internal sealed class SampleDataBroker : IServiceDataBroker
 {
-    public DataResult<SensorReading> Sensors() => new(DataStatus.Ok, new SensorReading("CPU d'essai", "GPU d'essai", new Dictionary<string, double>
-    {
-        ["cpu.load"] = 23, ["cpu.temp"] = 54, ["cpu.clock"] = 4200, ["cpu.power"] = 45,
-        ["gpu.load"] = 31, ["gpu.temp"] = 61, ["gpu.clock"] = 1800, ["gpu.power"] = 120, ["gpu.fan"] = 1100,
-        ["gpu.vram.used"] = 4096, ["gpu.vram.total"] = 12288,
-        ["ram.used"] = 14336, ["ram.total"] = 32768, ["disk.temp"] = 38, ["disk.used"] = 54,
-    }));
+    public DataResult<SensorReading> Sensors() => new(DataStatus.Ok, SampleSensors.Reading());
 
     public DataResult<NowPlayingInfo> NowPlaying() => new(DataStatus.Ok, new NowPlayingInfo(
         "Titre d'essai", "Artiste d'essai", "Lecteur d'essai", TimeSpan.FromSeconds(72), TimeSpan.FromSeconds(215), true, null));

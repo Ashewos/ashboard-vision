@@ -18,6 +18,12 @@
     <ProjectReference Include="..\Trofeo.ModuleHost.Tests.SampleModule\Trofeo.ModuleHost.Tests.SampleModule.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <!-- Les fausses données de capteurs du banc d'essai : un seul fichier source, inclus ici pour que les tests en vérifient les unités (l'outil
+       lui-même vise une plateforme qu'un projet de tests ne peut pas référencer). -->
+  <ItemGroup>
+    <Compile Include="..\..\tools\AshboardVision.Sdk.Tool\SampleSensors.cs" Link="Tool\SampleSensors.cs" />
+  </ItemGroup>
+
   <Target Name="CopySampleModule" AfterTargets="Build">
     <ItemGroup>
       <SampleFile Include="$(MSBuildThisFileDirectory)..\Trofeo.ModuleHost.Tests.SampleModule\bin\$(Configuration)\net10.0\**\*" />
