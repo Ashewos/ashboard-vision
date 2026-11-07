@@ -10,7 +10,7 @@ public static class PermissionTexts
     {
         ModulePermission.LocalNetwork => "Réseau local",
         ModulePermission.Internet => "Internet",
-        ModulePermission.ThisComputer => "Cet ordinateur (ports choisis dans les réglages du module)",
+        ModulePermission.ThisComputer => "Cet ordinateur",
         ModulePermission.Sensors => "Capteurs",
         ModulePermission.NowPlaying => "Musique en cours",
         _ => throw new ArgumentOutOfRangeException(nameof(permission), permission, "Permission inconnue."),
@@ -20,11 +20,11 @@ public static class PermissionTexts
     public static string Explanation(ModulePermission permission) => permission switch
     {
         ModulePermission.LocalNetwork =>
-            "Le module peut parler aux appareils et aux serveurs de ton réseau (Home Assistant, Frigate, Proxmox…).",
+            "Le module peut parler aux appareils et aux serveurs de ton réseau.",
         ModulePermission.Internet =>
-            "Le module peut contacter des services sur Internet (Downdetector…).",
+            "Le module peut contacter des services sur Internet.",
         ModulePermission.ThisComputer =>
-            "Le module peut se connecter à un service lancé sur ce PC, mais seulement sur les ports que tu choisis dans ses réglages (serveur Minecraft sur le 25565, Home Assistant sur le 8123…).",
+            "Le module peut se connecter à un service lancé sur ce PC, mais seulement sur les ports que tu choisis dans ses réglages.",
         ModulePermission.Sensors =>
             "Le module peut lire les températures, les charges et la mémoire de ton PC.",
         ModulePermission.NowPlaying =>

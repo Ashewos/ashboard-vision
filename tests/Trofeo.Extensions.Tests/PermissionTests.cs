@@ -33,7 +33,7 @@ public class PermissionTests
     {
         Assert.Equal("Réseau local", PermissionTexts.Label(ModulePermission.LocalNetwork));
         Assert.Equal("Internet", PermissionTexts.Label(ModulePermission.Internet));
-        Assert.Equal("Cet ordinateur (ports choisis dans les réglages du module)", PermissionTexts.Label(ModulePermission.ThisComputer));
+        Assert.Equal("Cet ordinateur", PermissionTexts.Label(ModulePermission.ThisComputer));
         Assert.Equal("Capteurs", PermissionTexts.Label(ModulePermission.Sensors));
         Assert.Equal("Musique en cours", PermissionTexts.Label(ModulePermission.NowPlaying));
     }

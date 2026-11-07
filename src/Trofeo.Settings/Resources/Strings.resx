@@ -882,7 +882,7 @@
     <comment>Nom de la permission (identique à celui du service).</comment>
   </data>
   <data name="PermissionLocalNetworkHelp" xml:space="preserve">
-    <value>Le module peut parler aux appareils et aux serveurs de ton réseau (Home Assistant, Frigate, Proxmox…).</value>
+    <value>Le module peut parler aux appareils et aux serveurs de ton réseau.</value>
     <comment>Explication de la permission (identique à celle du service).</comment>
   </data>
   <data name="PermissionInternet" xml:space="preserve">
@@ -890,15 +890,15 @@
     <comment>Nom de la permission (identique à celui du service).</comment>
   </data>
   <data name="PermissionInternetHelp" xml:space="preserve">
-    <value>Le module peut contacter des services sur Internet (Downdetector…).</value>
+    <value>Le module peut contacter des services sur Internet.</value>
     <comment>Explication de la permission (identique à celle du service).</comment>
   </data>
   <data name="PermissionThisComputer" xml:space="preserve">
-    <value>Cet ordinateur (ports choisis dans les réglages du module)</value>
+    <value>Cet ordinateur</value>
     <comment>Nom de la permission (identique à celui du service).</comment>
   </data>
   <data name="PermissionThisComputerHelp" xml:space="preserve">
-    <value>Le module peut se connecter à un service lancé sur ce PC, mais seulement sur les ports que tu choisis dans ses réglages (serveur Minecraft sur le 25565, Home Assistant sur le 8123…).</value>
+    <value>Le module peut se connecter à un service lancé sur ce PC, mais seulement sur les ports que tu choisis dans ses réglages.</value>
     <comment>Explication de la permission (identique à celle du service).</comment>
   </data>
   <data name="PermissionSensors" xml:space="preserve">

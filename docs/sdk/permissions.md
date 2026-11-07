@@ -16,9 +16,9 @@ Une permission refusée n'est jamais une panne : le module reçoit un « refusé
 
 | Nom dans le manifeste | Dans le code | Ce qu'elle ouvre | Qui l'impose |
 |---|---|---|---|
-| `reseau-local` | `ModulePermission.LocalNetwork` | Les appareils et serveurs de ton réseau (Home Assistant, Frigate, Proxmox…). | Windows (capacité `privateNetworkClientServer`) |
-| `internet` | `ModulePermission.Internet` | Les services sur Internet (Downdetector…). | Windows (capacité `internetClient`) |
-| `ce-pc` | `ModulePermission.ThisComputer` | Un service lancé sur ce PC, sur les **ports choisis par l'utilisateur** dans les réglages du module (serveur Minecraft sur le 25565, Home Assistant sur le 8123…). | Le logiciel, qui relaie la connexion |
+| `reseau-local` | `ModulePermission.LocalNetwork` | Les appareils et serveurs de ton réseau. | Windows (capacité `privateNetworkClientServer`) |
+| `internet` | `ModulePermission.Internet` | Les services sur Internet. | Windows (capacité `internetClient`) |
+| `ce-pc` | `ModulePermission.ThisComputer` | Un service lancé sur ce PC, sur les **ports choisis par l'utilisateur** dans les réglages du module. | Le logiciel, qui relaie la connexion |
 | `capteurs` | `ModulePermission.Sensors` | Les températures, les charges et la mémoire, lues par le logiciel. | Le logiciel |
 | `musique` | `ModulePermission.NowPlaying` | Le titre, l'artiste et la pochette de la musique en cours. | Le logiciel |
 
