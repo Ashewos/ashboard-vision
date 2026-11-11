@@ -45,8 +45,8 @@
                       <TextBlock Classes="lead" Text="{Binding KeysText}" />
                     </Border>
 
-                    <!-- Le module visé. -->
-                    <ComboBox Grid.Column="4" Name="TargetBox" HorizontalAlignment="Stretch"
+                    <!-- Le module visé (pas pour une action de vue). -->
+                    <ComboBox Grid.Column="4" Name="TargetBox" HorizontalAlignment="Stretch" IsVisible="{Binding HasTarget}"
                               AutomationProperties.Name="{x:Static t:Texts.ShortcutTarget}"
                               ItemsSource="{Binding Targets}" SelectedItem="{Binding SelectedTarget}">
                       <ComboBox.ItemTemplate>

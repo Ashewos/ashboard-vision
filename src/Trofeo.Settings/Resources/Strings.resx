@@ -537,6 +537,18 @@
     <value>Onglet suivant</value>
     <comment>Action d'un raccourci.</comment>
   </data>
+  <data name="ShortcutPreviousView" xml:space="preserve">
+    <value>Vue précédente</value>
+    <comment>Action d'un raccourci.</comment>
+  </data>
+  <data name="ShortcutNextView" xml:space="preserve">
+    <value>Vue suivante</value>
+    <comment>Action d'un raccourci.</comment>
+  </data>
+  <data name="ShortcutSelectView" xml:space="preserve">
+    <value>Vue n° {0}</value>
+    <comment>{0} : le rang de la vue, à partir de 1.</comment>
+  </data>
   <data name="ShortcutSelect" xml:space="preserve">
     <value>Aller à l'onglet {0}</value>
     <comment>{0} : le rang de l'onglet, à partir de 1.</comment>
@@ -556,6 +568,10 @@
   <data name="ShortcutTargetGone" xml:space="preserve">
     <value>Un module qui n'est plus là</value>
     <comment>Module visé : l'instance n'est plus sur l'écran.</comment>
+  </data>
+  <data name="ShortcutTargetInView" xml:space="preserve">
+    <value>{0} — {1}</value>
+    <comment>Module visé quand l'écran a plusieurs vues. {0} : le nom de la case ou du module. {1} : le nom de la vue.</comment>
   </data>
   <data name="ShortcutEdit" xml:space="preserve">
     <value>Modifier</value>
@@ -578,8 +594,8 @@
     <comment>Pendant la capture d'une combinaison.</comment>
   </data>
   <data name="ShortcutDuplicate" xml:space="preserve">
-    <value>{0} sert déjà à « {1} ».</value>
-    <comment>{0} : les touches (Ctrl+Alt+Right). {1} : l'action qui les a déjà.</comment>
+    <value>Déjà pris par « {0} ».</value>
+    <comment>{0} : l'action qui a déjà ces touches (Vue suivante).</comment>
   </data>
   <data name="ShortcutNeedsAltOrWin" xml:space="preserve">
     <value>Ajoute Alt ou Win : une lettre ou un chiffre seul avec Ctrl ou Maj gênerait la saisie partout.</value>

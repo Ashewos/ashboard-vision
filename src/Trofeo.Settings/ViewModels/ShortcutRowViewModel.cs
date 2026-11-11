@@ -24,7 +24,7 @@ public sealed partial class ShortcutRowViewModel
         Refusal = refusal;
         Failure = failure;
         _selectedTarget = targets.FirstOrDefault(t => t.Id == binding.Target) ?? targets[0];
-        _selectedAction = isDraft ? tab.ActionChoices.FirstOrDefault(a => a.Command == binding.Command && a.Index == binding.Index) : null;
+        _selectedAction = isDraft ? tab.ActionChoices.FirstOrDefault(a => a.Matches(binding)) : null;
     }
 
     public ShortcutBinding Binding { get; }
@@ -46,7 +46,7 @@ public sealed partial class ShortcutRowViewModel
     public string? Hint => IsCapturing ? Texts.ShortcutCapture : null;
     public bool HasHint => IsCapturing;
 
-    /// <summary>« Ctrl+Alt+Right sert déjà à « Onglet suivant ». » ; <c>null</c> : rien à refuser.</summary>
+    /// <summary>« Déjà pris par « Onglet suivant ». » ; <c>null</c> : rien à refuser.</summary>
     public string? Refusal { get; }
     public bool HasRefusal => !string.IsNullOrEmpty(Refusal);
 
@@ -55,6 +55,9 @@ public sealed partial class ShortcutRowViewModel
     public bool HasFailure => !string.IsNullOrEmpty(Failure);
 
     public IReadOnlyList<ShortcutTarget> Targets { get; }
+
+    /// <summary>La ligne propose un module visé : pas pour une action de vue, qui agit sur l'écran.</summary>
+    public bool HasTarget => ShortcutsTabViewModel.TakesTarget(Binding.Command);
     public IReadOnlyList<ShortcutActionChoice> ActionChoices => _tab.ActionChoices;
 
     /// <summary>Le module visé ; le changer l'enregistre tout de suite (sauf pour un brouillon).</summary>

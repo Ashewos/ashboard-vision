@@ -289,6 +289,12 @@ public static class Texts
     public static string ShortcutPrevious => Get();
     /// <summary>Action d'un raccourci.</summary>
     public static string ShortcutNext => Get();
+    /// <summary>Action d'un raccourci.</summary>
+    public static string ShortcutPreviousView => Get();
+    /// <summary>Action d'un raccourci.</summary>
+    public static string ShortcutNextView => Get();
+    /// <summary>{0} : le rang de la vue, à partir de 1.</summary>
+    public static string ShortcutSelectView => Get();
     /// <summary>{0} : le rang de l'onglet, à partir de 1.</summary>
     public static string ShortcutSelect => Get();
     /// <summary>Nom accessible de la liste des actions d'un nouveau raccourci.</summary>
@@ -299,6 +305,8 @@ public static class Texts
     public static string ShortcutTargetFirst => Get();
     /// <summary>Module visé : l'instance n'est plus sur l'écran.</summary>
     public static string ShortcutTargetGone => Get();
+    /// <summary>Module visé quand l'écran a plusieurs vues. {0} : le nom de la case ou du module. {1} : le nom de la vue.</summary>
+    public static string ShortcutTargetInView => Get();
     /// <summary>Bouton : change les touches d'un raccourci.</summary>
     public static string ShortcutEdit => Get();
     /// <summary>Bouton : retire un raccourci.</summary>
@@ -309,7 +317,7 @@ public static class Texts
     public static string ShortcutReset => Get();
     /// <summary>Pendant la capture d'une combinaison.</summary>
     public static string ShortcutCapture => Get();
-    /// <summary>{0} : les touches (Ctrl+Alt+Right). {1} : l'action qui les a déjà.</summary>
+    /// <summary>{0} : l'action qui a déjà ces touches (Vue suivante).</summary>
     public static string ShortcutDuplicate => Get();
     /// <summary>Une lettre ou un chiffre avec Ctrl ou Maj seulement est refusé : il faut Alt ou Win.</summary>
     public static string ShortcutNeedsAltOrWin => Get();

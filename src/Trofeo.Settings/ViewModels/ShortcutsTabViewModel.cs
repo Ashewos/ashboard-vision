@@ -10,11 +10,19 @@ using Trofeo.Settings.Services;
 
 namespace Trofeo.Settings.ViewModels;
 
-/// <summary>Le module qu'un raccourci vise : le premier qui accepte les commandes (<see cref="Id"/> vide) ou une instance.</summary>
+/// <summary>Le module qu'un raccourci vise : le premier qui accepte les commandes (<see cref="Id"/> vide) ou une case, de n'importe quelle vue.</summary>
 public sealed record ShortcutTarget(Guid? Id, string Name);
 
-/// <summary>Une action qu'un raccourci peut envoyer : « Onglet précédent », « Onglet suivant » ou « Aller à l'onglet n ».</summary>
-public sealed record ShortcutActionChoice(ShortcutCommand Command, int Index, string Text);
+/// <summary>
+/// Une action qu'un raccourci peut envoyer : « Onglet précédent », « Onglet suivant », « Aller à l'onglet n », « Vue précédente »,
+/// « Vue suivante », « Vue n° n » ou (plus tard) un raccourci d'un module complémentaire, qui porte alors son module et son identifiant.
+/// </summary>
+public sealed record ShortcutActionChoice(ShortcutCommand Command, int Index, string Text, string? ModuleId = null, string? ShortcutId = null)
+{
+    /// <summary>Cette action est celle que <paramref name="binding"/> envoie.</summary>
+    public bool Matches(ShortcutBinding binding) =>
+        Command == binding.Command && Index == binding.Index && ModuleId == binding.ModuleId && ShortcutId == binding.ShortcutId;
+}
 
 /// <summary>
 /// L'onglet Raccourcis : une ligne par raccourci (l'action en mots, les touches en pastille, le module visé), « Modifier »
@@ -45,7 +53,11 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
             new(ShortcutCommand.PreviousTab, 0, Texts.ShortcutPrevious),
             new(ShortcutCommand.NextTab, 0, Texts.ShortcutNext),
             .. Enumerable.Range(0, 9).Select(n => new ShortcutActionChoice(ShortcutCommand.SelectTab, n, string.Format(Texts.ShortcutSelect, n + 1))),
+            new(ShortcutCommand.PreviousView, 0, Texts.ShortcutPreviousView),
+            new(ShortcutCommand.NextView, 0, Texts.ShortcutNextView),
+            .. Enumerable.Range(0, 9).Select(n => new ShortcutActionChoice(ShortcutCommand.SelectView, n, string.Format(Texts.ShortcutSelectView, n + 1))),
         ];
+        DefaultChoice = ActionChoices[1]; // « Onglet suivant »
         _link.Changed += Refresh;
         _session.Changed += Refresh;
         Refresh();
@@ -62,6 +74,13 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
 
     /// <summary>Les actions qu'on peut choisir pour un nouveau raccourci.</summary>
     public IReadOnlyList<ShortcutActionChoice> ActionChoices { get; }
+
+    /// <summary>L'action d'un nouveau raccourci avant qu'on en choisisse une autre.</summary>
+    internal ShortcutActionChoice DefaultChoice { get; }
+
+    /// <summary>Un raccourci de vue ne vise aucun module : il agit sur l'écran. Les autres actions choisissent leur module.</summary>
+    internal static bool TakesTarget(ShortcutCommand command) =>
+        command is not (ShortcutCommand.PreviousView or ShortcutCommand.NextView or ShortcutCommand.SelectView);
 
     public bool IsEmpty => Rows.Count == 0;
 
@@ -96,7 +115,7 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
 
         if (_draftAction is { } draft)
         {
-            var binding = new ShortcutBinding("", draft.Command, draft.Index, _draftTarget);
+            var binding = new ShortcutBinding("", draft.Command, draft.Index, TakesTarget(draft.Command) ? _draftTarget : null, draft.ModuleId, draft.ShortcutId);
             rows.Add(new ShortcutRowViewModel(
                 this, binding, isDraft: true, isCapturing: _captureIndex == bindings.Count, WithGone(targets, _draftTarget),
                 _refusal is { } r && r.Index == bindings.Count ? r.Text : null, null));
@@ -113,17 +132,30 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
         OnPropertyChanged(nameof(IsCapturing));
     }
 
-    /// <summary>« Le premier qui accepte », puis les modules sur l'écran dont le type accepte les commandes (deux du même type : « Claude Code (2) »).</summary>
+    /// <summary>
+    /// « Le premier qui accepte », puis les cases de toutes les vues dont le type accepte les commandes. Une case s'appelle
+    /// comme on l'a nommée, sinon comme son module ; avec plusieurs vues, le nom de la vue suit (« Claude Code — Salon »).
+    /// Deux libellés identiques se distinguent par un numéro (« Claude Code (2) »). Une case d'une vue cachée reste proposée :
+    /// le raccourci ne marchera que lorsque sa vue sera affichée.
+    /// </summary>
     private List<ShortcutTarget> Targets()
     {
         var targets = new List<ShortcutTarget> { new(null, Texts.ShortcutTargetFirst) };
         var counts = new Dictionary<string, int>();
-        foreach (var placement in _session.Document.Current.Views[0].Placements)
+        var layout = _session.Document.Current;
+        foreach (var view in layout.Views)
         {
-            if (!_types.TryGetValue(placement.TypeId, out var type) || !type.AcceptsCommands)
-                continue;
-            var rank = counts[type.TypeId] = counts.GetValueOrDefault(type.TypeId) + 1;
-            targets.Add(new ShortcutTarget(placement.InstanceId, rank == 1 ? type.Label() : $"{type.Label()} ({rank})"));
+            var viewName = UntrustedText.Line(view.Name);
+            foreach (var placement in view.Placements)
+            {
+                if (!_types.TryGetValue(placement.TypeId, out var type) || !type.AcceptsCommands)
+                    continue;
+                var label = UntrustedText.Line(placement.Name) is { Length: > 0 } caseName ? caseName : type.Label();
+                if (layout.Views.Count > 1 && viewName.Length > 0)
+                    label = string.Format(Texts.ShortcutTargetInView, label, viewName);
+                var rank = counts[label] = counts.GetValueOrDefault(label) + 1;
+                targets.Add(new ShortcutTarget(placement.InstanceId, rank == 1 ? label : $"{label} ({rank})"));
+            }
         }
 
         return targets;
@@ -161,7 +193,11 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
         ShortcutCommand.PreviousTab => Texts.ShortcutPrevious,
         ShortcutCommand.NextTab => Texts.ShortcutNext,
         ShortcutCommand.SelectTab => string.Format(Texts.ShortcutSelect, binding.Index + 1),
-        _ => binding.Command.ToString(), // les textes des commandes de vue arrivent avec l'onglet Raccourcis des vues
+        ShortcutCommand.PreviousView => Texts.ShortcutPreviousView,
+        ShortcutCommand.NextView => Texts.ShortcutNextView,
+        ShortcutCommand.SelectView => string.Format(Texts.ShortcutSelectView, binding.Index + 1),
+        ShortcutCommand.Community => UntrustedText.Line(binding.ShortcutId), // le texte de l'action d'un module complémentaire arrive avec son choix
+        _ => UntrustedText.Line(binding.Command.ToString()),
     };
 
     // ---- Capture ----
@@ -174,7 +210,7 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
             return;
 
         if (row.IsDraft)
-            _draftAction ??= row.SelectedAction ?? ActionChoices[1];
+            _draftAction ??= row.SelectedAction ?? DefaultChoice;
         else
             DropDraft();
 
@@ -240,14 +276,15 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
         var other = FindOther(bindings, keys, except: isDraft ? -1 : index);
         if (other is { } duplicate)
         {
-            _refusal = (index, string.Format(Texts.ShortcutDuplicate, keys, ActionText(duplicate)));
+            _refusal = (index, string.Format(Texts.ShortcutDuplicate, ActionText(duplicate)));
             Refresh();
             return true;
         }
 
         if (isDraft)
         {
-            var draft = new ShortcutBinding(keys, _draftAction!.Command, _draftAction.Index, _draftTarget);
+            var chosen = _draftAction!;
+            var draft = new ShortcutBinding(keys, chosen.Command, chosen.Index, TakesTarget(chosen.Command) ? _draftTarget : null, chosen.ModuleId, chosen.ShortcutId);
             EndCapture();
             await Edit(list =>
             {
@@ -299,7 +336,7 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
     public void AddShortcut()
     {
         DropDraft();
-        _draftAction = ActionChoices[1];
+        _draftAction = DefaultChoice;
         _captureIndex = Current.Count;
         _snapshot = Current;
         _refusal = null;
@@ -368,6 +405,8 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
         if (_draftAction is null || _draftAction == action)
             return;
         _draftAction = action;
+        if (!TakesTarget(action.Command))
+            _draftTarget = null; // une action de vue ne vise aucun module
         Refresh();
     }
 

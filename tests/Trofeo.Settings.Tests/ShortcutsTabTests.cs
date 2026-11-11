@@ -177,7 +177,7 @@ public sealed class ShortcutsTabTests : IDisposable
 
         await tab.CaptureAsync(Key.Down, CtrlAlt);
 
-        Assert.Equal("Ctrl+Alt+Down sert déjà à « Onglet suivant ».", tab.Rows[0].Refusal);
+        Assert.Equal("Déjà pris par « Onglet suivant ».", tab.Rows[0].Refusal);
         Assert.True(tab.Rows[0].HasRefusal);
         Assert.Equal("Ctrl+Alt+Up", Saved[0].Keys);
         Assert.Equal(0, _link.ReloadCount); // rien n'est enregistré
@@ -209,7 +209,7 @@ public sealed class ShortcutsTabTests : IDisposable
 
         await tab.CaptureAsync(Key.Right, CtrlAlt);
 
-        Assert.Equal("Ctrl+Alt+Right sert déjà à « Onglet suivant ».", tab.Rows[1].Refusal);
+        Assert.Equal("Déjà pris par « Onglet suivant ».", tab.Rows[1].Refusal);
     }
 
     [Theory]
@@ -293,7 +293,7 @@ public sealed class ShortcutsTabTests : IDisposable
 
         await tab.CaptureAsync(Key.Up, CtrlAlt);
 
-        Assert.Equal("Ctrl+Alt+Up sert déjà à « Onglet précédent ».", tab.Rows[13].Refusal);
+        Assert.Equal("Déjà pris par « Onglet précédent ».", tab.Rows[13].Refusal);
         Assert.Equal(13, Saved.Count);
     }
 
