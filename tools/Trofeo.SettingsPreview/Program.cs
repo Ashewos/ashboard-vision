@@ -84,6 +84,7 @@ internal static class Program
         RenderSettings(folder, scratch, jpeg, connected.Welcome, connected.Status);
         RenderFirstRun(folder, scratch, jpeg, connected.Welcome, connected.Status);
         RenderCommunity(folder, scratch, jpeg, connected.Welcome, connected.Status);
+        RenderViews(folder, scratch, jpeg, connected.Welcome, connected.Status);
 
         // L'onglet Disposition : un module choisi, des glissements (libre, refusé), l'ajout, l'oubli à confirmer.
         var layoutStatus = connected.Status with
@@ -978,6 +979,61 @@ internal static class Program
             }, layout: layoutWith);
     }
 
+    /// <summary>
+    /// Les vues de l'onglet Disposition : trois onglets, la deuxième vue choisie (et un de ses modules) alors que la première est sur
+    /// l'écran (le point vert), « L'écran suit la vue choisie » décochée puisque c'est le seul état où elles diffèrent ; puis le menu
+    /// de l'onglet choisi. La bande montre toujours la vue de l'écran : le faux service n'a qu'une image.
+    /// </summary>
+    private static void RenderViews(string folder, string scratch, byte[] jpeg, Welcome welcome, ServiceStatus status)
+    {
+        static void Run(Task task) => task.GetAwaiter().GetResult();
+        static System.Text.Json.JsonElement Json(string json) => System.Text.Json.JsonDocument.Parse(json).RootElement.Clone();
+        static ModulePlacement Case(string id, string typeId, int column, int row, int columns, int rows, string? name = null) =>
+            new(new Guid(id), typeId, column, row, columns, rows, Trofeo.ModuleKit.TextSize.Normal, Json("{}"), name);
+
+        var first = Base.Views[0] with { Name = "Bureau" };
+        var layout = Base with
+        {
+            Views =
+            [
+                first,
+                new LayoutView(new Guid("71e00000-0000-4000-8000-000000000002"), "Jeux",
+                [
+                    Case("71e00000-0000-4000-8000-0000000000a1", "monitoring", 0, 0, 6, 4, "Ma machine"),
+                    Case("71e00000-0000-4000-8000-0000000000a2", "network", 6, 0, 4, 2),
+                    Case("71e00000-0000-4000-8000-0000000000a3", "nowplaying", 6, 2, 4, 2, "Ma musique"),
+                    Case("71e00000-0000-4000-8000-0000000000a4", "clock", 10, 0, 4, 2),
+                ]),
+                new LayoutView(new Guid("71e00000-0000-4000-8000-000000000003"), "Réunion", []),
+            ],
+        };
+        var onScreen = first.Id;
+        var monitoring = new Guid("71e00000-0000-4000-8000-0000000000a1");
+        var preferences = new EditorPreferences(FirstRunDone: true, FollowView: false);
+
+        void Connected(FakeServiceLink link)
+        {
+            link.Set(LinkState.Connected, welcome, status);
+            link.ShownViewId = onScreen;
+        }
+
+        void Arrange(MainViewModel model)
+        {
+            Run(model.LayoutTab.SelectViewAsync(model.LayoutTab.ViewTabs[1]));
+            model.LayoutTab.Select(monitoring);
+        }
+
+        Render(folder, scratch, "disposition-vues.png", 1440, 900, jpeg, Connected, (_, model) => Arrange(model),
+            layout: layout, preferences: preferences);
+
+        Render(folder, scratch, "disposition-vues-menu.png", 1440, 900, jpeg, Connected, (window, model) =>
+        {
+            Arrange(model);
+            Dispatcher.UIThread.RunJobs();
+            var menu = window.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "TabMenu" && b.IsVisible);
+            menu.Flyout!.ShowAt(menu);
+        }, layout: layout, preferences: preferences);
+    }
     private static readonly Guid ClaudeId = new("3c1d9f5e-7a2b-4e8c-9b1f-6d2a0e4c8b17");
     private static readonly Guid MonitoringId = new("246ac06d-eec2-4d64-9930-24b64603a03b");
     private static readonly Guid NowPlayingId = new("8ebcc647-ab4b-401d-b2b3-f7a0ebd97b4b");

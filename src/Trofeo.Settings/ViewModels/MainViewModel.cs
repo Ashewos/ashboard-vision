@@ -24,11 +24,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         _link = link;
         Session = new EditSession(document);
-        LayoutTab = new LayoutTabViewModel(link, Session);
+        PreferencesStore = new PreferencesStore(preferences, preferencesPath);
+        LayoutTab = new LayoutTabViewModel(link, Session, PreferencesStore);
         AppearanceTab = new AppearanceTabViewModel(Session, picker, systemFonts ?? new SkiaSystemFonts().Families);
         ModulesTab = new ModulesTabViewModel(link, Session, secrets ?? new NoSecretAccess(), time);
         ShortcutsTab = new ShortcutsTabViewModel(link, Session);
-        PreferencesStore = new PreferencesStore(preferences, preferencesPath);
         SettingsTab = new SettingsTabViewModel(
             link, Session, PreferencesStore, system ?? SystemServices.None, picker, time);
         Pill = new ScreenPillViewModel(link);

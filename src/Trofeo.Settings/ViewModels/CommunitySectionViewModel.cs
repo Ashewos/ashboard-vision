@@ -430,7 +430,10 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
         var shelf = layout.Shelf?.Where(p => p.TypeId != typeId).ToList();
         if (views.Sum(v => v.Placements.Count) == layout.AllPlacements.Count() && (shelf is null || shelf.Count == layout.Shelf!.Count))
             return null;
-        return layout with { Views = views, Shelf = shelf };
+
+        // Les raccourcis qui visaient ces cases partent avec elles, dans la même modification.
+        var gone = layout.AllPlacements.Concat(layout.Shelf ?? []).Where(p => p.TypeId == typeId).Select(p => p.InstanceId).ToHashSet();
+        return LayoutBindings.WithoutTargets(layout with { Views = views, Shelf = shelf }, gone);
     }
 
     /// <summary>Une demande qui change les modules : vrai si le service l'a acceptée ; sinon son message reste affiché, tel quel. La liste est relue.</summary>

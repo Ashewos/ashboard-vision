@@ -145,6 +145,28 @@ public static class Texts
     public static string LayoutHealthOffline => Get();
     /// <summary>Nom accessible du damier posé sur la bande.</summary>
     public static string LayoutGridName => Get();
+    /// <summary>Onglet qui ajoute une vue.</summary>
+    public static string LayoutNewView => Get();
+    /// <summary>Menu d'un onglet de vue : renomme la vue.</summary>
+    public static string LayoutViewRename => Get();
+    /// <summary>Menu d'un onglet de vue : copie la vue et ses modules.</summary>
+    public static string LayoutViewDuplicate => Get();
+    /// <summary>Menu d'un onglet de vue, et bouton de confirmation de la suppression.</summary>
+    public static string LayoutViewDelete => Get();
+    /// <summary>Case à cocher près des onglets de vues.</summary>
+    public static string LayoutFollowView => Get();
+    /// <summary>{0} : le nom de la vue. Confirmation avant de supprimer une vue qui a des modules.</summary>
+    public static string LayoutViewDeleteConfirm => Get();
+    /// <summary>Refus d'ajouter ou de dupliquer une dixième vue.</summary>
+    public static string LayoutTooManyViews => Get();
+    /// <summary>Champ du nom d'une case, dans son panneau de réglage.</summary>
+    public static string LayoutCaseName => Get();
+    /// <summary>Nom accessible de la rangée d'onglets de vues.</summary>
+    public static string LayoutViewsName => Get();
+    /// <summary>Info-bulle du point vert de la vue qui est sur l'écran.</summary>
+    public static string LayoutViewOnScreen => Get();
+    /// <summary>Nom accessible du bouton qui ouvre le menu d'un onglet de vue.</summary>
+    public static string LayoutViewMenu => Get();
     /// <summary>Titre de la section des thèmes.</summary>
     public static string AppearanceTheme => Get();
     /// <summary>Nom du thème Classique.</summary>

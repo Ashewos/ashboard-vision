@@ -28,6 +28,8 @@ public sealed class ServiceLink : IServiceLink
     private ControlClient? _client;
     private bool _realTime;
     private bool _paused;
+    private Guid? _previewViewId;
+    private long _shownGeneration;
     private PreviewFrame? _pendingFrame;
     private int _failures;
     private int _disposed;
@@ -61,6 +63,7 @@ public sealed class ServiceLink : IServiceLink
     public ServiceStatus? Status { get; private set; }
     public UpdateInfo? Updates { get; private set; }
     public IReadOnlyList<ModuleTypeInfo>? Types { get; private set; }
+    public Guid? ShownViewId { get; private set; }
 
     /// <summary>Comment les types sont relus ; les tests le remplacent pour simuler un service qui ne répond pas (le délai réel est de 10 s).</summary>
     internal Func<ControlClient, CancellationToken, Task<IReadOnlyList<ModuleTypeInfo>>> TypesReader { get; set; } =
@@ -83,6 +86,18 @@ public sealed class ServiceLink : IServiceLink
         Resubscribe();
     }
 
+    public void SetPreviewView(Guid? viewId)
+    {
+        lock (_gate)
+        {
+            if (_previewViewId == viewId)
+                return; // déjà celle de l'aperçu : pas de deuxième abonnement à la même vue
+            _previewViewId = viewId;
+        }
+
+        Resubscribe();
+    }
+
     /// <summary>Images par seconde demandées : 0 en pause, sinon 4 ou 12. Appelé sous <see cref="_gate"/>.</summary>
     private int WantedFps() => _paused ? 0 : _realTime ? RealTimeFps : NormalFps;
 
@@ -90,14 +105,16 @@ public sealed class ServiceLink : IServiceLink
     {
         ControlClient? client;
         int fps;
+        Guid? viewId;
         lock (_gate)
         {
             client = _client;
             fps = WantedFps();
+            viewId = _previewViewId;
         }
 
         if (client is not null)
-            _ = SubscribeQuietlyAsync(client, fps);
+            _ = SubscribeQuietlyAsync(client, fps, viewId);
     }
 
     public Task<Reloaded> ReloadAsync() => RequestAsync((client, ct) => client.ReloadAsync(ct));
@@ -110,6 +127,10 @@ public sealed class ServiceLink : IServiceLink
 
     public Task<bool> RestartModuleAsync(Guid instanceId) =>
         RequestAsync((client, ct) => client.RestartModuleAsync(instanceId, ct));
+
+    // Pas de relecture après la demande : le service annonce lui-même la vue affichée (ViewShown).
+    public Task<bool> ShowViewAsync(Guid viewId) =>
+        RequestAsync((client, ct) => client.ShowViewAsync(viewId, ct));
 
     public Task CheckUpdatesAsync() => RequestAsync(async (client, ct) =>
     {
@@ -293,14 +314,14 @@ public sealed class ServiceLink : IServiceLink
                 // Le service tourne mais parle une autre version : ce n'est pas un service arrêté. On continue d'essayer (il sera peut-être
                 // mis à jour entre-temps), sans compter ces essais comme des échecs de connexion.
                 Volatile.Write(ref _failures, 0);
-                Update(() => { State = LinkState.VersionMismatch; Welcome = null; Status = null; Updates = null; Types = null; }, onlyIf: () => State != LinkState.VersionMismatch);
+                Update(() => { State = LinkState.VersionMismatch; Welcome = null; Status = null; Updates = null; Types = null; ShownViewId = null; }, onlyIf: () => State != LinkState.VersionMismatch);
             }
             catch (Exception)
             {
                 // Pas de service, version de protocole différente, tube qui se ferme, erreur inattendue du système : un échec
                 // de plus. Aucune exception ne remonte vers l'interface.
                 if (client is null && Interlocked.Increment(ref _failures) >= FailuresBeforeStopped)
-                    Update(() => { State = LinkState.ServiceStopped; Welcome = null; Status = null; Updates = null; Types = null; }, onlyIf: () => State != LinkState.ServiceStopped);
+                    Update(() => { State = LinkState.ServiceStopped; Welcome = null; Status = null; Updates = null; Types = null; ShownViewId = null; }, onlyIf: () => State != LinkState.ServiceStopped);
             }
             finally
             {
@@ -314,7 +335,7 @@ public sealed class ServiceLink : IServiceLink
 
             // Connectée puis coupée : on repart à « Connecting » ; ServiceStopped ne se déclare qu'après trois échecs de connexion.
             if (client is not null && !ct.IsCancellationRequested)
-                Update(() => { State = LinkState.Connecting; Welcome = null; Status = null; Updates = null; Types = null; });
+                Update(() => { State = LinkState.Connecting; Welcome = null; Status = null; Updates = null; Types = null; ShownViewId = null; });
 
             var wait = _retryDelay - (DateTime.UtcNow - attemptStarted);
             if (wait > TimeSpan.Zero)
@@ -331,30 +352,58 @@ public sealed class ServiceLink : IServiceLink
         var lost = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.Disconnected += () => lost.TrySetResult();
         client.FrameReceived += ReceiveFrame;
+        client.ViewShown += ReceiveViewShown;
 
         int fps;
+        Guid? previewView;
         lock (_gate)
         {
             _client = client;
             fps = WantedFps();
+            previewView = _previewViewId;
         }
 
-        await client.SubscribePreviewAsync(fps, ct).ConfigureAwait(false);
+        await SubscribeAsync(client, fps, previewView, ct).ConfigureAwait(false);
+        var shownGeneration = Volatile.Read(ref _shownGeneration);
         var status = await client.GetStatusAsync(ct).ConfigureAwait(false);
         var generation = Volatile.Read(ref _updatesGeneration);
         var updates = await TryGetUpdateAsync(client, ct).ConfigureAwait(false);
-        Update(() => { ApplyUpdates(updates, generation); State = LinkState.Connected; Welcome = client.Welcome; Types = client.Welcome.Types; Status = status; });
+        Update(() =>
+        {
+            ApplyUpdates(updates, generation);
+            State = LinkState.Connected;
+            Welcome = client.Welcome;
+            Types = client.Welcome.Types;
+            Status = status;
+            ApplyShownView(status, shownGeneration);
+        });
 
         while (true)
         {
             var finished = await Task.WhenAny(lost.Task, Task.Delay(_statusInterval, ct)).ConfigureAwait(false);
             if (finished == lost.Task)
                 return;
+            shownGeneration = Volatile.Read(ref _shownGeneration);
             status = await client.GetStatusAsync(ct).ConfigureAwait(false);
             generation = Volatile.Read(ref _updatesGeneration);
             updates = await TryGetUpdateAsync(client, ct).ConfigureAwait(false);
-            Update(() => { Status = status; ApplyUpdates(updates, generation); });
+            Update(() => { Status = status; ApplyUpdates(updates, generation); ApplyShownView(status, shownGeneration); });
         }
+    }
+
+    /// <summary>Le service annonce une nouvelle vue affichée (fil de lecture) : publiée sur le fil de l'interface.</summary>
+    private void ReceiveViewShown(Guid viewId)
+    {
+        // Le compteur change avant la publication : une lecture de l'état partie plus tôt sera écartée à son arrivée.
+        Interlocked.Increment(ref _shownGeneration);
+        Update(() => ShownViewId = viewId, onlyIf: () => ShownViewId != viewId);
+    }
+
+    /// <summary>La vue affichée d'après une lecture de l'état, sauf si une annonce du service l'a dépassée depuis.</summary>
+    private void ApplyShownView(ServiceStatus status, long generation)
+    {
+        if (generation == Volatile.Read(ref _shownGeneration) && status.CurrentViewId != Guid.Empty)
+            ShownViewId = status.CurrentViewId;
     }
 
     /// <summary>
@@ -385,12 +434,28 @@ public sealed class ServiceLink : IServiceLink
         catch (ControlException) { return null; }
     }
 
-    private static async Task SubscribeQuietlyAsync(ControlClient client, int fps)
+    private static async Task SubscribeQuietlyAsync(ControlClient client, int fps, Guid? viewId)
     {
-        try { await client.SubscribePreviewAsync(fps, CancellationToken.None).ConfigureAwait(false); }
+        try { await SubscribeAsync(client, fps, viewId, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) when (ex is ControlException or TimeoutException or OperationCanceledException)
         {
             // La liaison est coupée ou le service ne répond pas : la boucle de connexion s'en occupe.
+        }
+    }
+
+    /// <summary>
+    /// Abonne l'aperçu à la vue voulue. Une vue que le service ne connaît pas (retirée entre-temps) lui fait refuser la demande,
+    /// et il se désabonne alors de l'ancienne : on retombe sur la vue affichée plutôt que de laisser la bande figée.
+    /// </summary>
+    private static async Task SubscribeAsync(ControlClient client, int fps, Guid? viewId, CancellationToken ct)
+    {
+        try
+        {
+            await client.SubscribePreviewAsync(fps, viewId, ct).ConfigureAwait(false);
+        }
+        catch (ControlException) when (viewId is not null)
+        {
+            await client.SubscribePreviewAsync(fps, null, ct).ConfigureAwait(false);
         }
     }
 

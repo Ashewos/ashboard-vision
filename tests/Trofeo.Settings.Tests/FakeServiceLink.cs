@@ -37,6 +37,44 @@ public sealed class FakeServiceLink : IServiceLink
 
     public bool Paused { get; private set; }
 
+    /// <summary>La vue qui est sur l'écran ; <c>null</c> : inconnue.</summary>
+    public Guid? ShownViewId { get; set; }
+
+    /// <summary>Le service annonce une vue affichée (le clavier, par exemple) et prévient les abonnés.</summary>
+    public void PushViewShown(Guid viewId)
+    {
+        ShownViewId = viewId;
+        Changed?.Invoke();
+    }
+
+    /// <summary>La vue de l'aperçu ; <c>null</c> : la vue affichée.</summary>
+    public Guid? PreviewViewId { get; private set; }
+
+    /// <summary>Les vues demandées à l'aperçu, dans l'ordre (comme la vraie liaison, une vue déjà celle de l'aperçu n'est pas redemandée).</summary>
+    public List<Guid?> PreviewViews { get; } = [];
+
+    public void SetPreviewView(Guid? viewId)
+    {
+        if (PreviewViewId == viewId)
+            return;
+        PreviewViewId = viewId;
+        PreviewViews.Add(viewId);
+    }
+
+    /// <summary>Les vues que la fenêtre a demandé d'afficher, dans l'ordre.</summary>
+    public List<Guid> ShowRequests { get; } = [];
+
+    /// <summary>Comme le service : une vue affichée est ensuite annoncée à tous (<see cref="PushViewShown"/>).</summary>
+    public bool ShowViewAnnounces { get; set; } = true;
+
+    public Task<bool> ShowViewAsync(Guid viewId)
+    {
+        ShowRequests.Add(viewId);
+        if (ShowViewAnnounces)
+            PushViewShown(viewId);
+        return Task.FromResult(true);
+    }
+
     public void SetPreviewPaused(bool paused) => Paused = paused;
 
     public Task<Reloaded> ReloadAsync()

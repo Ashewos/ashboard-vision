@@ -7,7 +7,8 @@ namespace Trofeo.Settings.Services;
 /// </summary>
 /// <param name="FirstRunDone">L'assistant de première ouverture a été terminé. Fermé en route, il se rouvre au lancement suivant ; « Relancer l'assistant » (Paramètres) le remet à faux.</param>
 /// <param name="RealTimePreview">Aperçu à 12 images par seconde au lieu de 4.</param>
-public sealed record EditorPreferences(bool FirstRunDone = false, bool RealTimePreview = false)
+/// <param name="FollowView">Choisir une vue dans l'onglet Disposition l'affiche aussi sur l'écran ; décoché, seul l'aperçu change.</param>
+public sealed record EditorPreferences(bool FirstRunDone = false, bool RealTimePreview = false, bool FollowView = true)
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 

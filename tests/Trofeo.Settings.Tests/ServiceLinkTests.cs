@@ -134,7 +134,7 @@ public class ServiceLinkTests
 
         public ServiceStatus GetStatus() => new(
             new ScreenInfo(LinkScreenState.Ready, null), false, [],
-            new ProcessInfo(1, 2, 0), new FrameInfo(0, 0, 0), new SensorInfo(false, false, false), Guid.Empty);
+            new ProcessInfo(1, 2, 0), new FrameInfo(0, 0, 0), new SensorInfo(false, false, false), CurrentView);
 
         public Func<CancellationToken, Task<Reloaded>> OnReload { get; set; } = _ => Task.FromResult(new Reloaded(true, null, []));
 
@@ -187,13 +187,29 @@ public class ServiceLinkTests
             return Task.FromResult(new ActionResult(false, "Mise à jour annulée : l'autorisation n'a pas été donnée."));
         }
 
-        public event Action<Guid>? ViewChanged { add { } remove { } }
+        public event Action<Guid>? ViewChanged;
 
-        public Task<bool> ShowViewAsync(Guid viewId, CancellationToken ct) => Task.FromResult(true);
+        /// <summary>Le service change de vue (le clavier, par exemple) : il l'annonce à tous les clients.</summary>
+        public void ChangeView(Guid viewId) => ViewChanged?.Invoke(viewId);
+
+        /// <summary>La vue affichée selon l'état du service.</summary>
+        public Guid CurrentView = Guid.Empty;
+
+        public readonly ConcurrentQueue<Guid> ShowRequests = new();
+
+        public Task<bool> ShowViewAsync(Guid viewId, CancellationToken ct)
+        {
+            ShowRequests.Enqueue(viewId);
+            return Task.FromResult(true);
+        }
+
+        /// <summary>Les vues demandées à l'aperçu, dans l'ordre (<c>null</c> : la vue affichée).</summary>
+        public readonly ConcurrentQueue<Guid?> SubscribedViews = new();
 
         public IDisposable SubscribePreview(int maxFps, Guid? viewId, Action<PreviewFrame> onFrame)
         {
             Subscriptions.Enqueue(maxFps);
+            SubscribedViews.Enqueue(viewId);
             return new Nothing();
         }
 
@@ -487,6 +503,67 @@ public class ServiceLinkTests
         await WaitUntilAsync(() => handler.Subscriptions.Last() == 4, "retour à 4 i/s");
     }
 
+    [Fact]
+    public async Task Link_PreviewView_IsSubscribedOnceAndKeptAcrossFpsChanges()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler();
+        var second = Guid.NewGuid();
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => handler.SubscribedViews.Count >= 1, "abonnement");
+        Assert.Null(handler.SubscribedViews.Last()); // par défaut : la vue affichée
+
+        link.SetPreviewView(second);
+        await WaitUntilAsync(() => handler.SubscribedViews.Count >= 2, "abonnement à la deuxième vue");
+        Assert.Equal(second, handler.SubscribedViews.Last());
+
+        link.SetPreviewView(second); // déjà celle de l'aperçu : pas de deuxième abonnement
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+        Assert.Equal(2, handler.SubscribedViews.Count);
+
+        link.SetRealTimePreview(true); // le débit change, la vue reste
+        await WaitUntilAsync(() => handler.Subscriptions.Last() == 12, "aperçu à 12 i/s");
+        Assert.Equal(second, handler.SubscribedViews.Last());
+    }
+
+    [Fact]
+    public async Task Link_PreviewViewChosenBeforeConnection_IsSubscribedOnConnection()
+    {
+        var pipe = NewPipeName();
+        var view = Guid.NewGuid();
+        await using var link = NewLink(pipe);
+        link.SetPreviewView(view);
+
+        var handler = new Handler();
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await WaitUntilAsync(() => handler.SubscribedViews.Count >= 1, "abonnement");
+        Assert.Equal(view, handler.SubscribedViews.First());
+    }
+
+    [Fact]
+    public async Task Link_ShownView_FollowsTheStatus_AndTheAnnouncements()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        handler.CurrentView = first;
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+
+        await WaitUntilAsync(() => link.ShownViewId == first, "vue affichée d'après l'état");
+
+        handler.CurrentView = second; // le service change de vue : il l'annonce, sans attendre la lecture suivante de l'état
+        handler.ChangeView(second);
+        await WaitUntilAsync(() => link.ShownViewId == second, "vue annoncée");
+
+        Assert.True(await link.ShowViewAsync(first));
+        Assert.Equal(first, handler.ShowRequests.Single());
+    }
     [Fact]
     public async Task Link_RealTimeChosenBeforeConnection_SubscribesAt12()
     {

@@ -249,6 +249,50 @@
     <value>Damier de l'écran</value>
     <comment>Nom accessible du damier posé sur la bande.</comment>
   </data>
+  <data name="LayoutNewView" xml:space="preserve">
+    <value>+ Nouvelle vue</value>
+    <comment>Onglet qui ajoute une vue.</comment>
+  </data>
+  <data name="LayoutViewRename" xml:space="preserve">
+    <value>Renommer</value>
+    <comment>Menu d'un onglet de vue : renomme la vue.</comment>
+  </data>
+  <data name="LayoutViewDuplicate" xml:space="preserve">
+    <value>Dupliquer</value>
+    <comment>Menu d'un onglet de vue : copie la vue et ses modules.</comment>
+  </data>
+  <data name="LayoutViewDelete" xml:space="preserve">
+    <value>Supprimer</value>
+    <comment>Menu d'un onglet de vue, et bouton de confirmation de la suppression.</comment>
+  </data>
+  <data name="LayoutFollowView" xml:space="preserve">
+    <value>L'écran suit la vue choisie</value>
+    <comment>Case à cocher près des onglets de vues.</comment>
+  </data>
+  <data name="LayoutViewDeleteConfirm" xml:space="preserve">
+    <value>Supprimer la vue « {0} » ? Ses modules vont dans « Retirés ».</value>
+    <comment>{0} : le nom de la vue. Confirmation avant de supprimer une vue qui a des modules.</comment>
+  </data>
+  <data name="LayoutTooManyViews" xml:space="preserve">
+    <value>9 vues au plus.</value>
+    <comment>Refus d'ajouter ou de dupliquer une dixième vue.</comment>
+  </data>
+  <data name="LayoutCaseName" xml:space="preserve">
+    <value>Nom de la case</value>
+    <comment>Champ du nom d'une case, dans son panneau de réglage.</comment>
+  </data>
+  <data name="LayoutViewsName" xml:space="preserve">
+    <value>Vues</value>
+    <comment>Nom accessible de la rangée d'onglets de vues.</comment>
+  </data>
+  <data name="LayoutViewOnScreen" xml:space="preserve">
+    <value>Affichée sur l'écran</value>
+    <comment>Info-bulle du point vert de la vue qui est sur l'écran.</comment>
+  </data>
+  <data name="LayoutViewMenu" xml:space="preserve">
+    <value>Actions de la vue</value>
+    <comment>Nom accessible du bouton qui ouvre le menu d'un onglet de vue.</comment>
+  </data>
   <data name="AppearanceTheme" xml:space="preserve">
     <value>Thème</value>
     <comment>Titre de la section des thèmes.</comment>

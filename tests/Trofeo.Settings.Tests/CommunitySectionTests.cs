@@ -290,6 +290,31 @@ public sealed partial class CommunitySectionTests
     }
 
     [Fact]
+    public async Task Section_Uninstall_RemovesTheBindingsTargetingItsCases_InTheSameUndoableStep()
+    {
+        var claude = WithDemo().Views[0].Placements.First(p => p.TypeId == "claudecode");
+        var layout = WithDemo() with
+        {
+            Shortcuts =
+            [
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+A", Trofeo.Core.Shortcuts.ShortcutCommand.NextTab, 0, DemoId),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+B", Trofeo.Core.Shortcuts.ShortcutCommand.NextTab, 0, DemoShelfId),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+C", Trofeo.Core.Shortcuts.ShortcutCommand.NextTab, 0, claude.InstanceId),
+            ],
+        };
+        using var fixture = new CommunityFixture(layout).WithModules(Module());
+        await fixture.Section.RefreshAsync();
+
+        await fixture.Section.Modules.Single().ConfirmUninstallCommand.ExecuteAsync(null);
+
+        Assert.Equal(["Ctrl+Alt+Shift+C"], fixture.Document.Current.Shortcuts!.Select(b => b.Keys));
+
+        await fixture.Session.UndoAsync();
+        Assert.Equal(["Ctrl+Alt+Shift+A", "Ctrl+Alt+Shift+B", "Ctrl+Alt+Shift+C"], fixture.Document.Current.Shortcuts!.Select(b => b.Keys));
+        Assert.Contains(fixture.Document.Current.Views[0].Placements, p => p.InstanceId == DemoId);
+    }
+
+    [Fact]
     public async Task Section_Uninstall_OtherModulesOfTheSameAuthor_AreKept()
     {
         var layout = WithDemo() with
