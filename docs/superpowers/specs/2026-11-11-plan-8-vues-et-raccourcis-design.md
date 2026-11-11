@@ -94,6 +94,7 @@ Enfin, comme un même module peut maintenant se trouver plusieurs fois (dans plu
 ### 5.3 Le passage d'une vue à l'autre
 
 - Un **glissement horizontal** dans le sens de la touche (Droite : la nouvelle vue arrive par la droite), d'environ 300 ms, composé à partir de la dernière image de l'ancienne vue et d'une image fraîche de la nouvelle.
+- **Flou de mouvement** (demande d'Alex, 11/11/2026) : pendant le glissement, les deux vues reçoivent un flou horizontal, nul au départ et à l'arrivée et le plus fort au milieu, quand elles vont le plus vite. Avec peu d'images par seconde, ce flou fait paraître le mouvement plus fluide qu'une suite d'images nettes décalées.
 - Pendant le glissement, l'écran va aussi vite que l'envoi le permet (environ 20 images/s mesurées au plan 7 : 30 ms de rendu, 13 ms d'envoi), puis revient à son rythme normal.
 - **Décision par la mesure**, sur l'écran d'Alex, à la dernière tâche du plan : si le glissement ne passe pas au moins 5 images en 300 ms, ou s'il saccade à l'œil, il est retiré et le nouvel écran s'affiche d'un coup. S'il est gardé, une case « Animer le passage entre les vues » dans Personnalisation permet de le couper.
 - Un deuxième appui pendant un glissement l'abandonne et part vers la vue suivante (pas de file d'attente de glissements).
