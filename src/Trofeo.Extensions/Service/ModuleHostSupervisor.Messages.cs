@@ -32,6 +32,7 @@ public sealed partial class ModuleHostSupervisor
     /// </summary>
     private async Task ReadLoopAsync(HostConnection connection)
     {
+        var broken = false;
         try
         {
             await foreach (var message in connection.Link.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
@@ -54,6 +55,7 @@ public sealed partial class ModuleHostSupervisor
         }
         catch (InvalidDataException ex)
         {
+            broken = true;
             _log.Error("L'hôte du module a écrit un message illisible : " + ex.Message);
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException)
@@ -62,10 +64,22 @@ public sealed partial class ModuleHostSupervisor
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            broken = true;
             _log.Error("La lecture de ce que l'hôte écrit a échoué : " + ex.Message);
         }
 
-        connection.KillQuietly(); // un hôte dont le flux est fini ou illisible ne sert plus à rien
+        bool expected;
+        lock (_gate)
+        {
+            expected = connection.ExpectedStop;
+        }
+
+        // Un hôte dont le flux est fini ou illisible ne sert plus à rien. Sauf quand on lui a demandé de finir et que son tube s'est
+        // fermé proprement : il est en train de s'arrêter de lui-même, et le minuteur de grâce le tuera s'il traîne.
+        if (broken || !expected)
+        {
+            connection.KillQuietly();
+        }
     }
 
     private void Handle(HostConnection connection, HostMessage message)

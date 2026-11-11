@@ -309,6 +309,21 @@ internal sealed class FakeHostProcess : IHostProcess
         return PrivateBytes;
     }
 
+    /// <summary>
+    /// Le tube vers le service se ferme, mais le processus n'est pas encore fini : c'est ce que fait un vrai hôte qui s'arrête de
+    /// lui-même, pendant les quelques millisecondes où le runtime se décharge.
+    /// </summary>
+    public void CloseOutput()
+    {
+        try
+        {
+            _out.Dispose();
+        }
+        catch (IOException)
+        {
+        }
+    }
+
     /// <summary>L'hôte s'arrête : le tube vers le service se ferme, et le processus est fini.</summary>
     public void Exit(int code)
     {
