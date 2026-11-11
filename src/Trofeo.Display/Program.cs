@@ -307,9 +307,9 @@ static class Program
     }
 
     /// <summary>
-    /// Crée la fenêtre des raccourcis (toujours : un rechargement peut ajouter un module commandable) et enregistre ceux de
-    /// la disposition si un module accepte les commandes. Une panne ici n'arrête pas le service : il tourne sans
-    /// raccourcis (<c>null</c>). Libérer le résultat retire les raccourcis puis détruit la fenêtre.
+    /// Crée la fenêtre des raccourcis et enregistre ceux de la disposition (les raccourcis de vue comme ceux d'onglet : une
+    /// commande d'onglet sans module visé dans la vue affichée ne fait rien). Une panne ici n'arrête pas le service : il tourne
+    /// sans raccourcis (<c>null</c>). Libérer le résultat retire les raccourcis puis détruit la fenêtre.
     /// </summary>
     private static HotkeyScope? StartHotkeys(DashboardLayout layout, DisplayLoop loop, SynchronizationContext? ui)
     {
@@ -317,18 +317,14 @@ static class Program
         HotkeyRouter? router = null;
         try
         {
-            // Sans module commandable, un raccourci ne servirait à rien et prendrait une combinaison à d'autres applications.
-            var commandable = loop.FindCommandTarget(null) is not null;
-            if (!commandable) Trace.TraceInformation("Aucun module de la disposition n'accepte les commandes : pas de raccourcis clavier pour l'instant.");
-
             window = new HotkeyWindow();
-            router = new HotkeyRouter(window, commandable ? layout.Shortcuts ?? ShortcutDefaults.All : [], loop.FindCommandTarget);
+            router = new HotkeyRouter(window, layout.Shortcuts ?? ShortcutDefaults.All, loop.FindCommandTarget, loop);
             window.Hotkey += router.OnHotkey;
             router.RegisterAll();
 
             IHotkeyHost? host = null;
             if (ui is null) Trace.TraceWarning("Pas de contexte d'interface : les raccourcis ne suivront pas les rechargements.");
-            else host = new UiHotkeyHost(ui, router, loop);
+            else host = new UiHotkeyHost(ui, router);
             return new HotkeyScope(router, window, host);
         }
         catch (Exception ex)

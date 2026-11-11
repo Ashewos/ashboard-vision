@@ -134,7 +134,7 @@ public class ServiceLinkTests
 
         public ServiceStatus GetStatus() => new(
             new ScreenInfo(LinkScreenState.Ready, null), false, [],
-            new ProcessInfo(1, 2, 0), new FrameInfo(0, 0, 0), new SensorInfo(false, false, false));
+            new ProcessInfo(1, 2, 0), new FrameInfo(0, 0, 0), new SensorInfo(false, false, false), Guid.Empty);
 
         public Func<CancellationToken, Task<Reloaded>> OnReload { get; set; } = _ => Task.FromResult(new Reloaded(true, null, []));
 
@@ -187,7 +187,11 @@ public class ServiceLinkTests
             return Task.FromResult(new ActionResult(false, "Mise à jour annulée : l'autorisation n'a pas été donnée."));
         }
 
-        public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame)
+        public event Action<Guid>? ViewChanged { add { } remove { } }
+
+        public Task<bool> ShowViewAsync(Guid viewId, CancellationToken ct) => Task.FromResult(true);
+
+        public IDisposable SubscribePreview(int maxFps, Guid? viewId, Action<PreviewFrame> onFrame)
         {
             Subscriptions.Enqueue(maxFps);
             return new Nothing();

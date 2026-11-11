@@ -180,15 +180,15 @@ public partial class ControlChannelTests
     }
 
     [Fact]
-    public async Task Hello_OldWindowProtocol2_IsMismatch()
+    public async Task Hello_ServiceOfProtocol3_IsMismatch()
     {
         var name = NewPipeName();
-        var handler = new FakeHandler { WelcomeToReturn = SampleWelcome() with { ProtocolVersion = 2 } };
+        var handler = new FakeHandler { WelcomeToReturn = SampleWelcome() with { ProtocolVersion = 3 } };
         using var server = new ControlServer(name, handler);
         server.Start();
 
         var ex = await Assert.ThrowsAsync<ProtocolMismatchException>(() => ConnectAsync(name));
-        Assert.Contains("version 2", ex.Message);
+        Assert.Contains("version 4", ex.Message);
         Assert.Contains("version 3", ex.Message);
     }
 

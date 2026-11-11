@@ -15,12 +15,18 @@ public interface IHotkeyRegistrar
 }
 
 /// <summary>
-/// Enregistre les raccourcis de la disposition et envoie la commande de chacun au module visé. À utiliser depuis
-/// le thread de l'interface seulement.
+/// Enregistre les raccourcis de la disposition et envoie la commande de chacun : un raccourci d'onglet va au module visé
+/// (dans la vue affichée seulement), un raccourci de vue change la vue affichée. À utiliser depuis le thread de l'interface
+/// seulement.
 /// </summary>
-/// <param name="resolveTarget">Trouve le module visé (<c>null</c> : le premier qui accepte les commandes).</param>
+/// <param name="resolveTarget">
+/// Trouve le module visé par une commande d'onglet (<c>null</c> : le premier de la vue affichée qui accepte les commandes) ;
+/// il rend <c>null</c> si la vue affichée n'en a pas, et la commande ne fait alors rien.
+/// </param>
+/// <param name="views">Change la vue affichée ; <c>null</c> : les raccourcis de vue ne font rien.</param>
 public sealed class HotkeyRouter(
-    IHotkeyRegistrar registrar, IReadOnlyList<ShortcutBinding> initialBindings, Func<Guid?, ICommandableModule?> resolveTarget) : IDisposable
+    IHotkeyRegistrar registrar, IReadOnlyList<ShortcutBinding> initialBindings, Func<Guid?, ICommandableModule?> resolveTarget,
+    IViewSwitcher? views = null) : IDisposable
 {
     /// <summary>Évite que le maintien de la touche n'envoie la commande en rafale.</summary>
     private const uint ModNoRepeat = 0x4000;
@@ -90,12 +96,26 @@ public sealed class HotkeyRouter(
         if (_disposed || id < 1 || id > _bindings.Count) return;
 
         var binding = _bindings[id - 1];
-        // Les commandes de vue et de module complémentaire n'ont pas encore de destinataire ici.
-        if (binding.Command.ToModuleCommand() is not { } kind) return;
 
         try
         {
-            resolveTarget(binding.Target)?.HandleCommand(new ModuleCommand(kind, binding.Index));
+            switch (binding.Command)
+            {
+                case ShortcutCommand.PreviousView:
+                    views?.ShowAdjacentView(-1);
+                    break;
+                case ShortcutCommand.NextView:
+                    views?.ShowAdjacentView(+1);
+                    break;
+                case ShortcutCommand.SelectView:
+                    views?.ShowViewAt(binding.Index);
+                    break;
+                default:
+                    // Les commandes de module complémentaire n'ont pas encore de destinataire ici.
+                    if (binding.Command.ToModuleCommand() is { } kind)
+                        resolveTarget(binding.Target)?.HandleCommand(new ModuleCommand(kind, binding.Index));
+                    break;
+            }
         }
         catch (Exception ex)
         {

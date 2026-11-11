@@ -29,7 +29,19 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
             if (_acceptLoop is not null)
                 throw new InvalidOperationException("Le serveur est déjà démarré.");
             _acceptLoop = Task.Run(() => AcceptLoopAsync(_stop.Token));
+            handler.ViewChanged += OnViewChanged;
         }
+    }
+
+    /// <summary>La vue affichée a changé : chaque client connecté le sait, sans que l'appelant (le fil d'affichage ou celui de l'interface) attende.</summary>
+    private void OnViewChanged(Guid viewId)
+    {
+        Session[] sessions;
+        lock (_gate)
+            sessions = [.. _sessions];
+
+        foreach (var session in sessions)
+            session.PushView(viewId);
     }
 
     private async Task AcceptLoopAsync(CancellationToken ct)
@@ -107,6 +119,7 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
             loop = _acceptLoop;
         }
 
+        handler.ViewChanged -= OnViewChanged;
         _stop.Cancel();
         foreach (var session in sessions)
             session.Dispose();
@@ -122,6 +135,7 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
         private readonly CancellationTokenSource _cts = new();
         private readonly SemaphoreSlim _writeLock = new(1, 1);
         private readonly ImageSlot _slot = new();
+        private readonly ViewSlot _viewSlot = new();
         private readonly object _previewGate = new();
         private IDisposable? _preview;
         private int _disposed;
@@ -136,6 +150,7 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
         {
             var ct = _cts.Token;
             var pump = Task.Run(() => PumpImagesAsync(ct));
+            var viewPump = Task.Run(() => PumpViewsAsync(ct));
             try
             {
                 while (true)
@@ -164,6 +179,8 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
             {
                 Dispose();
                 try { await pump.ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+                try { await viewPump.ConfigureAwait(false); }
                 catch (OperationCanceledException) { }
             }
         }
@@ -194,6 +211,11 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
                     {
                         Action = await _handler.RunActionAsync(Required(request.InstanceId, "instanceId"), Required(request.ActionKey, "actionKey"), ct)
                             .ConfigureAwait(false),
+                    };
+                case MessageTypes.ShowView:
+                    return new Response(request.Id, request.Type)
+                    {
+                        Shown = await _handler.ShowViewAsync(Required(request.ViewId, "viewId"), ct).ConfigureAwait(false),
                     };
                 case MessageTypes.GetUpdate:
                     return new Response(request.Id, request.Type) { Update = _handler.GetUpdate() };
@@ -313,7 +335,7 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
                 _slot.Clear();
                 if (maxFps > 0)
                 {
-                    try { _preview = _handler.SubscribePreview(maxFps, _slot.Offer); }
+                    try { _preview = _handler.SubscribePreview(maxFps, request.ViewId, _slot.Offer); }
                     catch (Exception ex) when (ex is not OperationCanceledException || !_cts.IsCancellationRequested)
                     {
                         // Une erreur du service revient au client en « error », comme pour les autres requêtes.
@@ -378,6 +400,34 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
             }
         }
 
+        /// <summary>
+        /// Annonce à ce client la vue affichée. Ne bloque jamais : seule la dernière vue annoncée compte, une annonce qui n'est pas
+        /// encore partie est remplacée par la suivante.
+        /// </summary>
+        public void PushView(Guid viewId)
+        {
+            if (Volatile.Read(ref _disposed) == 0)
+                _viewSlot.Offer(viewId);
+        }
+
+        /// <summary>Écrit les annonces de vue, une à la fois, dans l'ordre d'arrivée des changements (la dernière valeur seulement si le client est lent).</summary>
+        private async Task PumpViewsAsync(CancellationToken ct)
+        {
+            try
+            {
+                while (true)
+                {
+                    var viewId = await _viewSlot.TakeAsync(ct).ConfigureAwait(false);
+                    await WriteJsonAsync(new Response(0, MessageTypes.ViewShown) { ViewId = viewId }, ct).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException or InvalidDataException)
+            {
+                // Connexion fermée : on referme.
+                Dispose();
+            }
+        }
+
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -434,4 +484,43 @@ internal sealed class ImageSlot
     }
 
     public void Clear() => Interlocked.Exchange(ref _pending, null);
+}
+
+/// <summary>
+/// Emplacement de la dernière vue annoncée. <see cref="Offer"/> ne bloque jamais (il remplace la vue en attente) : il s'appelle
+/// depuis le fil qui change la vue.
+/// </summary>
+internal sealed class ViewSlot
+{
+    private readonly SemaphoreSlim _signal = new(0, 1);
+    private readonly object _gate = new();
+    private Guid? _pending;
+
+    public void Offer(Guid viewId)
+    {
+        lock (_gate)
+            _pending = viewId;
+
+        if (_signal.CurrentCount == 0)
+        {
+            try { _signal.Release(); }
+            catch (SemaphoreFullException) { }
+        }
+    }
+
+    public async Task<Guid> TakeAsync(CancellationToken ct)
+    {
+        while (true)
+        {
+            await _signal.WaitAsync(ct).ConfigureAwait(false);
+            lock (_gate)
+            {
+                if (_pending is { } viewId)
+                {
+                    _pending = null;
+                    return viewId;
+                }
+            }
+        }
+    }
 }

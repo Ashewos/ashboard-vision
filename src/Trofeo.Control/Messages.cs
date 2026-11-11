@@ -34,8 +34,9 @@ public sealed record FrameInfo(int FramesSent, double RenderMs, double SendMs);
 
 public sealed record SensorInfo(bool PawnIoInstalled, bool HelperInstalled, bool HelperConnected);
 
+/// <summary>L'état du service. <paramref name="CurrentViewId"/> est la vue affichée sur l'écran en ce moment.</summary>
 public sealed record ServiceStatus(ScreenInfo Screen, bool Emulated, IReadOnlyList<ModuleState> Modules,
-    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors);
+    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors, Guid CurrentViewId);
 
 public sealed record Reloaded(bool Applied, string? Error, IReadOnlyList<string> Warnings);
 
@@ -133,8 +134,24 @@ public interface IControlHandler
     /// <summary>
     /// <paramref name="onFrame"/> est appelé depuis le fil d'affichage : il ne doit jamais bloquer.
     /// Le tableau d'octets d'une image n'est plus modifié après l'appel (il est écrit plus tard, sur un autre fil).
+    /// <paramref name="viewId"/> : la vue à montrer, affichée ou non (<c>null</c> : celle qui est affichée) ; une vue qui n'existe
+    /// pas lève <see cref="InvalidOperationException"/>.
     /// </summary>
-    IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame);
+    IDisposable SubscribePreview(int maxFps, Guid? viewId, Action<PreviewFrame> onFrame);
+
+    // ---- Vues ----
+
+    /// <summary>
+    /// Levé après chaque changement de la vue affichée sur l'écran (raccourci clavier, fenêtre de réglage ou rechargement), avec la
+    /// nouvelle vue. Peut l'être depuis n'importe quel fil : un abonné ne doit pas bloquer.
+    /// </summary>
+    event Action<Guid>? ViewChanged;
+
+    /// <summary>
+    /// Affiche la vue <paramref name="viewId"/> sur l'écran (avec le glissement, dont le sens se déduit de l'ordre des vues). Faux
+    /// si cette vue n'existe pas ; vrai, sans rien faire, si elle est déjà affichée.
+    /// </summary>
+    Task<bool> ShowViewAsync(Guid viewId, CancellationToken ct);
 
     // ---- Modules complémentaires ----
 
@@ -221,6 +238,8 @@ internal static class MessageTypes
     public const string Lookup = "lookup";
     public const string Action = "action";
     public const string Preview = "preview";
+    public const string ShowView = "showView";
+    public const string ViewShown = "viewShown";
     public const string GetUpdate = "getUpdate";
     public const string CheckUpdates = "checkUpdates";
     public const string SetUpdatePreferences = "setUpdatePreferences";
@@ -256,6 +275,7 @@ internal sealed record Request(int Id, string Type)
     public Guid? InstanceId { get; init; }
     public string? ActionKey { get; init; }
     public int? MaxFps { get; init; }
+    public Guid? ViewId { get; init; }
     public LinkUpdateChannel? Channel { get; init; }
     public bool? WaitForNextStable { get; init; }
     public bool? ConfirmDowngrade { get; init; }
@@ -273,6 +293,8 @@ internal sealed record Response(int ReplyTo, string Type)
     public ServiceStatus? Status { get; init; }
     public Reloaded? Reloaded { get; init; }
     public bool? Restarted { get; init; }
+    public bool? Shown { get; init; }
+    public Guid? ViewId { get; init; }
     public IReadOnlyList<LookupResult>? Results { get; init; }
     public ActionResult? Action { get; init; }
     public UpdateInfo? Update { get; init; }

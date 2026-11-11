@@ -18,7 +18,7 @@ namespace Trofeo.Display;
 /// (<see cref="ApplyAsync"/>, appliqué au début du <see cref="Tick"/> suivant), et chaque image rendue nourrit l'aperçu
 /// de la fenêtre de réglage (<see cref="SubscribePreview"/>), même sans écran (mode émulé).
 /// </summary>
-public sealed class DisplayLoop : IDisposable
+public sealed class DisplayLoop : IViewSwitcher, IDisposable
 {
     private const string ResumeReason = "Reprise après veille";
     private const int DefaultMaxFps = 12;
@@ -58,22 +58,8 @@ public sealed class DisplayLoop : IDisposable
             var view = layout.Views.FirstOrDefault(v => v.Id == viewId) ?? layout.Views[0];
             ViewId = view.Id;
             Placements = view.Placements;
-
-            // Les modules de la vue affichée : ceux dont l'emplacement accepté est bien l'une de ses cases (un identifiant en
-            // double dans une autre vue ne prête pas son module).
-            var displayed = new List<IModule>();
-            var seen = new HashSet<Guid>();
-            foreach (var placement in view.Placements)
-            {
-                if (placed.TryGetValue(placement.InstanceId, out var accepted) && ReferenceEquals(accepted, placement)
-                    && modules.TryGetValue(placement.InstanceId, out var module) && seen.Add(placement.InstanceId))
-                {
-                    displayed.Add(module);
-                }
-            }
-
-            Displayed = [.. displayed];
-            DisplayedSet = new HashSet<IModule>(displayed, ReferenceEqualityComparer.Instance);
+            Displayed = ModulesOfView(view);
+            DisplayedSet = new HashSet<IModule>(Displayed, ReferenceEqualityComparer.Instance);
         }
 
         public DashboardLayout Layout { get; }
@@ -124,6 +110,26 @@ public sealed class DisplayLoop : IDisposable
 
         /// <summary>Le même état, avec une autre vue affichée.</summary>
         public Live WithView(Guid viewId, ViewSwitch switched) => new(Layout, Modules, Entries, List, Placed, viewId, switched);
+
+        /// <summary>
+        /// Les modules d'une vue, dans l'ordre de ses cases : ceux dont l'emplacement accepté est bien l'une de ses cases (un
+        /// identifiant en double dans une autre vue ne prête pas son module).
+        /// </summary>
+        public IModule[] ModulesOfView(LayoutView view)
+        {
+            var found = new List<IModule>();
+            var seen = new HashSet<Guid>();
+            foreach (var placement in view.Placements)
+            {
+                if (Placed.TryGetValue(placement.InstanceId, out var accepted) && ReferenceEquals(accepted, placement)
+                    && Modules.TryGetValue(placement.InstanceId, out var module) && seen.Add(placement.InstanceId))
+                {
+                    found.Add(module);
+                }
+            }
+
+            return [.. found];
+        }
     }
 
     /// <summary>Un changement de vue : son numéro (croissant) et son sens (−1, 0 ou +1).</summary>
@@ -132,17 +138,24 @@ public sealed class DisplayLoop : IDisposable
     /// <summary>Ce qu'un module cachable a appris pour la dernière fois : de quoi ne le prévenir que quand quelque chose change.</summary>
     private readonly record struct Announcement(bool Visible, SKRect Bounds, GridSize Size, float TextScale, Theme Theme);
 
-    /// <summary>Un abonné à l'aperçu. Les champs d'état ne se touchent que depuis le fil du <see cref="Tick"/>.</summary>
-    private sealed class PreviewSubscriber(DisplayLoop owner, TimeSpan interval, Action<PreviewFrame> onFrame) : IDisposable
+    /// <summary>
+    /// Un abonné à l'aperçu. Les champs d'état ne se touchent que depuis le fil du <see cref="Tick"/>. <paramref name="viewId"/> :
+    /// la vue demandée, ou <c>null</c> pour celle qui est affichée.
+    /// </summary>
+    private sealed class PreviewSubscriber(DisplayLoop owner, TimeSpan interval, Guid? viewId, Action<PreviewFrame> onFrame) : IDisposable
     {
         private int _disposed;
 
+        public Guid? ViewId { get; } = viewId;
         public TimeSpan Interval { get; } = interval;
         public Action<PreviewFrame> OnFrame { get; } = onFrame;
         public PreviewFrame? Pending { get; set; }
         public bool HasPublished { get; set; }
         public long LastPublish { get; set; }
         public bool IsDisposed => Volatile.Read(ref _disposed) == 1;
+
+        /// <summary>Vrai si cet abonné voit la vue affichée (il n'a pas demandé une autre vue).</summary>
+        public bool Follows(Guid displayedView) => ViewId is null || ViewId == displayedView;
 
         public void Dispose()
         {
@@ -513,12 +526,14 @@ public sealed class DisplayLoop : IDisposable
     private void Announce(Live live)
     {
         var now = _time.GetLocalNow();
+        var previewed = PreviewedModules(live);
         foreach (var (id, module) in live.Entries)
         {
             if (module is not IHideableModule hideable || !live.Placed.TryGetValue(id, out var placement)) continue;
 
             var place = ModulePlace.Context(placement, _theme, now);
-            var announcement = new Announcement(live.DisplayedSet.Contains(module), place.Bounds, place.Size, place.TextScale, place.Theme);
+            var visible = live.DisplayedSet.Contains(module) || previewed?.Contains(module) == true;
+            var announcement = new Announcement(visible, place.Bounds, place.Size, place.TextScale, place.Theme);
             if (_announced.TryGetValue(module, out var last) && last == announcement) continue;
 
             _announced[module] = announcement;
@@ -530,6 +545,41 @@ public sealed class DisplayLoop : IDisposable
             {
                 Trace.TraceError($"Échec de l'annonce de visibilité du module « {module.Descriptor.TypeId} » : {ex}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Les modules des vues que l'aperçu de la fenêtre de réglage demande par leur numéro (affichées ou non) : tant qu'un abonné
+    /// les regarde, leurs cases sont « visibles » pour l'hôte d'un module complémentaire, qui doit dessiner. <c>null</c> : aucun.
+    /// </summary>
+    private HashSet<IModule>? PreviewedModules(Live live)
+    {
+        HashSet<IModule>? modules = null;
+        HashSet<Guid>? seen = null;
+        foreach (var subscriber in _subscribers)
+        {
+            if (subscriber.ViewId is not { } viewId || subscriber.IsDisposed) continue;
+
+            seen ??= [];
+            if (!seen.Add(viewId)) continue;
+
+            var view = live.Layout.Views.FirstOrDefault(v => v.Id == viewId);
+            if (view is null) continue;
+
+            modules ??= new HashSet<IModule>(ReferenceEqualityComparer.Instance);
+            modules.UnionWith(live.ModulesOfView(view));
+        }
+
+        return modules;
+    }
+
+    /// <summary>Redit aux modules cachables s'ils sont visibles, quand l'aperçu d'une vue vient de commencer ou de finir.</summary>
+    private void ReannounceForPreview()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_disposed) return;
+            Announce(_live);
         }
     }
 
@@ -707,6 +757,7 @@ public sealed class DisplayLoop : IDisposable
 
         // Le compositeur garde une copie floutée du fond : on le libère avant le fond.
         DisposeQuietly(oldComposer);
+        DisposePreviewComposer(); // sa copie floutée du fond ne vaut plus ; il sera recréé à la prochaine demande
         if (backgroundChanged)
         {
             DisposeQuietly(oldBackground);
@@ -920,29 +971,51 @@ public sealed class DisplayLoop : IDisposable
     // ---- Aperçu ----
 
     /// <summary>
-    /// Abonne <paramref name="onFrame"/> aux images de l'écran, au plus <paramref name="maxFps"/> par seconde (borné à [1, 12])
-    /// et par abonné. Quand l'écran est prêt, chaque image envoyée est publiée (pas les renvois de maintien) ; sans écran
-    /// mais avec au moins un abonné, la boucle rend et encode quand même, sans envoyer (mode émulé). Un abonné à qui son
-    /// plafond fait sauter des images reçoit la plus récente dès que son délai est écoulé. Une image est redemandée à l'abonnement.
+    /// Abonne <paramref name="onFrame"/> aux images de la vue affichée (<paramref name="viewId"/> <c>null</c>) ou d'une vue
+    /// précise, au plus <paramref name="maxFps"/> par seconde (borné à [1, 12]) et par abonné. Quand l'écran est prêt, chaque
+    /// image envoyée est publiée (pas les renvois de maintien) ; sans écran mais avec au moins un abonné à la vue affichée, la
+    /// boucle rend et encode quand même, sans envoyer (mode émulé). Un abonné à qui son plafond fait sauter des images reçoit la
+    /// plus récente dès que son délai est écoulé. Une image est redemandée à l'abonnement.
+    /// <para>
+    /// Une vue demandée qui n'est pas affichée est composée à part, seulement tant qu'un abonné la demande et au rythme de cet
+    /// abonné : jamais envoyée à l'écran, sans effet sur son rythme ni sur le calcul de l'animation de la vue affichée. Ses cases
+    /// de module complémentaire sont visibles pour leur hôte pendant ce temps, puis cachées de nouveau. Une vue qui n'existe pas
+    /// (ou plus) ne donne aucune image.
+    /// </para>
     /// <para>
     /// <paramref name="onFrame"/> est appelé sur le fil du <see cref="Tick"/> : il ne doit jamais bloquer ; une exception est
     /// journalisée et sans effet sur la boucle. Le tableau d'octets de l'image n'est plus modifié après l'appel.
     /// </para>
     /// </summary>
-    public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame)
+    public IDisposable SubscribePreview(int maxFps, Guid? viewId, Action<PreviewFrame> onFrame)
     {
         ArgumentNullException.ThrowIfNull(onFrame);
         var fps = Math.Clamp(maxFps, 1, DefaultMaxFps);
-        var subscriber = new PreviewSubscriber(this, TimeSpan.FromTicks((long)Math.Round((double)TimeSpan.TicksPerSecond / fps)), onFrame);
+        var subscriber = new PreviewSubscriber(this, TimeSpan.FromTicks((long)Math.Round((double)TimeSpan.TicksPerSecond / fps)), viewId, onFrame);
         lock (_subscribersGate)
         {
             if (_disposed) return subscriber;
             _subscribers = [.. _subscribers, subscriber];
         }
 
-        _scheduler.MarkDirty(); // une image fraîche pour le nouvel abonné ; elle réveille aussi la boucle sans écran
+        if (viewId is not null) ReannounceForPreview();
+
+        // Une image fraîche pour le nouvel abonné ; elle réveille aussi la boucle sans écran. Pour une autre vue que la vue
+        // affichée, l'écran n'a rien à redessiner : on réveille seulement la boucle.
+        if (subscriber.Follows(_live.ViewId))
+        {
+            _scheduler.MarkDirty();
+        }
+        else
+        {
+            _scheduler.Wake();
+        }
+
         return subscriber;
     }
+
+    /// <summary>Comme <see cref="SubscribePreview(int, Guid?, Action{PreviewFrame})"/> pour la vue affichée.</summary>
+    public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame) => SubscribePreview(maxFps, null, onFrame);
 
     private void RemoveSubscriber(PreviewSubscriber subscriber)
     {
@@ -951,27 +1024,44 @@ public sealed class DisplayLoop : IDisposable
             _subscribers = [.. _subscribers.Where(s => !ReferenceEquals(s, subscriber))];
         }
 
+        // La dernière personne qui regardait une vue la quitte : ses cases de module complémentaire se cachent de nouveau.
+        if (subscriber.ViewId is not null) ReannounceForPreview();
+
         _scheduler.Wake();
     }
 
-    private bool HasSubscribers => _subscribers.Length > 0;
+    /// <summary>Vrai s'il y a au moins un abonné qui voit la vue affichée : seuls ceux-là font rendre la vue affichée sans écran.</summary>
+    private bool HasSubscribers
+    {
+        get
+        {
+            var shown = _live.ViewId;
+            foreach (var subscriber in _subscribers)
+            {
+                if (subscriber.Follows(shown)) return true;
+            }
+
+            return false;
+        }
+    }
 
     private static double FpsOf(TimeSpan interval) => (double)TimeSpan.TicksPerSecond / Math.Max(1, interval.Ticks);
 
     /// <summary>
     /// Le plafond d'images du moment. Sans écran, l'image ne part nulle part : elle ne sert qu'aux abonnés de l'aperçu, donc le
     /// plafond ne dépasse pas celui du plus rapide d'entre eux (4 i/s pour un aperçu normal : pas d'encodage perdu à 12 i/s).
-    /// Avec l'écran, c'est celui de la disposition.
+    /// Avec l'écran, c'est celui de la disposition. Un abonné à une autre vue que la vue affichée n'y change rien.
     /// </summary>
     private void ApplyFpsCap()
     {
         var cap = _configuredFps;
         if (_screen.State != ScreenState.Ready)
         {
+            var shown = _live.ViewId;
             TimeSpan? shortest = null;
             foreach (var subscriber in _subscribers)
             {
-                if (subscriber.IsDisposed) continue;
+                if (subscriber.IsDisposed || !subscriber.Follows(shown)) continue;
                 if (shortest is null || subscriber.Interval < shortest) shortest = subscriber.Interval;
             }
 
@@ -981,12 +1071,15 @@ public sealed class DisplayLoop : IDisposable
         _scheduler.SetMaxFps(cap);
     }
 
-    /// <summary>Remet <paramref name="frame"/> à chaque abonné (il remplace l'image en attente) puis livre ceux dont le délai est écoulé.</summary>
-    private void Publish(PreviewFrame frame)
+    /// <summary>
+    /// Remet <paramref name="frame"/>, l'image de la vue <paramref name="viewId"/>, à chaque abonné qui la regarde (elle remplace
+    /// l'image en attente) puis livre ceux dont le délai est écoulé.
+    /// </summary>
+    private void Publish(PreviewFrame frame, Guid viewId)
     {
         foreach (var subscriber in _subscribers)
         {
-            subscriber.Pending = frame;
+            if (subscriber.Follows(viewId)) subscriber.Pending = frame;
         }
 
         FlushPreview();
@@ -1059,6 +1152,7 @@ public sealed class DisplayLoop : IDisposable
 
         if (_screen.State != ScreenState.Ready && !TryReconnect() && !HasSubscribers)
         {
+            RenderHiddenPreviews();
             return NextDelay();
         }
 
@@ -1067,7 +1161,90 @@ public sealed class DisplayLoop : IDisposable
         RenderAndSend();
         KeepAlive();
         FlushPreview();
+        RenderHiddenPreviews();
         return NextDelay();
+    }
+
+    // ---- Aperçu d'une vue qui n'est pas affichée ----
+
+    /// <summary>Le compositeur des aperçus de vues cachées : le sien, pour que le lissage des panneaux de l'écran ne les voie pas.</summary>
+    private FrameComposer? _previewComposer;
+
+    /// <summary>
+    /// Compose chaque vue demandée par un abonné sans être la vue affichée, une fois par échéance de cet abonné, et lui remet
+    /// l'image. Rien n'est envoyé à l'écran, l'ordonnanceur d'images n'est pas touché et personne ne regarde ces vues quand plus
+    /// aucun abonné ne les demande (le compositeur est alors libéré).
+    /// </summary>
+    private void RenderHiddenPreviews()
+    {
+        var live = _live;
+        HashSet<Guid>? due = null;
+        var now = _time.GetTimestamp();
+        foreach (var subscriber in _subscribers)
+        {
+            if (subscriber.IsDisposed || subscriber.Follows(live.ViewId) || !live.Layout.Views.Any(v => v.Id == subscriber.ViewId)) continue;
+            if (subscriber.HasPublished && _time.GetElapsedTime(subscriber.LastPublish, now) < subscriber.Interval) continue;
+
+            due ??= [];
+            due.Add(subscriber.ViewId!.Value);
+        }
+
+        if (due is null)
+        {
+            if (!_subscribers.Any(s => !s.IsDisposed && !s.Follows(live.ViewId))) DisposePreviewComposer();
+            return;
+        }
+
+        foreach (var viewId in due)
+        {
+            var view = live.Layout.Views.FirstOrDefault(v => v.Id == viewId);
+            if (view is null) continue; // une vue qui n'existe plus : rien à montrer
+
+            try
+            {
+                _previewComposer ??= new FrameComposer(_renderErrors);
+                using var bitmap = _previewComposer.Compose(view.Placements, live.Modules, _theme, _background, _time.GetLocalNow());
+                var frame = new PreviewFrame(JpegEncoder.Encode(bitmap, live.Layout.Rotation), live.Layout.Rotation);
+                foreach (var subscriber in _subscribers)
+                {
+                    if (!subscriber.IsDisposed && subscriber.ViewId == viewId) subscriber.Pending = frame;
+                }
+            }
+            catch (Exception ex)
+            {
+                _renderErrors.Report($"Échec du rendu de l'aperçu d'une vue cachée : {ex}");
+                foreach (var subscriber in _subscribers)
+                {
+                    // Pas de nouvel essai avant l'échéance suivante de l'abonné : un échec ne fait pas tourner la boucle à vide.
+                    if (!subscriber.IsDisposed && subscriber.ViewId == viewId) (subscriber.HasPublished, subscriber.LastPublish) = (true, now);
+                }
+            }
+        }
+
+        FlushPreview();
+    }
+
+    /// <summary>Le délai avant la prochaine composition d'une vue cachée ; <c>null</c> si aucun abonné n'en demande.</summary>
+    private TimeSpan? UntilNextHiddenPreview()
+    {
+        var shown = _live.ViewId;
+        TimeSpan? soonest = null;
+        foreach (var subscriber in _subscribers)
+        {
+            if (subscriber.IsDisposed || subscriber.Follows(shown) || !_live.Layout.Views.Any(v => v.Id == subscriber.ViewId)) continue;
+            var wait = subscriber.HasPublished ? subscriber.Interval - _time.GetElapsedTime(subscriber.LastPublish) : TimeSpan.Zero;
+            if (soonest is null || wait < soonest) soonest = wait;
+        }
+
+        return soonest;
+    }
+
+    private void DisposePreviewComposer()
+    {
+        if (_previewComposer is null) return;
+
+        DisposeQuietly(_previewComposer);
+        _previewComposer = null;
     }
 
     public void Dispose()
@@ -1109,6 +1286,7 @@ public sealed class DisplayLoop : IDisposable
 
         // Le compositeur garde une copie floutée du fond : on le libère avant le fond.
         _composer.Dispose();
+        DisposePreviewComposer();
         _background.Dispose();
     }
 
@@ -1172,6 +1350,12 @@ public sealed class DisplayLoop : IDisposable
             {
                 delay = Min(delay, preview);
             }
+        }
+
+        // Une vue cachée qu'un abonné regarde se recompose à l'échéance de cet abonné, sans écran comme avec.
+        if (UntilNextHiddenPreview() is { } hiddenPreview)
+        {
+            delay = Min(delay, hiddenPreview);
         }
 
         return delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
@@ -1284,7 +1468,7 @@ public sealed class DisplayLoop : IDisposable
             if (emulated)
             {
                 // Pas d'écran : l'image ne part nulle part, elle nourrit seulement l'aperçu.
-                Publish(frame);
+                Publish(frame, live.ViewId);
                 return;
             }
 
@@ -1314,7 +1498,7 @@ public sealed class DisplayLoop : IDisposable
                     Trace.TraceInformation($"Image {FramesSent} envoyée ({jpeg.Length} octets){TimingSummary()}");
                 }
 
-                Publish(frame); // le tableau envoyé n'est plus touché : on le passe tel quel aux abonnés
+                Publish(frame, live.ViewId); // le tableau envoyé n'est plus touché : on le passe tel quel aux abonnés
             }
             else
             {

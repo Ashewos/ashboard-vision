@@ -417,7 +417,7 @@ public sealed partial class ServiceControlHandlerTests
     }
 
     [Fact]
-    public async Task Reload_CommandableModuleAppearsOrDisappears_ReappliesHotkeys()
+    public async Task Reload_CommandableModuleAppearsOrDisappears_DoesNotReapplyHotkeys()
     {
         using var rig = new Rig();
         rig.Store.Save(Layout(Place(A, "fake"), Place(Conf1, "conf", column: 4, columns: 2, rows: 1)));
@@ -428,7 +428,8 @@ public sealed partial class ServiceControlHandlerTests
         rig.Store.Save(Layout(Place(A, "fake"), Place(Conf1, "conf", column: 4, columns: 2, rows: 1))); // il revient
         await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));
 
-        Assert.Equal(3, rig.Hotkeys.Applied.Count);
+        Assert.Single(rig.Hotkeys.Applied); // les raccourcis ne dépendent plus d'un module commandable : rien à reposer
+        Assert.Same(ShortcutDefaults.All, rig.Hotkeys.Applied[0]);
     }
 
     [Fact]
@@ -662,7 +663,7 @@ public sealed partial class ServiceControlHandlerTests
         using var rig = new Rig();
         var frames = new List<PreviewFrame>();
 
-        using var subscription = rig.Handler.SubscribePreview(10, frames.Add);
+        using var subscription = rig.Handler.SubscribePreview(10, null, frames.Add);
         rig.LoopRig.Loop.Tick();
         rig.LoopRig.Time.Advance(TimeSpan.FromSeconds(1));
         rig.LoopRig.Loop.Tick();
