@@ -2,6 +2,7 @@ using AshboardVision.Sdk;
 using SkiaSharp;
 using Trofeo.Core.Rendering;
 using Trofeo.Extensions.Protocol;
+using Trofeo.Extensions.Service;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Extensions.Tests;
@@ -200,5 +201,59 @@ public sealed class RemoteModuleVisibilityTests : IAsyncLifetime
         Assert.Single(host.Of<Visibility>());
         using var bitmap = rig.Draw(module);
         Assert.True(IsEmpty(bitmap));
+    }
+
+    [WindowsHostFact]
+    public async Task HiddenCase_IsNeverReportedAsNotResponding_UntilItIsShownWithoutAFrame()
+    {
+        var factory = new FakeHostFactory();
+        var rig = FakeRig(factory);
+        var module = rig.Open();
+        var statusChanged = 0;
+        module.StatusChanged += (_, _) => Interlocked.Increment(ref statusChanged);
+        module.SetVisible(false, Place(rig));
+        var host = await factory.WaitForStartAsync();
+        await host.WaitAsync<Open>();
+
+        // L'hôte ne dessine pas une case cachée : aucune image en 10 s n'est normal, y compris après un changement d'apparence.
+        rig.Time.Advance(TimeSpan.FromSeconds(11));
+        rig.Supervisor.SetAppearance(ModuleSandbox.Json("""{"theme":"light"}"""));
+        rig.Time.Advance(TimeSpan.FromSeconds(11));
+        Assert.Equal(ModuleHealth.Online, module.Status.Health);
+        Assert.Equal(0, Volatile.Read(ref statusChanged));
+
+        // Elle revient sans qu'aucune image soit arrivée : l'attente reprend, et le délai court de nouveau.
+        module.SetVisible(true, Place(rig));
+        rig.Time.Advance(TimeSpan.FromSeconds(9.9));
+        Assert.Equal(ModuleHealth.Online, module.Status.Health);
+        rig.Time.Advance(TimeSpan.FromSeconds(0.2));
+        Assert.Equal(new ModuleStatus(ModuleHealth.Offline, RemoteModule.NotRespondingText), module.Status);
+        Assert.Equal(1, Volatile.Read(ref statusChanged));
+    }
+
+    [WindowsHostFact]
+    public async Task ShownCase_HiddenBeforeTheTimeout_StopsWaiting_AndAFrameWhileHiddenEndsTheWait()
+    {
+        var factory = new FakeHostFactory();
+        var rig = FakeRig(factory);
+        var module = rig.Open();
+        using (rig.Draw(module))
+        {
+        }
+
+        var host = await factory.WaitForStartAsync();
+        var open = await host.WaitAsync<Open>();
+
+        rig.Time.Advance(TimeSpan.FromSeconds(5));
+        module.SetVisible(false, Place(rig));
+        rig.Time.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(ModuleHealth.Online, module.Status.Health);
+
+        // Une image arrivée pendant que la case est cachée finit l'attente : revenue, elle ne se dit jamais en panne.
+        await host.SendFrameAsync(open, 0, SKColors.Red);
+        await TestWait.UntilAsync(() => module.FramesReceived == 1);
+        module.SetVisible(true, Place(rig));
+        rig.Time.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(ModuleHealth.Online, module.Status.Health);
     }
 }

@@ -177,6 +177,12 @@ public sealed class RemoteModule : IModule, IHideableModule
 
             changed = _visible != visible;
             _visible = visible; // avant l'ouverture : le superviseur s'en sert pour ouvrir l'instance cachée
+            if (changed)
+            {
+                // L'hôte ne dessine pas une case cachée : on n'attend pas d'image d'elle. Au retour, l'attente reprend si elle n'est pas finie.
+                _awaitTimer?.Dispose();
+                _awaitTimer = visible && _awaiting ? _time.CreateTimer(_ => OnResponseTimeout(), null, ResponseTimeout, Timeout.InfiniteTimeSpan) : null;
+            }
         }
 
         // Une instance qui s'ouvre (ou se rouvre à une autre taille) apprend sa visibilité en même temps ; sinon, on la lui annonce.
@@ -378,6 +384,7 @@ public sealed class RemoteModule : IModule, IHideableModule
     /// <summary>
     /// On attend une image (ouverture, nouvelle taille, nouveau thème, hôte relancé) : sans elle au bout de
     /// <see cref="ResponseTimeout"/>, la case dit que le module ne répond pas. Un seul minuteur, tant que l'image n'est pas là.
+    /// Une case cachée n'est pas dessinée par l'hôte : l'attente est notée mais le minuteur ne part qu'à son retour.
     /// </summary>
     internal void BeginAwaitingFrame()
     {
@@ -391,7 +398,7 @@ public sealed class RemoteModule : IModule, IHideableModule
             _awaiting = true;
             _notResponding = false;
             _awaitTimer?.Dispose();
-            _awaitTimer = _time.CreateTimer(_ => OnResponseTimeout(), null, ResponseTimeout, Timeout.InfiniteTimeSpan);
+            _awaitTimer = _visible ? _time.CreateTimer(_ => OnResponseTimeout(), null, ResponseTimeout, Timeout.InfiniteTimeSpan) : null;
         }
     }
 
@@ -400,7 +407,7 @@ public sealed class RemoteModule : IModule, IHideableModule
         bool statusChanged;
         lock (_gate)
         {
-            if (_disposed || !_awaiting)
+            if (_disposed || !_awaiting || !_visible)
             {
                 return;
             }
