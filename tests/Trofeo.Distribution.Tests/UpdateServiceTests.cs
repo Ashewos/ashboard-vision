@@ -158,6 +158,11 @@ public sealed class UpdateServiceTests
         h.Time.Advance(TimeSpan.FromSeconds(1));
         await UpdateHarness.Until(() => h.FeedRequests == 1 && h.Service.Current.State == UpdateState.UpToDate);
 
+        // L'état est « à jour » un instant avant que la vérification rende son verrou ; une vérification planifiée qui trouve le
+        // verrou pris ne fait rien (voulu : 24 h les séparent). Le nettoyage attend ce verrou puis le rend : une fois fini, la
+        // première vérification l'est aussi, et les 24 h simulées ci-dessous ne peuvent plus tomber sur elle.
+        await h.Service.CleanDownloadDirectoryAsync();
+
         h.Time.Advance(TimeSpan.FromHours(23));
         Assert.Equal(1, h.FeedRequests);
 
