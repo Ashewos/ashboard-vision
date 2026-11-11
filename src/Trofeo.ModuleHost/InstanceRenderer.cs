@@ -15,6 +15,11 @@ namespace Trofeo.ModuleHost;
 /// qu'il est animé, au plus <see cref="HostContext.MaxFps"/> fois par seconde, dans un tampon que le service a fini de
 /// copier (<see cref="FrameDone"/>) : un tampon qui attend son accusé n'est jamais écrit. Sans demande ni animation, la boucle dort.
 /// </para>
+/// <para>
+/// <b>Visibilité.</b> Une instance cachée (<see cref="SetVisible"/>) tourne comme les autres (démarrage, minuteries du module) mais
+/// n'est jamais dessinée : pour la boucle, c'est « rien à faire ». Une demande de dessin faite pendant ce temps reste en attente et
+/// part dès que l'instance redevient visible.
+/// </para>
 /// </summary>
 internal sealed class InstanceRenderer : IAsyncDisposable
 {
@@ -34,10 +39,11 @@ internal sealed class InstanceRenderer : IAsyncDisposable
     private readonly SKSurface[] _surfaces = new SKSurface[2];
     private readonly CancellationTokenSource _closing = new();
     private readonly SemaphoreSlim _wake = new(0, 1);
-    private readonly object _gate = new(); // _dirty, _busy, _lastBuffer, _lastFrame, _cooldownUntil
+    private readonly object _gate = new(); // _dirty, _visible, _busy, _lastBuffer, _lastFrame, _cooldownUntil
     private readonly object _statusGate = new(); // l'état et son envoi
     private readonly bool[] _busy = new bool[2];
     private bool _dirty = true;
+    private bool _visible = true;
     private int _lastBuffer = 1;
     private long _lastFrame = Stopwatch.GetTimestamp() - 10 * Stopwatch.Frequency;
     private long _cooldownUntil;
@@ -104,6 +110,17 @@ internal sealed class InstanceRenderer : IAsyncDisposable
         lock (_gate)
         {
             _busy[buffer] = false;
+        }
+
+        Wake();
+    }
+
+    /// <summary>La case est cachée ou redevient visible (une instance est visible à son ouverture). Cachée, elle n'est plus dessinée.</summary>
+    public void SetVisible(bool visible)
+    {
+        lock (_gate)
+        {
+            _visible = visible;
         }
 
         Wake();
@@ -231,9 +248,9 @@ internal sealed class InstanceRenderer : IAsyncDisposable
                     lock (_gate)
                     {
                         buffer = FreeBuffer();
-                        if (buffer < 0 || !(_dirty || animating))
+                        if (!_visible || buffer < 0 || !(_dirty || animating))
                         {
-                            break; // rien à faire : un événement (demande, accusé, nouveau plafond) réveillera la boucle
+                            break; // rien à faire (cachée comprise) : un événement (demande, accusé, nouveau plafond, retour de la case) réveillera la boucle
                         }
 
                         due = Math.Max(_lastFrame + (Stopwatch.Frequency / Math.Max(1, _host.MaxFps)), _cooldownUntil);
@@ -249,6 +266,11 @@ internal sealed class InstanceRenderer : IAsyncDisposable
 
                     lock (_gate)
                     {
+                        if (!_visible)
+                        {
+                            continue; // cachée pendant l'attente : on relit l'état, la demande reste en attente
+                        }
+
                         _dirty = false; // une demande faite pendant le dessin en réclame un autre
                         _busy[buffer] = true;
                         _lastBuffer = buffer;

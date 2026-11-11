@@ -10,12 +10,16 @@ namespace Trofeo.Extensions.Service;
 /// jamais attendre l'hôte. Avant la première image, rien n'est dessiné ; si l'hôte meurt ou se tait, la dernière image reste
 /// (assombrie) avec un message, et l'état de la case passe en <see cref="ModuleHealth.Offline"/>.
 /// <para>
-/// La taille de la case n'est connue qu'au premier <see cref="Render"/> : c'est lui qui fait ouvrir l'instance dans l'hôte (et
-/// la rouvrir quand la taille ou la taille du texte change). <see cref="Render"/>, <see cref="Dispose"/> et les événements
-/// sont sûrs entre fils.
+/// La taille de la case n'est connue qu'au premier <see cref="Render"/> (ou au premier <see cref="SetVisible"/>, pour une case
+/// créée cachée) : c'est lui qui fait ouvrir l'instance dans l'hôte (et la rouvrir quand la taille ou la taille du texte change).
+/// <see cref="Render"/>, <see cref="SetVisible"/>, <see cref="Dispose"/> et les événements sont sûrs entre fils.
+/// </para>
+/// <para>
+/// <b>Case cachée</b> (dans une vue qui n'est pas affichée) : l'instance reste ouverte et tourne dans l'hôte, qui ne la dessine
+/// plus. Les images qui arriveraient quand même sont gardées mais ne réveillent pas l'affichage, et la case ne se dit pas animée.
 /// </para>
 /// </summary>
-public sealed class RemoteModule : IModule
+public sealed class RemoteModule : IModule, IHideableModule
 {
     /// <summary>Le message d'une case dont l'hôte n'a envoyé aucune image à temps.</summary>
     public const string NotRespondingText = "Le module ne répond pas";
@@ -42,6 +46,7 @@ public sealed class RemoteModule : IModule
     private FrameGeometry? _geometry;
     private ModuleStatus _status = new(ModuleHealth.Online);
     private bool _disposed;
+    private bool _visible = true;
     private long _messageVersion = -1;
     private long _framesReceived;
     private DateTimeOffset _statusWindowStart;
@@ -79,7 +84,7 @@ public sealed class RemoteModule : IModule
         {
             lock (_gate)
             {
-                return _animating && _supervisorMessage is null;
+                return _animating && _supervisorMessage is null && _visible;
             }
         }
     }
@@ -95,6 +100,18 @@ public sealed class RemoteModule : IModule
     /// Le banc d'essai (<c>ashboard-module check</c>) s'en sert pour savoir qu'une image neuve est arrivée.
     /// </summary>
     public long FramesReceived => Interlocked.Read(ref _framesReceived);
+
+    /// <summary>Faux tant que la case est cachée (dans une vue qui n'est pas affichée) ; vrai dès sa création.</summary>
+    internal bool IsVisible
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _visible;
+            }
+        }
+    }
 
     /// <summary>Ce que la fabrique a reçu pour créer la case (identifiant d'instance, réglages, journal…).</summary>
     internal ModuleContext Context { get; }
@@ -118,27 +135,7 @@ public sealed class RemoteModule : IModule
     /// </summary>
     public void Render(SKCanvas canvas, ModuleRenderContext ctx)
     {
-        var geometry = new FrameGeometry(
-            (int)Math.Round(ctx.Bounds.Width), (int)Math.Round(ctx.Bounds.Height), ctx.Size.Columns, ctx.Size.Rows, ctx.TextScale);
-        bool changed;
-        lock (_gate)
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            changed = _geometry != geometry;
-            if (changed)
-            {
-                _geometry = geometry;
-            }
-        }
-
-        if (changed && geometry.Width > 0 && geometry.Height > 0)
-        {
-            _owner.GeometryChanged(this, geometry);
-        }
+        ApplyGeometry(ctx);
 
         ModuleStatus status;
         lock (_gate)
@@ -161,6 +158,56 @@ public sealed class RemoteModule : IModule
         {
             ModuleDrawing.DrawActionMessage(canvas, ctx.Bounds, ctx.Theme, ctx.TextScale, message);
         }
+    }
+
+    /// <summary>
+    /// La case est cachée ou redevient visible. Ne bloque jamais (elle peut être appelée depuis le fil de l'interface) : au plus, elle
+    /// fait ouvrir l'instance (une case créée cachée n'a jamais de <see cref="Render"/>) et poste le message au superviseur, qui
+    /// l'écrit à l'hôte sur son propre fil. Sans changement, il ne se passe rien.
+    /// </summary>
+    public void SetVisible(bool visible, ModuleRenderContext place)
+    {
+        bool changed;
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            changed = _visible != visible;
+            _visible = visible; // avant l'ouverture : le superviseur s'en sert pour ouvrir l'instance cachée
+        }
+
+        // Une instance qui s'ouvre (ou se rouvre à une autre taille) apprend sa visibilité en même temps ; sinon, on la lui annonce.
+        if (!ApplyGeometry(place) && changed)
+        {
+            _owner.VisibilityChanged(this, visible);
+        }
+    }
+
+    /// <summary>Retient la taille de la case ; si elle est neuve ou différente, le superviseur (re)ouvre l'instance. Vrai s'il l'a fait.</summary>
+    private bool ApplyGeometry(ModuleRenderContext ctx)
+    {
+        var geometry = new FrameGeometry(
+            (int)Math.Round(ctx.Bounds.Width), (int)Math.Round(ctx.Bounds.Height), ctx.Size.Columns, ctx.Size.Rows, ctx.TextScale);
+        lock (_gate)
+        {
+            if (_disposed || _geometry == geometry)
+            {
+                return false;
+            }
+
+            _geometry = geometry;
+        }
+
+        if (geometry.Width <= 0 || geometry.Height <= 0)
+        {
+            return false;
+        }
+
+        _owner.GeometryChanged(this, geometry);
+        return true;
     }
 
     /// <summary>Ferme la case : l'instance est refermée dans l'hôte, qui s'arrête avec sa dernière case.</summary>
@@ -215,7 +262,7 @@ public sealed class RemoteModule : IModule
         }
 
         slot.Recycle(replaced);
-        Raise(statusChanged, newImage: true);
+        Raise(statusChanged, newImage: true); // cachée, la case garde l'image sans réveiller l'affichage (voir Raise)
         return true;
     }
 
@@ -388,7 +435,8 @@ public sealed class RemoteModule : IModule
             StatusChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        if (statusChanged || newImage)
+        // Une case cachée n'est pas dessinée : ni image neuve ni nouvel état ne réveillent l'affichage (le retour de la case le fera).
+        if ((statusChanged || newImage) && IsVisible)
         {
             Invalidated?.Invoke(this, EventArgs.Empty);
         }

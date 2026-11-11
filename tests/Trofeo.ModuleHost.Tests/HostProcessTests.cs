@@ -15,6 +15,7 @@ namespace Trofeo.ModuleHost.Tests;
 /// l'un après l'autre.
 /// </summary>
 [Trait("Windows", "ModuleHost")]
+[Collection("HostRig")]
 public sealed class HostProcessTests
 {
     private static async Task<HostRig> StartedAsync(ModulePermission[]? granted = null, int maxFps = 30, bool autoFrameDone = true)

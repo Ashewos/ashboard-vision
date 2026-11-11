@@ -31,6 +31,7 @@ public sealed class ProtocolTests
         { "appearanceChanged", new AppearanceChanged(Json("""{"theme":"light"}""")) },
         { "limits", new Limits(15) },
         { "frameDone", new FrameDone(Instance, 1) },
+        { "visibility", new Visibility(Instance, false) },
         { "lookup", new Lookup(7, "entity", "salon") },
         { "runAction", new RunAction(8, Instance, "test", Json("""{"host":"x"}""")) },
         { "secretValue", new SecretValue(9, "s3cret") },
@@ -86,7 +87,7 @@ public sealed class ProtocolTests
     }
 
     [Fact]
-    public void ProtocolVersion_Is1Point0() => Assert.Equal("1.0", HostMessage.ProtocolVersion);
+    public void ProtocolVersion_Is1Point1() => Assert.Equal("1.1", HostMessage.ProtocolVersion);
 
     [Fact]
     public void EveryMessage_CoversTheWholeProtocol()

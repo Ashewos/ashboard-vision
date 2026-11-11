@@ -136,6 +136,13 @@ internal sealed class HostSession
                 }
 
                 break;
+            case Visibility visibility:
+                if (_instances.TryGetValue(visibility.InstanceId, out var visibleOwner))
+                {
+                    visibleOwner.SetVisible(visibility.Visible); // une instance inconnue (fermée entre-temps) est ignorée
+                }
+
+                break;
             case AppearanceChanged changed:
                 _context!.Theme = ResolveTheme(changed.Appearance);
                 foreach (var instance in _instances.Values)

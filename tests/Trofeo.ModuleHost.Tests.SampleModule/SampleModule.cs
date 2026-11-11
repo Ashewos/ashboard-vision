@@ -43,6 +43,12 @@ public sealed class SampleModule : CommunityModule
             {
                 _color = SKColor.Parse(hex);
             }
+
+            if (settings.TryGetProperty("startDelayMs", out var delay) && delay.TryGetInt32(out var milliseconds))
+            {
+                // Un démarrage lent : la boucle de dessin de l'hôte ne part qu'après (les messages suivant l'ouverture arrivent avant).
+                await Task.Delay(milliseconds, ct);
+            }
         }
 
         Services.Log.Info("started:" + _mode);
@@ -56,6 +62,17 @@ public sealed class SampleModule : CommunityModule
                     {
                         await Task.Delay(50);
                         Invalidate();
+                    }
+                });
+                break;
+            case "ticker":
+                // Une minuterie propre au module : elle doit continuer même quand la case est cachée.
+                _ = Task.Run(async () =>
+                {
+                    for (var i = 0; !_stopped; i++)
+                    {
+                        await Task.Delay(100);
+                        Services.Log.Info("tick-" + i);
                     }
                 });
                 break;
