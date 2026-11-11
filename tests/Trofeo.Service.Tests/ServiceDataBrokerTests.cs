@@ -108,13 +108,18 @@ public sealed class ServiceDataBrokerTests
     public void Sensors_NoReadingYet_WaitsForTheFirstOne()
     {
         using var broker = Broker();
-        _ = Task.Run(async () =>
+
+        // Un fil à lui, pas la réserve de fils : sur une machine chargée (tests en parallèle qui bloquent des fils), un Task.Run et
+        // son Task.Delay pouvaient dépasser l'attente de 2 s du courtier, et le test échouait sans que le courtier y soit pour rien.
+        var publisher = new Thread(() =>
         {
-            await Task.Delay(100);
+            Thread.Sleep(100);
             _feed.Publish(Reading);
-        });
+        }) { IsBackground = true };
+        publisher.Start();
 
         var result = broker.Sensors();
+        publisher.Join();
 
         Assert.Equal(DataStatus.Ok, result.Status);
         Assert.Equal(12.5, result.Value!.Values["cpu.load"]);
