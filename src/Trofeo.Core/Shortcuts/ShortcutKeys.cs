@@ -40,6 +40,12 @@ public static class ShortcutKeys
         return true;
     }
 
+    /// <summary>Les deux écritures désignent la même combinaison (« alt+ctrl+right » et « Ctrl+Alt+Right »).</summary>
+    public static bool Same(string a, string b) =>
+        TryParse(a, out var modsA, out var keyA) && TryParse(b, out var modsB, out var keyB)
+            ? modsA == modsB && keyA == keyB
+            : string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
     private static uint Modifier(string word) => word.ToUpperInvariant() switch
     {
         "CTRL" => Ctrl,

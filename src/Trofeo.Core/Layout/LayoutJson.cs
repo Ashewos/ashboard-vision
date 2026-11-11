@@ -61,6 +61,9 @@ internal static class LayoutJson
             var layout = Deserialize(json, Warn, out viewsPresent);
             if (layout is null) return Fail(Unreadable, warnings);
 
+            // Un fichier d'avant les vues : ses raccourcis par défaut passent sur les nouvelles touches (une seule fois).
+            if (!viewsPresent) layout = layout with { Shortcuts = ShortcutMigration.Migrate(layout.Shortcuts) };
+
             var error = Validate(layout);
             return error is null
                 ? new LayoutLoadResult(layout, null, warnings)
@@ -417,9 +420,9 @@ internal static class LayoutJson
     {
         if (node is not JsonValue value) return false;
         if (value.TryGetValue<string>(out var name))
-            return !int.TryParse(name, out _) && Enum.TryParse<ModuleCommandKind>(name, ignoreCase: true, out var kind) &&
+            return !int.TryParse(name, out _) && Enum.TryParse<ShortcutCommand>(name, ignoreCase: true, out var kind) &&
                    Enum.IsDefined(kind);
-        return value.TryGetValue<int>(out var number) && Enum.IsDefined((ModuleCommandKind)number);
+        return value.TryGetValue<int>(out var number) && Enum.IsDefined((ShortcutCommand)number);
     }
 
     /// <summary>La raison du refus, en français, ou <c>null</c> si la disposition est valide.</summary>

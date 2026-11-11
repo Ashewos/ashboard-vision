@@ -90,9 +90,12 @@ public sealed class HotkeyRouter(
         if (_disposed || id < 1 || id > _bindings.Count) return;
 
         var binding = _bindings[id - 1];
+        // Les commandes de vue et de module complémentaire n'ont pas encore de destinataire ici.
+        if (binding.Command.ToModuleCommand() is not { } kind) return;
+
         try
         {
-            resolveTarget(binding.Target)?.HandleCommand(new ModuleCommand(binding.Command, binding.Index));
+            resolveTarget(binding.Target)?.HandleCommand(new ModuleCommand(kind, binding.Index));
         }
         catch (Exception ex)
         {

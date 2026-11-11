@@ -323,7 +323,7 @@ public sealed partial class ServiceControlHandlerTests
     public async Task Reload_PassesShortcutsToHotkeyHost()
     {
         using var rig = new Rig();
-        ShortcutBinding[] custom = [new("Ctrl+Alt+Up", ModuleCommandKind.NextTab)];
+        ShortcutBinding[] custom = [new("Ctrl+Alt+Up", ShortcutCommand.NextTab)];
         rig.Store.Save(Layout(Place(A, "fake")) with { Shortcuts = custom });
         await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));
 
@@ -407,7 +407,7 @@ public sealed partial class ServiceControlHandlerTests
         using var rig = new Rig();
         rig.Store.Save(Layout(Place(A, "fake"), Place(Conf1, "conf", column: 4, columns: 2, rows: 1)));
         await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));
-        ShortcutBinding[] custom = [new("Ctrl+Alt+Up", ModuleCommandKind.NextTab)];
+        ShortcutBinding[] custom = [new("Ctrl+Alt+Up", ShortcutCommand.NextTab)];
 
         rig.Store.Save(Layout(Place(A, "fake"), Place(Conf1, "conf", column: 4, columns: 2, rows: 1)) with { Shortcuts = custom });
         await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));

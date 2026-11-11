@@ -10,7 +10,7 @@ public sealed class LayoutTransferTests
 {
     private static DashboardLayout Sample() => DashboardLayout.Default with
     {
-        Shortcuts = [new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab)],
+        Shortcuts = [new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextTab)],
         Appearance = new AppearanceSettings("pixel", PanelOpacity: 0.4f),
         Shelf =
         [

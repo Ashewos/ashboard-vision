@@ -39,8 +39,8 @@ public sealed class HotkeyRouterTests
         }
     }
 
-    private static readonly ShortcutBinding Next = new("Ctrl+Alt+Right", ModuleCommandKind.NextTab);
-    private static readonly ShortcutBinding Third = new("Ctrl+Shift+F5", ModuleCommandKind.SelectTab, 2);
+    private static readonly ShortcutBinding Next = new("Ctrl+Alt+Right", ShortcutCommand.NextTab);
+    private static readonly ShortcutBinding Third = new("Ctrl+Shift+F5", ShortcutCommand.SelectTab, 2);
 
     private static string[] Capture(Action action)
     {
@@ -85,7 +85,7 @@ public sealed class HotkeyRouterTests
     public void Router_InvalidKeys_Skipped()
     {
         var registrar = new FakeRegistrar();
-        using var router = new HotkeyRouter(registrar, [new ShortcutBinding("Foo", ModuleCommandKind.NextTab), Third], _ => null);
+        using var router = new HotkeyRouter(registrar, [new ShortcutBinding("Foo", ShortcutCommand.NextTab), Third], _ => null);
 
         var lines = Capture(router.RegisterAll);
 
@@ -114,7 +114,7 @@ public sealed class HotkeyRouterTests
         var registrar = new FakeRegistrar { Refused = { 1 } };
         using var router = new HotkeyRouter(registrar, [], _ => null);
 
-        var failures = router.Replace([Next, new ShortcutBinding("Foo", ModuleCommandKind.NextTab), Third]);
+        var failures = router.Replace([Next, new ShortcutBinding("Foo", ShortcutCommand.NextTab), Third]);
 
         Assert.Equal(
             [
@@ -137,6 +137,24 @@ public sealed class HotkeyRouterTests
         router.OnHotkey(2); // n'existe plus
 
         Assert.Equal([new ModuleCommand(ModuleCommandKind.SelectTab, 2)], target.Commands);
+    }
+
+    [Fact]
+    public void Router_ViewAndCommunityCommands_AreNotSentToTheTabModule()
+    {
+        var target = new FakeTarget();
+        using var router = new HotkeyRouter(
+            new FakeRegistrar(),
+            [new("Ctrl+Alt+Left", ShortcutCommand.PreviousView), new("Ctrl+Alt+F7", ShortcutCommand.SelectView, 1), new("Ctrl+Alt+F8", ShortcutCommand.Community, 0, null, "acme.demo", "go"), Next],
+            _ => target);
+        router.RegisterAll();
+
+        router.OnHotkey(1);
+        router.OnHotkey(2);
+        router.OnHotkey(3);
+        router.OnHotkey(4);
+
+        Assert.Equal([new ModuleCommand(ModuleCommandKind.NextTab)], target.Commands);
     }
 
     [Fact]
@@ -198,7 +216,7 @@ public sealed class HotkeyRouterTests
     public void Router_Dispose_UnregistersAll()
     {
         var registrar = new FakeRegistrar { Refused = { 2 } };
-        var router = new HotkeyRouter(registrar, [Next, Third, new ShortcutBinding("Foo", ModuleCommandKind.NextTab)], _ => null);
+        var router = new HotkeyRouter(registrar, [Next, Third, new ShortcutBinding("Foo", ShortcutCommand.NextTab)], _ => null);
         router.RegisterAll();
 
         router.Dispose();

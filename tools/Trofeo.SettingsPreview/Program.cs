@@ -402,9 +402,9 @@ internal static class Program
             Shortcuts =
             [
                 .. Trofeo.Core.Shortcuts.ShortcutDefaults.All.Take(2),
-                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+1", Trofeo.ModuleKit.ModuleCommandKind.SelectTab, 0, CodexId),
-                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+2", Trofeo.ModuleKit.ModuleCommandKind.SelectTab, 1, CodexId),
-                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+F5", Trofeo.ModuleKit.ModuleCommandKind.NextTab, 0, Guid.NewGuid()),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+1", Trofeo.Core.Shortcuts.ShortcutCommand.SelectTab, 0, CodexId),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+2", Trofeo.Core.Shortcuts.ShortcutCommand.SelectTab, 1, CodexId),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+F5", Trofeo.Core.Shortcuts.ShortcutCommand.NextTab, 0, Guid.NewGuid()),
             ],
         };
 

@@ -33,7 +33,7 @@ public sealed class AppearanceCommandTests : IDisposable
             new ModulePlacement(Guid.NewGuid(), "clock", 0, 0, 4, 2, TextSize.Large, JsonDocument.Parse("""{"format":"12h"}""").RootElement.Clone()),
             new ModulePlacement(Guid.NewGuid(), "network", 4, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone()),
         ],
-        [new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab), new ShortcutBinding("Ctrl+Shift+F5", ModuleCommandKind.SelectTab, 4, Guid.NewGuid())]);
+        [new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextTab), new ShortcutBinding("Ctrl+Shift+F5", ShortcutCommand.SelectTab, 4, Guid.NewGuid())]);
 
     private int Run(params string[] args) =>
         AppearanceCommand.Run(LayoutPath, args, new FakeFonts("Segoe UI", "Arial"), _out, _err);

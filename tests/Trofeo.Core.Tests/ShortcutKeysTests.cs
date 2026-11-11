@@ -38,16 +38,26 @@ public sealed class ShortcutKeysTests
     }
 
     [Fact]
-    public void Defaults_ElevenBindings()
+    public void Defaults_ThirteenBindings()
     {
         var all = ShortcutDefaults.All;
 
-        Assert.Equal(11, all.Count);
-        Assert.Equal(new ShortcutBinding("Ctrl+Alt+Left", ModuleCommandKind.PreviousTab), all[0]);
-        Assert.Equal(new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab), all[1]);
+        Assert.Equal(13, all.Count);
+        Assert.Equal(new ShortcutBinding("Ctrl+Alt+Up", ShortcutCommand.PreviousTab), all[0]);
+        Assert.Equal(new ShortcutBinding("Ctrl+Alt+Down", ShortcutCommand.NextTab), all[1]);
+        Assert.Equal(new ShortcutBinding("Ctrl+Alt+Left", ShortcutCommand.PreviousView), all[2]);
+        Assert.Equal(new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextView), all[3]);
         for (var n = 1; n <= 9; n++)
-            Assert.Equal(new ShortcutBinding($"Ctrl+Alt+Shift+{n}", ModuleCommandKind.SelectTab, n - 1), all[n + 1]);
+            Assert.Equal(new ShortcutBinding($"Ctrl+Alt+Shift+{n}", ShortcutCommand.SelectTab, n - 1), all[n + 3]);
         Assert.All(all, b => Assert.Null(b.Target));
         Assert.All(all, b => Assert.True(ShortcutKeys.TryParse(b.Keys, out _, out _)));
+    }
+
+    [Fact]
+    public void Same_IgnoresCaseAndModifierOrder()
+    {
+        Assert.True(ShortcutKeys.Same("alt+ctrl+right", "Ctrl+Alt+Right"));
+        Assert.False(ShortcutKeys.Same("Ctrl+Alt+Left", "Ctrl+Alt+Right"));
+        Assert.True(ShortcutKeys.Same(" foo ", "FOO"));
     }
 }

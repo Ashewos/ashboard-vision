@@ -14,7 +14,7 @@ namespace Trofeo.Settings.ViewModels;
 public sealed record ShortcutTarget(Guid? Id, string Name);
 
 /// <summary>Une action qu'un raccourci peut envoyer : « Onglet précédent », « Onglet suivant » ou « Aller à l'onglet n ».</summary>
-public sealed record ShortcutActionChoice(ModuleCommandKind Command, int Index, string Text);
+public sealed record ShortcutActionChoice(ShortcutCommand Command, int Index, string Text);
 
 /// <summary>
 /// L'onglet Raccourcis : une ligne par raccourci (l'action en mots, les touches en pastille, le module visé), « Modifier »
@@ -42,9 +42,9 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
         _session = session;
         ActionChoices =
         [
-            new(ModuleCommandKind.PreviousTab, 0, Texts.ShortcutPrevious),
-            new(ModuleCommandKind.NextTab, 0, Texts.ShortcutNext),
-            .. Enumerable.Range(0, 9).Select(n => new ShortcutActionChoice(ModuleCommandKind.SelectTab, n, string.Format(Texts.ShortcutSelect, n + 1))),
+            new(ShortcutCommand.PreviousTab, 0, Texts.ShortcutPrevious),
+            new(ShortcutCommand.NextTab, 0, Texts.ShortcutNext),
+            .. Enumerable.Range(0, 9).Select(n => new ShortcutActionChoice(ShortcutCommand.SelectTab, n, string.Format(Texts.ShortcutSelect, n + 1))),
         ];
         _link.Changed += Refresh;
         _session.Changed += Refresh;
@@ -158,9 +158,10 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
 
     internal string ActionText(ShortcutBinding binding) => binding.Command switch
     {
-        ModuleCommandKind.PreviousTab => Texts.ShortcutPrevious,
-        ModuleCommandKind.NextTab => Texts.ShortcutNext,
-        _ => string.Format(Texts.ShortcutSelect, binding.Index + 1),
+        ShortcutCommand.PreviousTab => Texts.ShortcutPrevious,
+        ShortcutCommand.NextTab => Texts.ShortcutNext,
+        ShortcutCommand.SelectTab => string.Format(Texts.ShortcutSelect, binding.Index + 1),
+        _ => binding.Command.ToString(), // les textes des commandes de vue arrivent avec l'onglet Raccourcis des vues
     };
 
     // ---- Capture ----
@@ -289,10 +290,7 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
         return null;
     }
 
-    private static bool Same(string a, string b) =>
-        ShortcutKeys.TryParse(a, out var modsA, out var keyA) && ShortcutKeys.TryParse(b, out var modsB, out var keyB)
-            ? modsA == modsB && keyA == keyB
-            : string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+    private static bool Same(string a, string b) => ShortcutKeys.Same(a, b);
 
     // ---- Modifications ----
 

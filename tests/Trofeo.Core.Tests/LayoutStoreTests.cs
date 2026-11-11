@@ -98,8 +98,8 @@ public sealed class LayoutStoreTests : IDisposable
             Guid.NewGuid(), "clock", 0, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone());
         var layout = DashboardLayout.SingleView(180, [placement],
         [
-            new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab),
-            new ShortcutBinding("Ctrl+Shift+F5", ModuleCommandKind.SelectTab, 4, target),
+            new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextTab),
+            new ShortcutBinding("Ctrl+Shift+F5", ShortcutCommand.SelectTab, 4, target),
         ]);
         var store = new LayoutStore(FilePath);
 
@@ -109,8 +109,8 @@ public sealed class LayoutStoreTests : IDisposable
         Assert.NotNull(loaded.Shortcuts);
         Assert.Equal(
             [
-                new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab),
-                new ShortcutBinding("Ctrl+Shift+F5", ModuleCommandKind.SelectTab, 4, target),
+                new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextTab),
+                new ShortcutBinding("Ctrl+Shift+F5", ShortcutCommand.SelectTab, 4, target),
             ],
             loaded.Shortcuts);
         Assert.Contains("\"NextTab\"", File.ReadAllText(FilePath));
@@ -369,7 +369,7 @@ public sealed class LayoutStoreTests : IDisposable
     {
         // Chemin d'avant (clé en double) : les entrées null de Shortcuts n'arrivent pas jusqu'aux appelants.
         var json = LayoutJson(180, (0, 0, 4, 2)).TrimEnd().TrimEnd('}') +
-                   ",\"Rotation\":0,\"Shortcuts\":[null,{\"Keys\":\"Ctrl+Alt+Right\",\"Command\":\"NextTab\"}]}";
+                   ",\"Rotation\":0,\"Shortcuts\":[null,{\"Keys\":\"Ctrl+Alt+F6\",\"Command\":\"NextTab\"}]}";
         File.WriteAllText(FilePath, json);
 
         var warnings = new List<string>();
@@ -377,7 +377,7 @@ public sealed class LayoutStoreTests : IDisposable
 
         Assert.Equal(0, layout.Rotation);
         var binding = Assert.Single(layout.Shortcuts!);
-        Assert.Equal("Ctrl+Alt+Right", binding.Keys);
+        Assert.Equal("Ctrl+Alt+F6", binding.Keys);
         Assert.Equal(["Raccourci « ? » ignoré : touches absentes."], warnings);
         Assert.False(File.Exists(FilePath + ".bad"));
     }
@@ -557,7 +557,7 @@ public sealed class LayoutStoreTests : IDisposable
     {
         File.WriteAllText(FilePath, WithKey(LayoutJson(180, (0, 0, 4, 2)), "Shortcuts", """
             [
-              {"Keys":"Ctrl+Alt+Right","Command":"NextTab","Index":0,"Target":null},
+              {"Keys":"Ctrl+Alt+F6","Command":"NextTab","Index":0,"Target":null},
               {"Keys":"Ctrl+Alt+X","Command":"Fly","Index":0,"Target":null},
               {"Command":"NextTab"},
               {"Keys":"Ctrl","Command":"NextTab"},
@@ -571,8 +571,8 @@ public sealed class LayoutStoreTests : IDisposable
         Assert.Single(layout.Views[0].Placements);
         Assert.Equal(
             [
-                new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab),
-                new ShortcutBinding("Ctrl+Alt+F5", ModuleCommandKind.SelectTab, 3),
+                new ShortcutBinding("Ctrl+Alt+F6", ShortcutCommand.NextTab),
+                new ShortcutBinding("Ctrl+Alt+F5", ShortcutCommand.SelectTab, 3),
             ],
             layout.Shortcuts);
         Assert.Equal(
