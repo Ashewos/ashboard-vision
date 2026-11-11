@@ -169,6 +169,24 @@ public sealed class SupervisorTests : IAsyncLifetime
     }
 
     [WindowsHostFact]
+    public async Task LastInstanceClosed_LetsTheHostFinishOnceItsPipeIsClosed()
+    {
+        var (rig, factory, _) = Fake();
+        var module = OpenAndSize(rig);
+        var host = await factory.WaitForStartAsync();
+        await host.WaitAsync<Open>();
+
+        module.Dispose();
+        await host.WaitAsync<Shutdown>();
+        host.CloseOutput(); // comme le vrai hôte : son tube se ferme avant que son processus soit fini
+
+        // Un arrêt demandé : le service laisse l'hôte finir (le délai de grâce reste le filet), il ne le tue pas à la fin du tube.
+        Assert.True(await TestWait.StaysFalseAsync(() => host.Killed, TimeSpan.FromMilliseconds(400)));
+        host.Exit(0);
+        Assert.False(host.Killed);
+    }
+
+    [WindowsHostFact]
     public async Task Dispose_AsksTheHostToShutDown()
     {
         var (rig, factory, _) = Fake();
