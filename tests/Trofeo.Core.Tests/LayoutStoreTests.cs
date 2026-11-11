@@ -297,6 +297,59 @@ public sealed class LayoutStoreTests : IDisposable
         Assert.False(new LayoutStore(FilePath).Load().Appearance!.Legibility);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SaveLoad_AnimateViewSwitch_RoundTrips(bool animate)
+    {
+        var store = new LayoutStore(FilePath);
+
+        store.Save(DashboardLayout.Default with { Appearance = new AppearanceSettings("pixel", AnimateViewSwitch: animate) });
+
+        Assert.Equal(animate, store.Load().Appearance!.AnimateViewSwitch);
+    }
+
+    [Fact]
+    public void Load_AppearanceWithoutAnimateViewSwitch_AnimatesByDefault()
+    {
+        var warnings = new List<string>();
+        File.WriteAllText(FilePath, WithAppearance(LayoutJson(180, (0, 0, 4, 2)), """{"Theme":"pixel"}"""));
+
+        var layout = new LayoutStore(FilePath, warnings.Add).Load();
+
+        Assert.True(layout.Appearance!.AnimateViewSwitch);
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void Load_AnimateViewSwitchFalse_IsRead()
+    {
+        File.WriteAllText(FilePath, WithAppearance(LayoutJson(180, (0, 0, 4, 2)), """{"Theme":"pixel","AnimateViewSwitch":false}"""));
+
+        Assert.False(new LayoutStore(FilePath).Load().Appearance!.AnimateViewSwitch);
+    }
+
+    [Theory]
+    [InlineData("\"non\"")]
+    [InlineData("3")]
+    [InlineData("[]")]
+    public void Load_UnreadableAnimateViewSwitch_DefaultsToTrue_KeepsTheRestOfTheAppearance(string value)
+    {
+        File.WriteAllText(
+            FilePath, WithAppearance(LayoutJson(180, (0, 0, 4, 2)), $$"""{"Theme":"pixel","PanelOpacity":0.4,"AnimateViewSwitch":{{value}}}"""));
+
+        var warnings = new List<string>();
+        var layout = new LayoutStore(FilePath, warnings.Add).Load();
+
+        Assert.True(layout.Appearance!.AnimateViewSwitch);
+        Assert.Equal("pixel", layout.Appearance.Theme);
+        Assert.Equal(0.4f, layout.Appearance.PanelOpacity);
+        Assert.Equal("clock", Assert.Single(layout.Views[0].Placements).TypeId);
+        Assert.Equal(
+            ["Réglage « AnimateViewSwitch » illisible dans layout.json : passage animé entre les vues par défaut."], warnings);
+        Assert.False(File.Exists(FilePath + ".bad"));
+    }
+
     [Fact]
     public void Load_UnknownTheme_KeepsPlacements()
     {

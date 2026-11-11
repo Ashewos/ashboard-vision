@@ -435,6 +435,38 @@ public sealed class AppearanceTabTests : IDisposable
         Assert.True(tab.IsLegibilityOn);
     }
 
+    // ---- Passage entre les vues ----
+
+    [Fact]
+    public async Task AnimateViewSwitch_Off_WritesFalse_AndOnReturnsToTheDefault()
+    {
+        var tab = Open(new AppearanceSettings("pixel"));
+        Assert.True(tab.IsAnimateViewSwitchOn);
+
+        await tab.SetAnimateViewSwitchAsync(false);
+
+        Assert.False(OnDisk.AnimateViewSwitch);
+        Assert.Equal("pixel", OnDisk.Theme); // le reste de l'apparence est gardé
+        Assert.False(tab.IsAnimateViewSwitchOn);
+
+        await tab.SetAnimateViewSwitchAsync(true);
+
+        Assert.True(OnDisk.AnimateViewSwitch);
+        Assert.True(tab.IsAnimateViewSwitchOn);
+    }
+
+    [Fact]
+    public async Task AnimateViewSwitch_BackToDefault_RemovesTheAppearanceKey()
+    {
+        var tab = Open();
+
+        await tab.SetAnimateViewSwitchAsync(false);
+        Assert.NotNull(_store.Load().Appearance);
+
+        await tab.SetAnimateViewSwitchAsync(true);
+        Assert.Null(_store.Load().Appearance); // plus aucun réglage : la clé Appearance disparaît
+    }
+
     // ---- Avertissements du rechargement ----
 
     private const string BackgroundMissing = "Fond d'écran introuvable : C:\\fonds\\photo.png. Fond du thème utilisé.";

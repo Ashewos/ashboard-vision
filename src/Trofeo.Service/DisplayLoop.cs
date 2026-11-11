@@ -43,13 +43,14 @@ public sealed class DisplayLoop : IDisposable
     private sealed class Live
     {
         public static Live Empty { get; } = new(
-            DashboardLayout.SingleView(0, []), FrozenDictionary<Guid, IModule>.Empty, [], [], [], Guid.Empty);
+            DashboardLayout.SingleView(0, []), FrozenDictionary<Guid, IModule>.Empty, [], [], [], Guid.Empty, null);
 
         private Live(
             DashboardLayout layout, FrozenDictionary<Guid, IModule> modules, KeyValuePair<Guid, IModule>[] entries,
-            IModule[] list, Dictionary<Guid, ModulePlacement> placed, Guid viewId)
+            IModule[] list, Dictionary<Guid, ModulePlacement> placed, Guid viewId, ViewSwitch? switched)
         {
             Layout = layout;
+            Switch = switched;
             Modules = modules;
             Entries = entries;
             List = list;
@@ -89,6 +90,12 @@ public sealed class DisplayLoop : IDisposable
         /// <summary>La vue affichée.</summary>
         public Guid ViewId { get; }
 
+        /// <summary>
+        /// Le dernier changement de vue demandé par <see cref="ShowView"/> et pas encore rechargé, avec son sens : de quoi savoir, au
+        /// rendu, s'il faut un glissement. Publié avec la vue, d'un seul bloc ; <c>null</c> au démarrage et après un rechargement.
+        /// </summary>
+        public ViewSwitch? Switch { get; }
+
         /// <summary>Les cases de la vue affichée : ce que le compositeur dessine.</summary>
         public IReadOnlyList<ModulePlacement> Placements { get; }
 
@@ -97,7 +104,9 @@ public sealed class DisplayLoop : IDisposable
 
         public HashSet<IModule> DisplayedSet { get; }
 
-        public static Live Of(DashboardLayout layout, Dictionary<Guid, IModule> modules, Dictionary<Guid, ModulePlacement> placed, Guid viewId)
+        public static Live Of(
+            DashboardLayout layout, Dictionary<Guid, IModule> modules, Dictionary<Guid, ModulePlacement> placed, Guid viewId,
+            ViewSwitch? switched = null)
         {
             var entries = new List<KeyValuePair<Guid, IModule>>(modules.Count);
             var seen = new HashSet<Guid>();
@@ -110,12 +119,15 @@ public sealed class DisplayLoop : IDisposable
             }
 
             var array = entries.ToArray();
-            return new Live(layout, modules.ToFrozenDictionary(), array, [.. array.Select(e => e.Value)], placed, viewId);
+            return new Live(layout, modules.ToFrozenDictionary(), array, [.. array.Select(e => e.Value)], placed, viewId, switched);
         }
 
         /// <summary>Le même état, avec une autre vue affichée.</summary>
-        public Live WithView(Guid viewId) => new(Layout, Modules, Entries, List, Placed, viewId);
+        public Live WithView(Guid viewId, ViewSwitch switched) => new(Layout, Modules, Entries, List, Placed, viewId, switched);
     }
+
+    /// <summary>Un changement de vue : son numéro (croissant) et son sens (−1, 0 ou +1).</summary>
+    private sealed record ViewSwitch(long Serial, int Direction);
 
     /// <summary>Ce qu'un module cachable a appris pour la dernière fois : de quoi ne le prévenir que quand quelque chose change.</summary>
     private readonly record struct Announcement(bool Visible, SKRect Bounds, GridSize Size, float TextScale, Theme Theme);
@@ -145,6 +157,10 @@ public sealed class DisplayLoop : IDisposable
     private readonly RateLimitedErrorLog _renderErrors;
     private volatile Live _live = Live.Empty;
     private readonly DisplayedViewStore? _viewStore;
+    private int _lastViewDirection;         // écrit sous _lifecycleGate, lu depuis n'importe quel fil
+    private long _switchSerial;             // sous _lifecycleGate
+    private readonly object _notifyGate = new();
+    private Guid _notifiedView;             // sous _notifyGate : la dernière vue retenue et annoncée
     private readonly Dictionary<IModule, Announcement> _announced = new(ReferenceEqualityComparer.Instance); // sous _lifecycleGate
     private FrameComposer _composer;
     private ThemeDefinition _theme;
@@ -185,6 +201,19 @@ public sealed class DisplayLoop : IDisposable
     private TimeSpan _sendTotal;
     private int _timedFrames;
 
+    // Le glissement d'une vue à l'autre. Ne se touche que depuis le fil du Tick. _lastFrame : la dernière image composée (avant la
+    // rotation), gardée seulement s'il y a plusieurs vues et que le glissement est permis, pour qu'un glissement parte de ce que
+    // l'écran montre. Pendant un glissement, _glideFrom (d'où l'on part) et _glideTo (la vue d'arrivée, composée une fois) sont à lui.
+    private SKBitmap? _lastFrame;
+    private ViewTransition? _glide;
+    private SKBitmap? _glideFrom;
+    private SKBitmap? _glideTo;
+    private Guid _glideViewId;
+    private long _glideStart;
+    private int _glideFrames;
+    private bool _glideStale;               // quelque chose a changé pendant le glissement : une image fraîche suivra
+    private long _handledSwitch;            // le numéro du dernier changement de vue pris en compte au rendu
+
     // Moyennes glissantes affichées par Status (millisecondes) ; négatif : pas encore de mesure.
     private double _renderMs = -1;
     private double _sendMs = -1;
@@ -224,6 +253,7 @@ public sealed class DisplayLoop : IDisposable
         var firstView = stored is { } storedId && layout.Views.Any(v => v.Id == storedId) ? storedId : layout.Views[0].Id;
         _live = Reconcile(layout, Live.Empty, firstView, [], out _);
         Announce(_live);
+        _notifiedView = _live.ViewId;
         if (layout.MaxFps is { } maxFps) _scheduler.SetMaxFps(maxFps);
         _configuredFps = FpsOf(_scheduler.MinInterval);
         _scheduler.MarkDirty(); // la première image part dès que l'écran est prêt
@@ -389,71 +419,90 @@ public sealed class DisplayLoop : IDisposable
     /// <summary>La vue affichée. Lisible depuis n'importe quel thread.</summary>
     public Guid CurrentViewId => _live.ViewId;
 
-    /// <summary>Le sens du dernier changement de vue (−1 : vers la précédente, +1 : vers la suivante, 0 : sans sens) ; sert au glissement.</summary>
-    public int LastViewDirection { get; private set; }
+    /// <summary>Le sens du dernier changement de vue (−1 : vers la précédente, +1 : vers la suivante, 0 : sans sens). Lisible depuis n'importe quel thread.</summary>
+    public int LastViewDirection => Volatile.Read(ref _lastViewDirection);
 
     /// <summary>
-    /// Affiche la vue <paramref name="viewId"/> tout de suite (une seule recomposition). Faux si cette vue n'existe pas ; vrai
-    /// (sans rien faire) si elle est déjà affichée. <paramref name="direction"/> (−1, 0 ou +1) dit dans quel sens on y va, pour
-    /// le glissement. Appelable depuis n'importe quel thread.
+    /// Affiche la vue <paramref name="viewId"/> (l'écran y glisse si le glissement est activé, sinon d'un coup). Faux si cette vue
+    /// n'existe pas ; vrai (sans rien faire) si elle est déjà affichée. <paramref name="direction"/> (−1, 0 ou +1) dit dans quel
+    /// sens on y va : 0, pas de glissement. Appelable depuis n'importe quel thread.
     /// </summary>
-    public bool ShowView(Guid viewId, int direction)
+    public bool ShowView(Guid viewId, int direction) => SwitchView(_ => (viewId, direction));
+
+    /// <summary>
+    /// Affiche la vue d'à côté, en boucle (après la dernière, la première). <paramref name="step"/> : +1 la suivante, −1 la précédente.
+    /// Faux s'il n'y a pas d'autre vue où aller. La vue visée se calcule depuis la vue affichée à cet instant, sous le verrou de la
+    /// boucle : deux appuis rapprochés (même depuis deux fils) font deux pas, jamais un seul.
+    /// </summary>
+    public bool ShowAdjacentView(int step) => SwitchView(live =>
+    {
+        var views = live.Layout.Views;
+        if (step == 0 || views.Count < 2) return null;
+
+        var current = views.ToList().FindIndex(v => v.Id == live.ViewId);
+        var target = (((current + step) % views.Count) + views.Count) % views.Count;
+        return (views[target].Id, Math.Sign(step));
+    });
+
+    /// <summary>Affiche la vue de rang <paramref name="index"/> (à partir de 0). Faux s'il n'y a pas de vue de ce rang.</summary>
+    public bool ShowViewAt(int index) => SwitchView(live =>
+    {
+        var views = live.Layout.Views;
+        if (index < 0 || index >= views.Count) return null;
+
+        var current = views.ToList().FindIndex(v => v.Id == live.ViewId);
+        return (views[index].Id, Math.Sign(index - current));
+    });
+
+    /// <summary>
+    /// Change de vue sous le verrou de la boucle : <paramref name="choose"/> lit la vue affichée à cet instant (et rend la vue visée
+    /// avec son sens, ou <c>null</c> s'il n'y a nulle part où aller), de sorte que deux changements qui se chevauchent s'enchaînent
+    /// au lieu de partir de la même vue.
+    /// </summary>
+    private bool SwitchView(Func<Live, (Guid ViewId, int Direction)?> choose)
     {
         lock (_lifecycleGate)
         {
             if (_disposed) return false;
 
             var old = _live;
-            if (!old.Layout.Views.Any(v => v.Id == viewId)) return false;
-            if (old.ViewId == viewId) return true;
+            if (choose(old) is not { } target) return false;
+            if (!old.Layout.Views.Any(v => v.Id == target.ViewId)) return false;
+            if (old.ViewId == target.ViewId) return true;
 
-            LastViewDirection = Math.Clamp(direction, -1, 1);
-            _live = old.WithView(viewId);
+            var direction = Math.Clamp(target.Direction, -1, 1);
+            Volatile.Write(ref _lastViewDirection, direction);
+            _live = old.WithView(target.ViewId, new ViewSwitch(++_switchSerial, direction));
             Announce(_live);
             _scheduler.MarkDirty();
         }
 
-        OnViewChanged(viewId);
+        NotifyViewChanged();
         return true;
     }
 
     /// <summary>
-    /// Affiche la vue d'à côté, en boucle (après la dernière, la première). <paramref name="step"/> : +1 la suivante, −1 la précédente.
-    /// Faux s'il n'y a pas d'autre vue où aller.
+    /// Retient la vue affichée et prévient les abonnés ; un abonné qui échoue est journalisé, sans effet sur la boucle. Appelé hors du
+    /// verrou de la boucle, mais sérialisé : c'est toujours la vue affichée <i>à cet instant</i> qui est retenue et annoncée, et une
+    /// fois seulement, de sorte que l'ordre de la mémoire et des abonnés suit l'écran même si deux changements se chevauchent.
     /// </summary>
-    public bool ShowAdjacentView(int step)
+    private void NotifyViewChanged()
     {
-        var live = _live;
-        var views = live.Layout.Views;
-        if (step == 0 || views.Count < 2) return false;
-
-        var current = views.ToList().FindIndex(v => v.Id == live.ViewId);
-        var target = (((current + step) % views.Count) + views.Count) % views.Count;
-        return ShowView(views[target].Id, Math.Sign(step));
-    }
-
-    /// <summary>Affiche la vue de rang <paramref name="index"/> (à partir de 0). Faux s'il n'y a pas de vue de ce rang.</summary>
-    public bool ShowViewAt(int index)
-    {
-        var live = _live;
-        var views = live.Layout.Views;
-        if (index < 0 || index >= views.Count) return false;
-
-        var current = views.ToList().FindIndex(v => v.Id == live.ViewId);
-        return ShowView(views[index].Id, Math.Sign(index - current));
-    }
-
-    /// <summary>Retient la vue affichée et prévient les abonnés ; un abonné qui échoue est journalisé, sans effet sur la boucle.</summary>
-    private void OnViewChanged(Guid viewId)
-    {
-        _viewStore?.Save(viewId);
-        try
+        lock (_notifyGate)
         {
-            ViewChanged?.Invoke(viewId);
-        }
-        catch (Exception ex)
-        {
-            Trace.TraceError($"Un abonné à ViewChanged a échoué : {ex}");
+            var current = _live.ViewId;
+            if (current == _notifiedView) return;
+
+            _notifiedView = current;
+            _viewStore?.Save(current);
+            try
+            {
+                ViewChanged?.Invoke(current);
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Un abonné à ViewChanged a échoué : {ex}");
+            }
         }
     }
 
@@ -607,7 +656,7 @@ public sealed class DisplayLoop : IDisposable
     private IReadOnlyList<string> ApplyNow(LoopConfig config)
     {
         var warnings = new List<string>();
-        Guid? viewChanged;
+        bool viewChanged;
         lock (_lifecycleGate)
         {
             var layout = config.Layout;
@@ -617,7 +666,7 @@ public sealed class DisplayLoop : IDisposable
             ReplaceTheme(config.Theme, config.Background);
 
             _live = Reconcile(layout, old, ViewAfterReload(old, layout), warnings, out var created);
-            viewChanged = _live.ViewId != old.ViewId ? _live.ViewId : null;
+            viewChanged = _live.ViewId != old.ViewId;
             Announce(_live);
             if (_started)
             {
@@ -629,7 +678,7 @@ public sealed class DisplayLoop : IDisposable
             _scheduler.MarkDirty();
         }
 
-        if (viewChanged is { } shown) OnViewChanged(shown);
+        if (viewChanged) NotifyViewChanged();
         return warnings;
     }
 
@@ -766,7 +815,8 @@ public sealed class DisplayLoop : IDisposable
             }
         }
 
-        return Live.Of(layout, modules, placed, viewId);
+        // Un changement de vue pas encore dessiné survit à un rechargement qui garde la même vue.
+        return Live.Of(layout, modules, placed, viewId, old.ViewId == viewId ? old.Switch : null);
     }
 
     private static void Refuse(List<string> warnings, string warning, string? detail = null)
@@ -859,7 +909,7 @@ public sealed class DisplayLoop : IDisposable
                 placed[instanceId] = placement;
             }
 
-            _live = Live.Of(old.Layout, modules, placed, old.ViewId);
+            _live = Live.Of(old.Layout, modules, placed, old.ViewId, old.Switch);
             Announce(_live);
             if (fresh is not null && _started) StartModule(fresh);
             _scheduler.MarkDirty();
@@ -1054,6 +1104,9 @@ public sealed class DisplayLoop : IDisposable
 
         _viewStore?.Flush();
 
+        DropGlide(log: false);
+        DisposeLastFrame();
+
         // Le compositeur garde une copie floutée du fond : on le libère avant le fond.
         _composer.Dispose();
         _background.Dispose();
@@ -1091,6 +1144,9 @@ public sealed class DisplayLoop : IDisposable
 
         if (ready || HasSubscribers)
         {
+            // Un glissement va aussi vite que l'envoi le permet : la boucle ne dort pas.
+            if (_glide is not null) return TimeSpan.Zero;
+
             if (_scheduler.IsDirty || AnyAnimating())
             {
                 delay = Min(delay, _scheduler.UntilNextSlot());
@@ -1178,7 +1234,19 @@ public sealed class DisplayLoop : IDisposable
     {
         var emulated = _screen.State != ScreenState.Ready;
         if (emulated && !HasSubscribers) return;
-        if (!_scheduler.ShouldRender(AnyAnimating())) return;
+
+        // Sans écran, l'aperçu ne glisse pas : il n'a ni l'envoi à suivre ni l'œil pour s'en servir.
+        if (emulated) DropGlide(log: true);
+
+        var gliding = _glide is not null;
+        if (gliding)
+        {
+            // Ce qui change pendant le glissement (hors le changement de vue lui-même) sera redessiné juste après.
+            var pending = _live.Switch is { } switched && switched.Serial != _handledSwitch;
+            if (_scheduler.IsDirty && !pending) _glideStale = true;
+        }
+
+        if (!_scheduler.ShouldRender(AnyAnimating(), ignoreCap: gliding)) return;
 
         try
         {
@@ -1187,11 +1255,22 @@ public sealed class DisplayLoop : IDisposable
             var renderStart = _time.GetTimestamp();
             try
             {
-                using var bitmap = _composer.Compose(live.Placements, live.Modules, _theme, _background, _time.GetLocalNow());
-                jpeg = JpegEncoder.Encode(bitmap, live.Layout.Rotation);
+                var bitmap = NextBitmap(live, emulated);
+                try
+                {
+                    jpeg = JpegEncoder.Encode(bitmap, live.Layout.Rotation);
+                }
+                catch
+                {
+                    bitmap.Dispose();
+                    throw;
+                }
+
+                Retain(bitmap, live, emulated);
             }
             catch (Exception ex)
             {
+                DropGlide(log: false); // un échec ne laisse pas de glissement à moitié mené
                 _renderErrors.Report($"Échec du rendu de l'image : {ex}");
                 _scheduler.MarkDirty();
                 return;
@@ -1246,6 +1325,123 @@ public sealed class DisplayLoop : IDisposable
         {
             _scheduler.OnRendered();
         }
+    }
+
+    // ---- Glissement d'une vue à l'autre ----
+
+    /// <summary>Vrai si le passage d'une vue à l'autre peut glisser : une disposition à plusieurs vues, l'option allumée, un vrai écran.</summary>
+    private static bool CanGlide(Live live, bool emulated) =>
+        !emulated && live.Layout.Views.Count > 1 && live.Layout.Appearance?.AnimateViewSwitch != false;
+
+    /// <summary>
+    /// L'image à envoyer maintenant (neuve, à passer à <see cref="Retain"/>) : une image de glissement s'il y en a un en cours ou si
+    /// la vue vient de changer avec un sens, sinon la vue affichée composée telle quelle. Un changement de vue sans glissement (option
+    /// coupée, sans sens, rechargement qui retire la vue affichée, rien d'envoyé encore) est une seule recomposition.
+    /// </summary>
+    private SKBitmap NextBitmap(Live live, bool emulated)
+    {
+        var canGlide = CanGlide(live, emulated);
+        if (live.Switch is { } switched && switched.Serial != _handledSwitch)
+        {
+            _handledSwitch = switched.Serial;
+            if (canGlide && switched.Direction != 0 && (_lastFrame ?? _glideFrom) is not null)
+            {
+                // Le temps de composer la vue d'arrivée compte dans les 300 ms : le glissement dure 300 ms depuis la touche.
+                var start = _time.GetTimestamp();
+                var arrival = Compose(live);
+                StartGlide(switched.Direction, arrival, live.ViewId, start);
+            }
+            else
+            {
+                DropGlide(log: true);
+            }
+        }
+        else if (_glide is not null && (!canGlide || live.ViewId != _glideViewId))
+        {
+            DropGlide(log: true); // la vue a changé sans touche (rechargement), ou l'option vient d'être coupée
+        }
+
+        return _glide is not null ? NextGlideFrame() : Compose(live);
+    }
+
+    private SKBitmap Compose(Live live) =>
+        _composer.Compose(live.Placements, live.Modules, _theme, _background, _time.GetLocalNow());
+
+    /// <summary>
+    /// Part de la dernière image envoyée (pas de l'ancienne vue : un glissement abandonné repart de là où il en était) vers
+    /// <paramref name="arrival"/>, qui passe à la boucle. Le glissement en cours, s'il y en a un, est abandonné (une ligne de journal).
+    /// </summary>
+    private void StartGlide(int direction, SKBitmap arrival, Guid viewId, long start)
+    {
+        if (_glide is not null) LogGlide();
+
+        var source = _lastFrame ?? _glideFrom!;
+        if (!ReferenceEquals(source, _glideFrom)) _glideFrom?.Dispose();
+        _glideTo?.Dispose();
+        _lastFrame = null;
+
+        _glideFrom = source;
+        _glideTo = arrival;
+        _glide = new ViewTransition(source, direction, ViewTransition.Duration);
+        _glideViewId = viewId;
+        _glideStart = start;
+        _glideFrames = 0;
+        _glideStale = false;
+    }
+
+    /// <summary>L'image suivante du glissement ; la dernière est la vue d'arrivée elle-même, nette, et finit le glissement.</summary>
+    private SKBitmap NextGlideFrame()
+    {
+        var glide = _glide!;
+        var elapsed = _time.GetElapsedTime(_glideStart);
+        _glideFrames++;
+        if (!glide.IsDone(elapsed)) return glide.Compose(_glideTo!, elapsed);
+
+        var arrival = _glideTo!;
+        _glideTo = null;
+        var stale = _glideStale;
+        DropGlide(log: true);
+        if (stale) _scheduler.MarkDirty();
+        return arrival;
+    }
+
+    /// <summary>Met fin au glissement en cours, s'il y en a un, et libère ses images (<see cref="_glideTo"/> compris, s'il reste).</summary>
+    private void DropGlide(bool log)
+    {
+        if (_glide is null) return;
+
+        if (log) LogGlide();
+        _glide = null;
+        _glideFrom?.Dispose();
+        _glideFrom = null;
+        _glideTo?.Dispose();
+        _glideTo = null;
+    }
+
+    private void LogGlide()
+    {
+        var ms = (long)Math.Round(_time.GetElapsedTime(_glideStart).TotalMilliseconds);
+        Trace.TraceInformation($"Passage de vue : {_glideFrames} images en {ms} ms.");
+    }
+
+    /// <summary>Garde <paramref name="bitmap"/> comme dernière image si un glissement peut en partir, sinon le libère.</summary>
+    private void Retain(SKBitmap bitmap, Live live, bool emulated)
+    {
+        DisposeLastFrame();
+        if (CanGlide(live, emulated))
+        {
+            _lastFrame = bitmap;
+        }
+        else
+        {
+            bitmap.Dispose();
+        }
+    }
+
+    private void DisposeLastFrame()
+    {
+        _lastFrame?.Dispose();
+        _lastFrame = null;
     }
 
     /// <summary>Moyenne glissante (poids 0,2 pour la dernière mesure) ; la première mesure sert de départ.</summary>

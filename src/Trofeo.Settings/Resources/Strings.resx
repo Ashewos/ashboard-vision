@@ -373,6 +373,14 @@
     <value>Assombrit un panneau quand le fond derrière lui est trop clair pour lire le texte.</value>
     <comment>Explication sous l'interrupteur.</comment>
   </data>
+  <data name="AppearanceAnimateViewSwitch" xml:space="preserve">
+    <value>Animer le passage entre les vues</value>
+    <comment>Titre de l'interrupteur du glissement d'une vue à l'autre.</comment>
+  </data>
+  <data name="AppearanceAnimateViewSwitchHelp" xml:space="preserve">
+    <value>Les vues glissent l'une vers l'autre, avec un léger flou de mouvement. Coupé, la nouvelle vue s'affiche d'un coup.</value>
+    <comment>Explication sous l'interrupteur.</comment>
+  </data>
   <data name="AppearancePickFailed" xml:space="preserve">
     <value>Le sélecteur de fichier n'a pas pu s'ouvrir : {0}</value>
     <comment>{0} : la cause. Le sélecteur de fichier de Windows a échoué.</comment>

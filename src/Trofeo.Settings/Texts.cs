@@ -207,6 +207,10 @@ public static class Texts
     public static string AppearanceLegibility => Get();
     /// <summary>Explication sous l'interrupteur.</summary>
     public static string AppearanceLegibilityHelp => Get();
+    /// <summary>Titre de l'interrupteur du glissement d'une vue à l'autre.</summary>
+    public static string AppearanceAnimateViewSwitch => Get();
+    /// <summary>Explication sous l'interrupteur.</summary>
+    public static string AppearanceAnimateViewSwitchHelp => Get();
     /// <summary>{0} : la cause. Le sélecteur de fichier de Windows a échoué.</summary>
     public static string AppearancePickFailed => Get();
     /// <summary>Colonne de droite de l'onglet Modules sans module choisi.</summary>

@@ -26,6 +26,10 @@ internal static class LayoutJson
     internal const string AppearanceDropped =
         "Réglages d'apparence illisibles dans layout.json : apparence par défaut utilisée.";
 
+    /// <summary>Avertissement quand <c>AnimateViewSwitch</c> n'est ni vrai ni faux : le glissement reste activé.</summary>
+    internal const string AnimateViewSwitchInvalid =
+        "Réglage « AnimateViewSwitch » illisible dans layout.json : passage animé entre les vues par défaut.";
+
     internal const string MaxFpsInvalid = "Plafond d'images invalide : 12 images/s utilisées.";
     internal const string ShortcutsDropped = "Raccourcis illisibles dans layout.json : raccourcis par défaut utilisés.";
     internal const string ViewsDropped = "Vues illisibles dans layout.json : elles sont ignorées.";
@@ -309,10 +313,19 @@ internal static class LayoutJson
 
         try
         {
+            // AnimateViewSwitch est lu à part, avec indulgence : une valeur illisible ne fait pas abandonner toute l'apparence.
+            var animate = true;
+            if (node is JsonObject fields && Take(fields, nameof(AppearanceSettings.AnimateViewSwitch), out var animateNode)
+                && animateNode is not null)
+            {
+                if (animateNode is JsonValue value && value.TryGetValue<bool>(out var flag)) animate = flag;
+                else warn(AnimateViewSwitchInvalid);
+            }
+
             var appearance = node.Deserialize<AppearanceSettings>(Options);
             if (appearance is not null && appearance.Theme is not null &&
                 (appearance.Background is not { } background || Enum.IsDefined(background.Kind)))
-                return appearance;
+                return appearance with { AnimateViewSwitch = animate };
         }
         catch (Exception)
         {

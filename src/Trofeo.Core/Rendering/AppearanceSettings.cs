@@ -11,9 +11,13 @@ namespace Trofeo.Core.Rendering;
 /// Garde de lisibilité (le panneau s'assombrit sur un fond clair pour que le texte reste lisible) : <c>null</c> ou
 /// <c>true</c>, activée (défaut) ; <c>false</c>, coupée : le panneau garde l'opacité choisie, quel que soit le fond.
 /// </param>
+/// <param name="AnimateViewSwitch">
+/// Le passage d'une vue à l'autre glisse (environ 300 ms, avec un flou de mouvement) : vrai par défaut ; faux, la nouvelle
+/// vue s'affiche d'un coup.
+/// </param>
 public sealed record AppearanceSettings(
     string Theme = "classique", float? PanelOpacity = null, string? Font = null, BackgroundSettings? Background = null,
-    bool? Legibility = null)
+    bool? Legibility = null, bool AnimateViewSwitch = true)
 {
     /// <summary>Aucun réglage : Classique tel quel.</summary>
     public static AppearanceSettings Default { get; } = new();

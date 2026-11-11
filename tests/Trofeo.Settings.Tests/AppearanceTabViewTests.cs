@@ -286,6 +286,21 @@ public sealed class AppearanceTabViewTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task AnimateViewSwitchSwitch_Click_WritesFalse_ThenTrue()
+    {
+        var (_, document) = Open();
+        var toggle = Named<ToggleSwitch>("AnimateViewSwitchSwitch");
+        Assert.True(toggle.IsChecked);
+
+        Click(toggle);
+        await WaitUntil(() => document.Current.Appearance?.AnimateViewSwitch == false);
+        Assert.False(toggle.IsChecked);
+
+        Click(toggle);
+        await WaitUntil(() => document.Current.Appearance is null || document.Current.Appearance.AnimateViewSwitch);
+    }
+
+    [AvaloniaFact]
     public async Task BackgroundWarning_IsShownUnderTheBackgroundChoice_NotInTheWindowLine()
     {
         var (model, _) = Open(picker: new FakeFilePicker { Result = @"C:\fonds\photo.png" });
