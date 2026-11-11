@@ -101,7 +101,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     }
 
     private ModulePlacement? SelectedPlacement =>
-        _selectedId is { } id ? _document.Current.Placements.FirstOrDefault(p => p.InstanceId == id) : null;
+        _selectedId is { } id ? _document.Current.Views[0].Placements.FirstOrDefault(p => p.InstanceId == id) : null;
 
     private ModuleTypeInfo? SelectedType =>
         SelectedPlacement is { } p && _types.TryGetValue(p.TypeId, out var type) ? type : null;
@@ -173,7 +173,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     /// <summary>Commence à déplacer un module saisi au point <paramref name="screen"/> (pixels de l'écran).</summary>
     public void BeginMove(Guid id, Point screen)
     {
-        if (!CanEdit || _session.IsBusy || _document.Current.Placements.FirstOrDefault(p => p.InstanceId == id) is not { } origin)
+        if (!CanEdit || _session.IsBusy || _document.Current.Views[0].Placements.FirstOrDefault(p => p.InstanceId == id) is not { } origin)
             return;
         var (column, row) = GridGeometry.CellAt((float)screen.X, (float)screen.Y, Spacing);
         StartDrag(new Drag(origin, ResizeEdge.Right, isResize: false, column, row));
@@ -182,7 +182,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     /// <summary>Commence à redimensionner un module par l'une de ses huit poignées.</summary>
     public void BeginResize(Guid id, ResizeEdge edge)
     {
-        if (!CanEdit || _session.IsBusy || _document.Current.Placements.FirstOrDefault(p => p.InstanceId == id) is not { } origin)
+        if (!CanEdit || _session.IsBusy || _document.Current.Views[0].Placements.FirstOrDefault(p => p.InstanceId == id) is not { } origin)
             return;
         StartDrag(new Drag(origin, edge, isResize: true, 0, 0));
     }
@@ -278,8 +278,8 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
 
     private static EditResult Evaluate(LayoutEditor editor, DashboardLayout layout, Drag drag) =>
         drag.IsResize
-            ? editor.Resize(layout, drag.Origin.InstanceId, drag.Edge, drag.DeltaColumns, drag.DeltaRows)
-            : editor.Move(layout, drag.Origin.InstanceId, drag.TargetColumn, drag.TargetRow);
+            ? editor.Resize(layout, layout.Views[0].Id, drag.Origin.InstanceId, drag.Edge, drag.DeltaColumns, drag.DeltaRows)
+            : editor.Move(layout, layout.Views[0].Id, drag.Origin.InstanceId, drag.TargetColumn, drag.TargetRow);
 
     /// <summary>
     /// Le rectangle (colonne, rangée, colonnes, rangées) que demande un redimensionnement, pour le dessiner même s'il est
@@ -317,7 +317,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
 
     [RelayCommand]
     public Task ApplyPresetAsync(SizePreset preset) =>
-        SelectedId is { } id ? EditAsync((editor, layout) => editor.ApplyPreset(layout, id, preset), SelectedPlacement?.TypeId) : Task.CompletedTask;
+        SelectedId is { } id ? EditAsync((editor, layout) => editor.ApplyPreset(layout, layout.Views[0].Id, id, preset), SelectedPlacement?.TypeId) : Task.CompletedTask;
 
     [RelayCommand]
     public Task SetTextSizeAsync(TextSize size) =>
@@ -325,13 +325,13 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
 
     [RelayCommand]
     public Task RemoveSelectedAsync() =>
-        SelectedId is { } id ? EditAsync((editor, layout) => editor.Remove(layout, id)) : Task.CompletedTask;
+        SelectedId is { } id ? EditAsync((editor, layout) => editor.Remove(layout, layout.Views[0].Id, id)) : Task.CompletedTask;
 
     /// <summary>Ajoute un module du type choisi à la première place libre ; le module ajouté est choisi.</summary>
     public async Task AddAsync(AddTypeItem type)
     {
         var before = _document.Current;
-        await EditAsync((editor, layout) => editor.Add(layout, type.TypeId, Guid.NewGuid())).ConfigureAwait(true);
+        await EditAsync((editor, layout) => editor.Add(layout, layout.Views[0].Id, type.TypeId, Guid.NewGuid())).ConfigureAwait(true);
         SelectAddedSince(before);
     }
 
@@ -345,7 +345,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
             var shelf = layout.Shelf ?? [];
             var chosen = shelf.FirstOrDefault(s => s.InstanceId == item.Id);
             var ordered = chosen is null ? layout : layout with { Shelf = [.. shelf.Where(s => s.InstanceId != item.Id), chosen] };
-            return editor.Add(ordered, item.TypeId, Guid.NewGuid());
+            return editor.Add(ordered, ordered.Views[0].Id, item.TypeId, Guid.NewGuid());
         }).ConfigureAwait(true);
         SelectAddedSince(before);
     }
@@ -367,7 +367,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     /// <summary>Choisit le module que la dernière modification a ajouté ou remis sur l'écran, s'il y en a un.</summary>
     private void SelectAddedSince(DashboardLayout before)
     {
-        var added = _document.Current.Placements.FirstOrDefault(p => before.Placements.All(b => b.InstanceId != p.InstanceId));
+        var added = _document.Current.Views[0].Placements.FirstOrDefault(p => before.Views[0].Placements.All(b => b.InstanceId != p.InstanceId));
         if (added is not null)
             Select(added.InstanceId);
     }
@@ -410,7 +410,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     private string? ReasonOf(DashboardLayout layout, EditResult result, string? typeId) => result.Error switch
     {
         PlacementError.Overlap => string.Format(Texts.LayoutBlocked,
-            result.Blocker is { } blocker && layout.Placements.FirstOrDefault(p => p.InstanceId == blocker) is { } other
+            result.Blocker is { } blocker && layout.Views[0].Placements.FirstOrDefault(p => p.InstanceId == blocker) is { } other
                 ? NameOf(other.TypeId)
                 : ""),
         PlacementError.OutOfBounds => Texts.LayoutOutside,
@@ -458,7 +458,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
                 CancelDrag();
 
             var layout = _document.Current;
-            var placed = layout.Placements.Select(p => new PlacedModuleItem(p, NameOf(p.TypeId), IsCommunityType(p.TypeId))).ToList();
+            var placed = layout.Views[0].Placements.Select(p => new PlacedModuleItem(p, NameOf(p.TypeId), IsCommunityType(p.TypeId))).ToList();
             ApplyHealth(placed);
             if (Placed.Count == placed.Count && Placed.Zip(placed).All(pair => pair.First.SameShape(pair.Second)))
             {

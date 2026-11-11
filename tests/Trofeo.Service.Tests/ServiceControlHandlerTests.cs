@@ -162,7 +162,7 @@ public sealed partial class ServiceControlHandlerTests
         Assert.True(result.Applied);
         Assert.Null(result.Error);
         Assert.Equal(["Plafond d'images invalide : 12 images/s utilisées."], result.Warnings);
-        var placement = Assert.Single(rig.LoopRig.Loop.Layout.Placements);
+        var placement = Assert.Single(rig.LoopRig.Loop.Layout.Views[0].Placements);
         Assert.Equal(B, placement.InstanceId);
         Assert.Single(rig.Hotkeys.Applied);
     }
@@ -257,7 +257,7 @@ public sealed partial class ServiceControlHandlerTests
         Assert.True(result.Applied);
         Assert.Single(built);
         Assert.False(built[0].Disposed);
-        Assert.Equal(6, rig.LoopRig.Loop.Layout.Placements[0].Column);
+        Assert.Equal(6, rig.LoopRig.Loop.Layout.Views[0].Placements[0].Column);
     }
 
     [Fact]

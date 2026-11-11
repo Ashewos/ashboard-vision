@@ -26,7 +26,9 @@ public sealed class LayoutStore
     /// <c>Appearance</c> est lu à part, avec indulgence : s'il est illisible (mauvais type JSON, <c>Kind</c> inconnu), il
     /// vaut <c>null</c> et la disposition est gardée, sans <c>.bad</c>, avec un avertissement au <c>warn</c> du constructeur.
     /// <c>Shortcuts</c> (un raccourci illisible est écarté) et <c>MaxFps</c> (hors de 1 à 12 : <c>null</c>) sont lus de
-    /// la même façon. Un thème inconnu est gardé tel quel (c'est
+    /// la même façon. <c>Views</c> aussi : un nom trop long est coupé, une vue en trop ou en double est écartée ou refaite
+    /// (avertissement), et un fichier d'avant les vues (<c>Placements</c> à la racine) devient une seule vue « Vue 1 ».
+    /// Un thème inconnu est gardé tel quel (c'est
     /// <see cref="Rendering.AppearanceResolver"/> qui retombe sur Classique).
     /// Les types inconnus et les tailles minimum dépendent du registre des modules : à vérifier par l'appelant
     /// avec <see cref="LayoutValidator.Check"/>.

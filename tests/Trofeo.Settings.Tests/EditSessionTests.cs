@@ -35,16 +35,14 @@ public sealed class EditSessionTests : IDisposable
     private static ModulePlacement Placement(Guid id, string typeId, int column, int row, int columns, int rows) =>
         new(id, typeId, column, row, columns, rows, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone());
 
-    private static readonly DashboardLayout Base = new(180, [Placement(ClaudeId, "claudecode", 0, 0, 8, 4), Placement(ClockId, "clock", 12, 0, 4, 2)]);
+    private static readonly DashboardLayout Base = DashboardLayout.SingleView(180, [Placement(ClaudeId, "claudecode", 0, 0, 8, 4), Placement(ClockId, "clock", 12, 0, 4, 2)]);
 
     private static DashboardLayout WithRotation(DashboardLayout layout, int rotation) => layout with { Rotation = rotation };
 
-    private static DashboardLayout WithText(DashboardLayout layout, TextSize size) => layout with
-    {
-        Placements = [.. layout.Placements.Select(p => p.InstanceId == ClockId ? p with { TextSize = size } : p)],
-    };
+    private static DashboardLayout WithText(DashboardLayout layout, TextSize size) => layout.WithPlacements(
+        layout.Views[0].Id, [.. layout.Views[0].Placements.Select(p => p.InstanceId == ClockId ? p with { TextSize = size } : p)]);
 
-    private TextSize ClockText => _document.Current.Placements.Single(p => p.InstanceId == ClockId).TextSize;
+    private TextSize ClockText => _document.Current.Views[0].Placements.Single(p => p.InstanceId == ClockId).TextSize;
 
     [Fact]
     public async Task Apply_Change_SavesAndFillsTheHistory()
@@ -63,7 +61,7 @@ public sealed class EditSessionTests : IDisposable
     {
         Assert.Null(await _session.ApplyAsync(_ => null));
         // Une disposition égale mais neuve (comme en rend le moteur d'édition) ne compte pas.
-        Assert.Null(await _session.ApplyAsync(layout => layout with { Placements = [.. layout.Placements] }));
+        Assert.Null(await _session.ApplyAsync(layout => layout.WithPlacements(layout.Views[0].Id, [.. layout.Views[0].Placements])));
 
         Assert.Equal(0, _link.ReloadCount);
         Assert.False(_session.CanUndo);
@@ -335,7 +333,7 @@ public sealed class EditSessionTests : IDisposable
         Assert.Null(session.Message);
         Assert.Null(document.LoadError);
         Assert.Equal(Garbage, File.ReadAllText(file + ".avant-reglages"));
-        Assert.Equal(DashboardLayout.Default.Placements.Count, new LayoutStore(file).Load().Placements.Count);
+        Assert.Equal(DashboardLayout.Default.Views[0].Placements.Count, new LayoutStore(file).Load().Views[0].Placements.Count);
         Assert.Equal(1, _link.ReloadCount);
 
         // Les modifications suivantes passent.

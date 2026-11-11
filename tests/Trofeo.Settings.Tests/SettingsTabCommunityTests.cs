@@ -56,11 +56,11 @@ public sealed class SettingsTabCommunityTests : IDisposable
         // Le port est celui que le service relaie à un module qui a la permission « Cet ordinateur » : un fichier reçu ne le choisit pas.
         _link.SetTypes([.. SampleData.Types(), MinecraftType()]);
         var local = new ModulePlacement(MineId, "alex.minecraft", 0, 0, 4, 2, TextSize.Normal, Json("""{"port":25565}"""));
-        var tab = Open(new DashboardLayout(180, [local]), out var document);
+        var tab = Open(DashboardLayout.SingleView(180, [local]), out var document);
 
-        await ImportAsync(tab, new DashboardLayout(180, [local with { Settings = Json("""{"port":3389}""") }]));
+        await ImportAsync(tab, DashboardLayout.SingleView(180, [local with { Settings = Json("""{"port":3389}""") }]));
 
-        Assert.Equal(25565, document.Current.Placements.Single().Settings.GetProperty("port").GetInt32());
+        Assert.Equal(25565, document.Current.Views[0].Placements.Single().Settings.GetProperty("port").GetInt32());
         Assert.DoesNotContain("3389", File.ReadAllText(document.FilePath));
         Assert.Contains("Réglages gardés pour Serveur Minecraft", tab.ShareMessage);
     }
@@ -70,11 +70,11 @@ public sealed class SettingsTabCommunityTests : IDisposable
     {
         _link.SetTypes([.. SampleData.Types(), MinecraftType([new NumberField("count", "Nombre", 1, 10, 3)])]);
         var local = new ModulePlacement(MineId, "alex.minecraft", 0, 0, 4, 2, TextSize.Normal, Json("""{"count":3}"""));
-        var tab = Open(new DashboardLayout(180, [local]), out var document);
+        var tab = Open(DashboardLayout.SingleView(180, [local]), out var document);
 
-        await ImportAsync(tab, new DashboardLayout(180, [local with { Settings = Json("""{"count":9}""") }]));
+        await ImportAsync(tab, DashboardLayout.SingleView(180, [local with { Settings = Json("""{"count":9}""") }]));
 
-        Assert.Equal(9, document.Current.Placements.Single().Settings.GetProperty("count").GetInt32());
+        Assert.Equal(9, document.Current.Views[0].Placements.Single().Settings.GetProperty("count").GetInt32());
     }
 
     [Fact]
@@ -84,9 +84,9 @@ public sealed class SettingsTabCommunityTests : IDisposable
         var tab = Open(DashboardLayout.Default, out var document);
         _link.SetTypes([.. SampleData.Types(), MinecraftType([new NumberField("count", "Nombre", 1, 10, 3)])]);
 
-        await ImportAsync(tab, new DashboardLayout(180, [new ModulePlacement(MineId, "alex.minecraft", 0, 0, 4, 2, TextSize.Normal, Json("{}"))]));
+        await ImportAsync(tab, DashboardLayout.SingleView(180, [new ModulePlacement(MineId, "alex.minecraft", 0, 0, 4, 2, TextSize.Normal, Json("{}"))]));
 
-        Assert.Contains(document.Current.Placements, p => p.TypeId == "alex.minecraft");
+        Assert.Contains(document.Current.Views[0].Placements, p => p.TypeId == "alex.minecraft");
         Assert.False(tab.ShareMessageIsError);
     }
 

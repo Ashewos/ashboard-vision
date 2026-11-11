@@ -133,7 +133,7 @@ internal static class Program
             var id = definition.Theme.Id;
             var theme = Trofeo.ThemePreview.Program.Resolve(new AppearanceSettings(id));
             using var background = BackgroundFactory.Create(null, theme, null, Trofeo.ThemePreview.Program.Warn);
-            var frame = composer.Compose(PreviewScene.Layout(TextSize.Normal), scene.ByPlacement, theme, background, PreviewScene.Now);
+            var frame = composer.Compose(PreviewScene.Layout(TextSize.Normal).Views[0].Placements, scene.ByPlacement, theme, background, PreviewScene.Now);
             themes.Add(new HeroTheme(ThemeNames.GetValueOrDefault(id, id), frame));
         }
 

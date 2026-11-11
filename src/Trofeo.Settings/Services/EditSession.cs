@@ -276,6 +276,9 @@ public sealed class EditSession : IDisposable
         && a.MaxFps == b.MaxFps
         && Equals(a.Appearance, b.Appearance)
         && ReferenceEquals(a.Shortcuts, b.Shortcuts)
-        && a.Placements.SequenceEqual(b.Placements)
+        && a.Views.Count == b.Views.Count
+        && a.Views.Zip(b.Views).All(pair =>
+            pair.First.Id == pair.Second.Id && pair.First.Name == pair.Second.Name
+            && pair.First.Placements.SequenceEqual(pair.Second.Placements))
         && (a.Shelf ?? []).SequenceEqual(b.Shelf ?? []);
 }

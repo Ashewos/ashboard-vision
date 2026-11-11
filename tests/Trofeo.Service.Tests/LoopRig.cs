@@ -103,7 +103,7 @@ internal sealed class LoopRig : IDisposable
         TextSize textSize = TextSize.Normal) =>
         new(id, type, column, row, columns, rows, textSize, Json(settings));
 
-    public static DashboardLayout Layout(params ModulePlacement[] placements) => new(180, placements);
+    public static DashboardLayout Layout(params ModulePlacement[] placements) => DashboardLayout.SingleView(180, placements);
 
     public IEnumerable<ProbeModule> Of(Guid id) => Created.Where(m => m.InstanceId == id);
 

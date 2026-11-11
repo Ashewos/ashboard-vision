@@ -258,10 +258,8 @@ internal static class Program
     {
         static void Run(Task task) => task.GetAwaiter().GetResult();
         static System.Text.Json.JsonElement Json(string json) => System.Text.Json.JsonDocument.Parse(json).RootElement.Clone();
-        static DashboardLayout WithSettings(Guid id, string json) => Base with
-        {
-            Placements = [.. Base.Placements.Select(p => p.InstanceId == id ? p with { Settings = Json(json) } : p)],
-        };
+        static DashboardLayout WithSettings(Guid id, string json) => Base.WithPlacements(
+            Base.Views[0].Id, [.. Base.Views[0].Placements.Select(p => p.InstanceId == id ? p with { Settings = Json(json) } : p)]);
         static Trofeo.Control.ModuleState State(Guid id, string typeId, Trofeo.ModuleKit.ModuleHealth health, string? message = null, params string[] notices) =>
             new(id, typeId, health, message, notices);
 
@@ -393,14 +391,13 @@ internal static class Program
         static void Run(Task task) => task.GetAwaiter().GetResult();
 
         // Claude Code et Codex côte à côte : tous deux acceptent les raccourcis.
-        var twoAgents = Base with
+        var twoAgents = Base.WithPlacements(Base.Views[0].Id,
+        [
+            Base.Views[0].Placements[0] with { Column = 0, Columns = 8 },
+            new Trofeo.Core.Layout.ModulePlacement(CodexId, "codex", 8, 0, 8, 4, Trofeo.ModuleKit.TextSize.Normal,
+                System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone()),
+        ]) with
         {
-            Placements =
-            [
-                Base.Placements[0] with { Column = 0, Columns = 8 },
-                new Trofeo.Core.Layout.ModulePlacement(CodexId, "codex", 8, 0, 8, 4, Trofeo.ModuleKit.TextSize.Normal,
-                    System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone()),
-            ],
             Shelf = [],
             Shortcuts =
             [
@@ -617,7 +614,7 @@ internal static class Program
         Shot("assistant-3-modules-1200x760.png", 1200, 760, Connected, FirstRunStep.Modules);
 
         // Plus de place : Claude Code occupe toute la largeur, Codex ne tient pas.
-        var full = Base with { Placements = [Base.Placements[0] with { Columns = 16 }] };
+        var full = Base.WithPlacements(Base.Views[0].Id, [Base.Views[0].Placements[0] with { Columns = 16 }]);
         Shot("assistant-3-modules-sans-place.png", 1440, 900, Connected, FirstRunStep.Modules,
             model => Run(model.FirstRun.SetModuleAsync("codex", true)), full);
 
@@ -628,10 +625,8 @@ internal static class Program
             model => Run(model.FirstRun.ClaudeForm!.VisibleFields.OfType<Trofeo.Settings.ViewModels.Fields.ActionFieldViewModel>().Single().RequestAsync()));
 
         Shot("assistant-5-reseau.png", 1440, 900, Connected, FirstRunStep.Network);
-        var unifi = Base with
-        {
-            Placements = [.. Base.Placements.Select(p => p.TypeId == "network" ? p with { Settings = Json("""{"source":"unifi","unifi":{"host":"192.168.1.1"}}""") } : p)],
-        };
+        var unifi = Base.WithPlacements(Base.Views[0].Id,
+            [.. Base.Views[0].Placements.Select(p => p.TypeId == "network" ? p with { Settings = Json("""{"source":"unifi","unifi":{"host":"192.168.1.1"}}""") } : p)]);
         Shot("assistant-5-reseau-unifi.png", 1440, 900, Connected, FirstRunStep.Network, layout: unifi);
         Shot("assistant-5-reseau-unifi-1200x760.png", 1200, 760, Connected, FirstRunStep.Network, layout: unifi);
 
@@ -644,7 +639,7 @@ internal static class Program
             model => Run(model.FirstRun.ContinueAsync()), system: Windows(fails: true));
 
         // Sans Claude Code : sept étapes, et la quatrième est Réseau.
-        var withoutClaude = Base with { Placements = [.. Base.Placements.Where(p => p.TypeId != "claudecode")] };
+        var withoutClaude = Base.WithPlacements(Base.Views[0].Id, [.. Base.Views[0].Placements.Where(p => p.TypeId != "claudecode")]);
         Shot("assistant-sans-claude-reseau.png", 1440, 900, Connected, FirstRunStep.Network, layout: withoutClaude);
     }
 
@@ -675,13 +670,12 @@ internal static class Program
                 new Trofeo.ModuleKit.NumberField("refresh", "Actualiser toutes les (secondes)", 5, 300, 30),
             ]),
             community);
-        var layoutWith = Base with
+        var layoutWith = Base.WithPlacements(Base.Views[0].Id,
+        [
+            .. Base.Views[0].Placements.Where(p => p.TypeId != "clock"),
+            new ModulePlacement(CommunityFixture.DemoId, "alex.minecraft", 12, 0, 4, 2, Trofeo.ModuleKit.TextSize.Normal, Json("""{"port":25565}""")),
+        ]) with
         {
-            Placements =
-            [
-                .. Base.Placements.Where(p => p.TypeId != "clock"),
-                new ModulePlacement(CommunityFixture.DemoId, "alex.minecraft", 12, 0, 4, 2, Trofeo.ModuleKit.TextSize.Normal, Json("""{"port":25565}""")),
-            ],
             Shelf = [],
         };
         IReadOnlyList<ModuleTypeInfo> types = [.. SampleData.Types(), minecraft];
@@ -1048,7 +1042,7 @@ internal static class Program
         using var composer = new FrameComposer();
         var theme = AppearanceResolver.Resolve(new AppearanceSettings("classique"), new SkiaSystemFonts(), Warn);
         using var background = BackgroundFactory.Create(null, theme, null, Warn);
-        using var frame = composer.Compose(PreviewScene.Layout(Trofeo.ModuleKit.TextSize.Normal), scene.ByPlacement, theme, background, PreviewScene.Now);
+        using var frame = composer.Compose(PreviewScene.Layout(Trofeo.ModuleKit.TextSize.Normal).Views[0].Placements, scene.ByPlacement, theme, background, PreviewScene.Now);
 
         using var rotated = new SKBitmap(frame.Width, frame.Height);
         using (var canvas = new SKCanvas(rotated))

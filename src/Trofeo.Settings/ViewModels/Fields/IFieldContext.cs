@@ -60,7 +60,7 @@ public sealed class InstanceFieldContext(
 
     public ISecretAccess Secrets { get; } = secrets;
 
-    public bool CanRunActions => session.Document.Current.Placements.Any(p => p.InstanceId == instanceId);
+    public bool CanRunActions => session.Document.Current.AllPlacements.Any(p => p.InstanceId == instanceId);
 
     public JsonElement Settings => Find(session.Document.Current)?.Settings is { ValueKind: JsonValueKind.Object } settings ? settings : EmptySettings;
 
@@ -94,7 +94,7 @@ public sealed class InstanceFieldContext(
     {
         // Un module gardé au rechargement ne relit jamais le coffre : on recrée chaque instance placée de ce type. Une
         // instance retirée ne tourne pas, elle lira le coffre quand on la remettra.
-        var placed = session.Document.Current.Placements.Where(p => p.TypeId == TypeId).Select(p => p.InstanceId).ToList();
+        var placed = session.Document.Current.AllPlacements.Where(p => p.TypeId == TypeId).Select(p => p.InstanceId).ToList();
         string? problem = null;
         foreach (var id in placed)
         {
@@ -114,7 +114,7 @@ public sealed class InstanceFieldContext(
     }
 
     private ModulePlacement? Find(DashboardLayout layout) =>
-        layout.Placements.FirstOrDefault(p => p.InstanceId == instanceId) ?? (layout.Shelf ?? []).FirstOrDefault(p => p.InstanceId == instanceId);
+        layout.AllPlacements.FirstOrDefault(p => p.InstanceId == instanceId) ?? (layout.Shelf ?? []).FirstOrDefault(p => p.InstanceId == instanceId);
 
     /// <summary>Le JSON compact, pour comparer deux réglages sans que la mise en forme compte.</summary>
     private static string Normalize(JsonElement settings) =>

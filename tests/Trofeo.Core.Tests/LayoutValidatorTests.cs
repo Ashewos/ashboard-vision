@@ -16,7 +16,7 @@ public class LayoutValidatorTests
     private static ModulePlacement Placement(Guid id, int column, int row, int columns, int rows, string typeId = "clock") =>
         new(id, typeId, column, row, columns, rows, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone());
 
-    private static readonly DashboardLayout Existing = new(180, [Placement(Guid.NewGuid(), 12, 0, 4, 2)]);
+    private static readonly IReadOnlyList<ModulePlacement> Existing = [Placement(Guid.NewGuid(), 12, 0, 4, 2)];
 
     [Fact]
     public void Check_OutOfBounds()
@@ -52,7 +52,7 @@ public class LayoutValidatorTests
     [Fact]
     public void Check_MovingSelf_IsAllowed()
     {
-        var self = Existing.Placements[0];
+        var self = Existing[0];
         var moved = self with { Column = 11 };
         Assert.Equal(PlacementError.None, LayoutValidator.Check(Existing, moved, Types));
     }

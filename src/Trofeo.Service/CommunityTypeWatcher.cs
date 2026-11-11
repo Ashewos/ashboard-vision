@@ -111,7 +111,7 @@ internal sealed class CommunityTypeWatcher : IDisposable
             return;
         }
 
-        foreach (var placement in _loop.Layout.Placements.Where(p => changed.Contains(p.TypeId)).ToList())
+        foreach (var placement in _loop.Layout.Views[0].Placements.Where(p => changed.Contains(p.TypeId)).ToList())
         {
             Restart(placement.InstanceId, placement.TypeId);
         }

@@ -65,13 +65,13 @@ public sealed class PanelLegibilityTests
     [Fact]
     public void GuardOff_WhiteBackground_PanelKeepsExactlyTheChosenOpacity()
     {
-        var layout = new DashboardLayout(0, [Place()]);
+        var layout = DashboardLayout.SingleView(0, [Place()]);
         var rect = GridGeometry.ModuleRect(4, 1, 4, 2);
         using var white = new ColorBackground(SKColors.White);
         using var composer = new FrameComposer();
 
-        using var guarded = composer.Compose(layout, new Dictionary<Guid, IModule>(), Transparent(), white, T0);
-        using var raw = composer.Compose(layout, new Dictionary<Guid, IModule>(), Transparent(guard: false), white, T0);
+        using var guarded = composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule>(), Transparent(), white, T0);
+        using var raw = composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule>(), Transparent(guard: false), white, T0);
 
         int x = (rect.Left + rect.Right) / 2, y = (rect.Top + rect.Bottom) / 2;
         Assert.InRange(Luminance(guarded.GetPixel(x, y)), 0.0, 0.36); // garde active : assombri
@@ -81,13 +81,13 @@ public sealed class PanelLegibilityTests
     [Fact]
     public void GuardOff_BackgroundDoesNotChangeTheAlpha()
     {
-        var layout = new DashboardLayout(0, [Place()]);
+        var layout = DashboardLayout.SingleView(0, [Place()]);
         var rect = GridGeometry.ModuleRect(4, 1, 4, 2);
         var def = Themes.ClassiqueDefinition with { Theme = Themes.Classique with { PanelOpacity = 0.3f }, LegibilityGuard = false };
         using var white = new ColorBackground(SKColors.White);
         using var composer = new FrameComposer();
 
-        using var frame = composer.Compose(layout, new Dictionary<Guid, IModule>(), def, white, T0);
+        using var frame = composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule>(), def, white, T0);
 
         var p = frame.GetPixel((rect.Left + rect.Right) / 2, (rect.Top + rect.Bottom) / 2);
         var panel = def.Theme.Panel;
@@ -97,7 +97,7 @@ public sealed class PanelLegibilityTests
     /// <summary>Luminance, image après image, d'un pixel du panneau où le fond reste gris ; seul l'alpha du panneau la fait bouger.</summary>
     private static List<double> Series(bool animated, bool guard, int frames)
     {
-        var layout = new DashboardLayout(0, [Place()]);
+        var layout = DashboardLayout.SingleView(0, [Place()]);
         var rect = GridGeometry.ModuleRect(4, 1, 4, 2);
         using var background = new BlinkingBackground(rect, animated);
         using var composer = new FrameComposer();
@@ -107,7 +107,7 @@ public sealed class PanelLegibilityTests
         for (int i = 0; i < frames; i++)
         {
             background.Toggle(); // image 0 : blanc, 1 : noir, 2 : blanc…
-            using var frame = composer.Compose(layout, new Dictionary<Guid, IModule>(), def, background, T0 + i * Frame);
+            using var frame = composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule>(), def, background, T0 + i * Frame);
             series.Add(Luminance(frame.GetPixel(rect.Left + 30, (rect.Top + rect.Bottom) / 2)));
         }
 

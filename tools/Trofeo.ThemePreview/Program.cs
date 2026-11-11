@@ -122,7 +122,7 @@ internal static class Program
         {
             background.Advance(TimeSpan.FromMilliseconds(instants[i]));
             using var frame = composer.Compose(
-                PreviewScene.Layout(TextSize.Normal), scene.ByPlacement, theme, background, PreviewScene.Now);
+                PreviewScene.Layout(TextSize.Normal).Views[0].Placements, scene.ByPlacement, theme, background, PreviewScene.Now);
             var file = Path.Combine(folder, $"liquid-glass-gif-{i + 1}.png");
             SavePng(frame, file);
             Console.WriteLine("Aperçu écrit : " + file);
@@ -163,7 +163,7 @@ internal static class Program
         {
             var theme = Resolve(new AppearanceSettings(definition.Theme.Id));
             using var background = BackgroundFactory.Create(null, theme, null, Warn);
-            using var frame = composer.Compose(PreviewScene.Layout(TextSize.Normal), scene.ByPlacement, theme, background, PreviewScene.Now);
+            using var frame = composer.Compose(PreviewScene.Layout(TextSize.Normal).Views[0].Placements, scene.ByPlacement, theme, background, PreviewScene.Now);
             using var thumbnail = frame.Resize(new SKImageInfo(width, height, frame.ColorType, SKAlphaType.Opaque), new SKSamplingOptions(SKCubicResampler.Mitchell));
             var file = Path.Combine(folder, definition.Theme.Id + ".png");
             SavePng(thumbnail, file);
@@ -212,14 +212,12 @@ internal static class Program
         using var background = BackgroundFactory.Create(null, theme, null, Warn);
 
         var standard = PreviewScene.Layout(TextSize.Normal);
-        var withCodex = standard with
-        {
-            Placements = standard.Placements.Select(p => p.TypeId == "claudecode" ? PreviewScene.CodexPlacement : p).ToList(),
-        };
+        var withCodex = standard.WithPlacements(
+            standard.Views[0].Id, standard.Views[0].Placements.Select(p => p.TypeId == "claudecode" ? PreviewScene.CodexPlacement : p).ToList());
         foreach (var layout in new[] { standard, withCodex })
         {
-            using var frame = composer.Compose(layout, scene.ByPlacement, theme, background, PreviewScene.Now);
-            foreach (var placement in layout.Placements)
+            using var frame = composer.Compose(layout.Views[0].Placements, scene.ByPlacement, theme, background, PreviewScene.Now);
+            foreach (var placement in layout.Views[0].Placements)
             {
                 // La disposition avec Codex ne sert qu'à Codex : les autres modules y sont identiques.
                 if ((placement.TypeId == "codex") != ReferenceEquals(layout, withCodex))
@@ -341,7 +339,7 @@ internal static class Program
     {
         var theme = Resolve(settings);
         using var background = BackgroundFactory.Create(settings.Background, theme, null, Warn);
-        using var frame = composer.Compose(PreviewScene.Layout(size), scene.ByPlacement, theme, background, PreviewScene.Now);
+        using var frame = composer.Compose(PreviewScene.Layout(size).Views[0].Placements, scene.ByPlacement, theme, background, PreviewScene.Now);
         SavePng(frame, file);
     }
 

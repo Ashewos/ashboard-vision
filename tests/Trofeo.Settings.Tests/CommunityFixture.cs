@@ -51,9 +51,10 @@ public sealed class CommunityFixture : IDisposable
     public static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
     /// <summary>La disposition par défaut, avec une case « Démo » placée et une rangée.</summary>
-    public static DashboardLayout WithDemo() => DashboardLayout.Default with
+    public static DashboardLayout WithDemo() => DashboardLayout.Default.WithPlacements(
+        DashboardLayout.DefaultViewId,
+        [.. DashboardLayout.Default.Views[0].Placements.Where(p => p.TypeId != "clock"), new ModulePlacement(DemoId, "alex.demo", 12, 0, 4, 2, TextSize.Normal, Json("{}"))]) with
     {
-        Placements = [.. DashboardLayout.Default.Placements.Where(p => p.TypeId != "clock"), new ModulePlacement(DemoId, "alex.demo", 12, 0, 4, 2, TextSize.Normal, Json("{}"))],
         Shelf = [new ModulePlacement(DemoShelfId, "alex.demo", 0, 0, 4, 2, TextSize.Normal, Json("{}"))],
     };
 

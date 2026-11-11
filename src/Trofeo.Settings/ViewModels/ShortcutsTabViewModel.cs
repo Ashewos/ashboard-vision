@@ -118,7 +118,7 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
     {
         var targets = new List<ShortcutTarget> { new(null, Texts.ShortcutTargetFirst) };
         var counts = new Dictionary<string, int>();
-        foreach (var placement in _session.Document.Current.Placements)
+        foreach (var placement in _session.Document.Current.Views[0].Placements)
         {
             if (!_types.TryGetValue(placement.TypeId, out var type) || !type.AcceptsCommands)
                 continue;

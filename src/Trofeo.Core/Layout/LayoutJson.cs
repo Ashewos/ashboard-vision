@@ -28,6 +28,7 @@ internal static class LayoutJson
 
     internal const string MaxFpsInvalid = "Plafond d'images invalide : 12 images/s utilisées.";
     internal const string ShortcutsDropped = "Raccourcis illisibles dans layout.json : raccourcis par défaut utilisés.";
+    internal const string ViewsDropped = "Vues illisibles dans layout.json : elles sont ignorées.";
     internal const string Unreadable = "Le fichier layout.json est illisible (JSON invalide).";
     internal const int MinFps = 1;
     internal const int MaxFpsLimit = 12;
@@ -35,10 +36,19 @@ internal static class LayoutJson
     /// <summary>
     /// Lit et valide. Ne lève jamais d'exception ; ne touche à aucun fichier. <c>Appearance</c>, <c>Shortcuts</c> (un
     /// par un) et <c>MaxFps</c> sont lus avec indulgence : ce qui est illisible est écarté avec un avertissement, la
-    /// disposition est gardée. Chaque avertissement est aussi transmis à <paramref name="warn"/>.
+    /// disposition est gardée. Les vues sont lues de la même façon (voir <see cref="ReadViews"/>). Chaque avertissement
+    /// est aussi transmis à <paramref name="warn"/>.
     /// </summary>
-    internal static LayoutLoadResult Parse(string json, Action<string>? warn)
+    internal static LayoutLoadResult Parse(string json, Action<string>? warn) => Parse(json, warn, out _);
+
+    /// <summary>
+    /// Comme <see cref="Parse(string, Action{string}?)"/>, et dit si le fichier avait une propriété <c>Views</c>
+    /// (<paramref name="viewsPresent"/>) : sans elle, c'est un fichier d'avant les vues, dont les raccourcis par défaut
+    /// se migrent.
+    /// </summary>
+    internal static LayoutLoadResult Parse(string json, Action<string>? warn, out bool viewsPresent)
     {
+        viewsPresent = false;
         var warnings = new List<string>();
         void Warn(string message)
         {
@@ -48,7 +58,7 @@ internal static class LayoutJson
 
         try
         {
-            var layout = Deserialize(json, Warn);
+            var layout = Deserialize(json, Warn, out viewsPresent);
             if (layout is null) return Fail(Unreadable, warnings);
 
             var error = Validate(layout);
@@ -65,8 +75,9 @@ internal static class LayoutJson
 
     private static LayoutLoadResult Fail(string error, List<string> warnings) => new(null, error, warnings);
 
-    private static DashboardLayout? Deserialize(string json, Action<string> warn)
+    private static DashboardLayout? Deserialize(string json, Action<string> warn, out bool viewsPresent)
     {
+        viewsPresent = false;
         try
         {
             if (JsonNode.Parse(json) is not JsonObject root) return null; // racine non-objet
@@ -75,12 +86,17 @@ internal static class LayoutJson
             var hasAppearance = Take(root, nameof(DashboardLayout.Appearance), out var appearance);
             var hasShortcuts = Take(root, nameof(DashboardLayout.Shortcuts), out var shortcuts);
             Take(root, nameof(DashboardLayout.MaxFps), out var maxFps);
+            viewsPresent = Take(root, nameof(DashboardLayout.Views), out var views);
+            Take(root, LegacyPlacements, out var legacyPlacements);
+            if (root[nameof(DashboardLayout.Shelf)] is JsonArray shelfNodes) DropBadNames(shelfNodes, warn);
 
             var layout = root.Deserialize<DashboardLayout>(Options);
             if (layout is null) return null;
 
             return layout with
             {
+                Views = ReadViews(views, legacyPlacements, warn),
+                Shelf = layout.Shelf is null ? null : [.. layout.Shelf.Select(p => p is null ? p! : CleanCaseName(p, warn))],
                 Appearance = hasAppearance ? ReadAppearance(appearance, warn) : null,
                 Shortcuts = hasShortcuts ? ReadShortcuts(shortcuts, warn) : null,
                 MaxFps = ReadMaxFps(maxFps, warn),
@@ -90,11 +106,190 @@ internal static class LayoutJson
         {
             // Un nom de propriété en double : JsonNode refuse, le sérialiseur l'acceptait (la dernière valeur gagne) et
             // les fichiers d'avant le plan 4 doivent rester lus. Chemin d'avant, sans lecture indulgente.
-            var legacy = JsonSerializer.Deserialize<DashboardLayout>(json, Options);
-            return legacy is null
-                ? null
-                : legacy with { Shortcuts = DropNullShortcuts(legacy.Shortcuts, warn), MaxFps = CheckMaxFps(legacy.MaxFps, warn) };
+            var legacy = JsonSerializer.Deserialize<LegacyWire>(json, Options);
+            if (legacy is null) return null;
+
+            viewsPresent = legacy.Views is not null;
+            List<LayoutView> views = legacy.Views is { } wired
+                ? [.. wired.Where(v => v is not null)]
+                : [new LayoutView(DashboardLayout.DefaultViewId, LayoutView.FirstViewName, legacy.Placements ?? [])];
+            return new DashboardLayout(
+                legacy.Rotation, Normalize(views, warn), DropNullShortcuts(legacy.Shortcuts, warn), legacy.Appearance,
+                legacy.Shelf is null ? null : [.. legacy.Shelf.Select(p => p is null ? p! : CleanCaseName(p, warn))],
+                CheckMaxFps(legacy.MaxFps, warn));
         }
+    }
+
+    /// <summary>Nom, à la racine, des cases d'un fichier d'avant les vues.</summary>
+    private const string LegacyPlacements = "Placements";
+
+    /// <summary>Forme d'un fichier lu par le chemin d'avant (propriété en double) : les vues, ou les cases d'avant les vues.</summary>
+    private sealed record LegacyWire(
+        int Rotation, IReadOnlyList<LayoutView>? Views, IReadOnlyList<ModulePlacement>? Placements,
+        IReadOnlyList<ShortcutBinding>? Shortcuts, AppearanceSettings? Appearance, IReadOnlyList<ModulePlacement>? Shelf,
+        int? MaxFps);
+
+    /// <summary>
+    /// Lit les vues avec indulgence : une entrée qui n'est pas un objet est écartée, un nom absent devient « Vue n »,
+    /// un identifiant absent est refait (voir <see cref="Normalize"/>). Sans <c>Views</c> utilisable, les anciennes
+    /// <c>Placements</c> de la racine forment une seule vue « Vue 1 » ; sans rien, une vue vide. Les cases elles-mêmes
+    /// sont lues strictement, comme avant (une case illisible fait refuser le fichier).
+    /// </summary>
+    private static List<LayoutView> ReadViews(JsonNode? views, JsonNode? legacyPlacements, Action<string> warn)
+    {
+        var read = new List<LayoutView>();
+        if (views is JsonArray array)
+        {
+            foreach (var item in array)
+            {
+                if (item is not JsonObject obj)
+                {
+                    warn("Vue illisible ignorée : ce n'est pas un objet.");
+                    continue;
+                }
+
+                var id = obj[nameof(LayoutView.Id)] is JsonValue idValue && idValue.TryGetValue<string>(out var text) &&
+                         Guid.TryParse(text, out var parsed)
+                    ? parsed
+                    : Guid.Empty;
+                var name = obj[nameof(LayoutView.Name)] is JsonValue nameValue && nameValue.TryGetValue<string>(out var nameText)
+                    ? nameText
+                    : null;
+                var placements = ReadPlacements(obj[nameof(LayoutView.Placements)], warn, $"Vue n° {read.Count + 1}");
+                read.Add(new LayoutView(id, name ?? "", placements));
+            }
+        }
+        else if (views is not null)
+        {
+            warn(ViewsDropped);
+        }
+
+        if (read.Count == 0 && views is not JsonArray)
+        {
+            // Pas de vues (fichier d'avant, ou illisible) : les cases de la racine, sinon rien.
+            read.Add(new LayoutView(
+                DashboardLayout.DefaultViewId, LayoutView.FirstViewName, ReadPlacements(legacyPlacements, warn, null)));
+        }
+        else if (read.Count == 0)
+        {
+            read.Add(new LayoutView(DashboardLayout.DefaultViewId, LayoutView.FirstViewName, []));
+        }
+
+        return Normalize(read, warn);
+    }
+
+    /// <summary>
+    /// Les cases d'une vue. Absentes ou <c>null</c> : aucune (avec un avertissement si <paramref name="owner"/> nomme
+    /// une vue). Pas un tableau, ou une case de mauvais type : lève, le fichier est illisible.
+    /// </summary>
+    private static List<ModulePlacement> ReadPlacements(JsonNode? node, Action<string> warn, string? owner)
+    {
+        if (node is null)
+        {
+            if (owner is not null) warn($"{owner} sans cases : vue vide.");
+            return [];
+        }
+
+        if (node is not JsonArray array) throw new JsonException("Les cases d'une vue doivent former un tableau.");
+
+        DropBadNames(array, warn);
+        return array.Deserialize<List<ModulePlacement>>(Options) ?? [];
+    }
+
+    /// <summary>Un <c>Name</c> qui n'est ni du texte ni <c>null</c> est écarté (avec un avertissement) : la case est gardée.</summary>
+    private static void DropBadNames(JsonArray placements, Action<string> warn)
+    {
+        foreach (var item in placements)
+        {
+            if (item is not JsonObject obj || !obj.TryGetPropertyValue(nameof(ModulePlacement.Name), out var name)) continue;
+            if (name is null || name is JsonValue value && value.TryGetValue<string>(out _)) continue;
+
+            obj.Remove(nameof(ModulePlacement.Name));
+            warn("Nom de case illisible ignoré : ce n'est pas du texte.");
+        }
+    }
+
+    /// <summary>
+    /// Remet les vues dans les règles, sans jamais refuser le fichier : au plus <see cref="LayoutView.MaxViews"/> (les
+    /// suivantes sont ignorées), noms nettoyés et coupés à <see cref="LayoutView.MaxNameLength"/> (un nom absent devient
+    /// « Vue n »), identifiants absents ou en double refaits, et une même case dans deux vues gardée dans la première
+    /// seulement. Les noms des cases sont nettoyés et coupés de même.
+    /// </summary>
+    private static List<LayoutView> Normalize(List<LayoutView> views, Action<string> warn)
+    {
+        if (views.Count == 0) views = [new LayoutView(DashboardLayout.DefaultViewId, LayoutView.FirstViewName, [])];
+
+        if (views.Count > LayoutView.MaxViews)
+        {
+            warn($"{views.Count} vues dans layout.json : seules les {LayoutView.MaxViews} premières sont gardées.");
+            views = views.GetRange(0, LayoutView.MaxViews);
+        }
+
+        var result = new List<LayoutView>(views.Count);
+        var viewIds = new HashSet<Guid>();
+        var seenInstances = new HashSet<Guid>();
+        for (var i = 0; i < views.Count; i++)
+        {
+            var view = views[i];
+            var id = view.Id;
+            if (id == Guid.Empty)
+            {
+                warn($"Vue n° {i + 1} sans identifiant : un identifiant neuf lui est donné.");
+                id = NewViewId(viewIds);
+            }
+            else if (!viewIds.Add(id))
+            {
+                warn($"Identifiant de vue en double (vue n° {i + 1}) : un identifiant neuf lui est donné.");
+                id = NewViewId(viewIds);
+            }
+
+            viewIds.Add(id);
+            var name = ViewEditor.CleanName(view.Name);
+            if (name is null) name = $"Vue {i + 1}";
+            else if (view.Name.Trim().Length > LayoutView.MaxNameLength)
+                warn($"Nom de vue « {name} » coupé à {LayoutView.MaxNameLength} caractères.");
+
+            var placements = new List<ModulePlacement>(view.Placements?.Count ?? 0);
+            foreach (var p in view.Placements ?? [])
+            {
+                if (p is null)
+                {
+                    placements.Add(p!); // refusé plus tard par Validate
+                    continue;
+                }
+
+                if (seenInstances.Contains(p.InstanceId))
+                {
+                    warn($"Module {p.TypeId} déjà placé dans une vue précédente : il est ignoré dans « {name} ».");
+                    continue;
+                }
+
+                placements.Add(CleanCaseName(p, warn));
+            }
+
+            foreach (var p in placements)
+                if (p is not null) seenInstances.Add(p.InstanceId);
+
+            result.Add(new LayoutView(id, name, placements));
+        }
+
+        return result;
+    }
+
+    private static Guid NewViewId(HashSet<Guid> used)
+    {
+        Guid id;
+        do id = Guid.NewGuid(); while (used.Contains(id));
+        return id;
+    }
+
+    /// <summary>Nettoie le nom d'une case : vide : aucun ; plus long que <see cref="LayoutView.MaxNameLength"/> : coupé (avertissement).</summary>
+    private static ModulePlacement CleanCaseName(ModulePlacement placement, Action<string> warn)
+    {
+        var name = ViewEditor.CleanName(placement.Name);
+        if (name is not null && placement.Name!.Trim().Length > LayoutView.MaxNameLength)
+            warn($"Nom de case « {name} » coupé à {LayoutView.MaxNameLength} caractères.");
+        return name == placement.Name ? placement : placement with { Name = name };
     }
 
     /// <summary>Retire la propriété de l'objet pour que le sérialiseur ne la lise pas (elle est lue avec indulgence).</summary>
@@ -231,15 +426,18 @@ internal static class LayoutJson
     private static string? Validate(DashboardLayout layout)
     {
         if (layout.Rotation is not (0 or 180)) return $"Rotation {layout.Rotation}° refusée : 0 ou 180.";
-        if (layout.Placements is null) return Unreadable;
+        if (layout.Views is null || layout.Views.Count == 0) return Unreadable;
 
-        var placements = layout.Placements;
-        foreach (var p in placements)
+        foreach (var view in layout.Views)
         {
-            if (p is null) return Unreadable;
-            if (string.IsNullOrWhiteSpace(p.TypeId)) return "Module sans type.";
-            if (p.Settings.ValueKind == JsonValueKind.Undefined) return $"Module sans réglages : {p.TypeId}.";
-            if (!LayoutValidator.IsInBounds(p)) return $"Module hors du damier : {p.TypeId}.";
+            if (view?.Placements is null) return Unreadable;
+            foreach (var p in view.Placements)
+            {
+                if (p is null) return Unreadable;
+                if (string.IsNullOrWhiteSpace(p.TypeId)) return "Module sans type.";
+                if (p.Settings.ValueKind == JsonValueKind.Undefined) return $"Module sans réglages : {p.TypeId}.";
+                if (!LayoutValidator.IsInBounds(p)) return $"Module hors du damier : {p.TypeId}.";
+            }
         }
 
         if (layout.Shelf is { } shelf)
@@ -253,13 +451,15 @@ internal static class LayoutJson
             }
         }
 
-        var ids = placements.Concat(layout.Shelf ?? []).Select(p => p.InstanceId).ToList();
+        var ids = layout.AllPlacements.Concat(layout.Shelf ?? []).Select(p => p.InstanceId).ToList();
         if (ids.Distinct().Count() != ids.Count) return "Identifiant de module en double.";
 
-        for (var i = 0; i < placements.Count; i++)
-            for (var j = i + 1; j < placements.Count; j++)
-                if (LayoutValidator.Intersects(placements[i], placements[j]))
-                    return $"Deux modules se chevauchent : {placements[i].TypeId} et {placements[j].TypeId}.";
+        // Chaque vue a son propre damier : on ne compare que les cases d'une même vue.
+        foreach (var placements in layout.Views.Select(v => v.Placements))
+            for (var i = 0; i < placements.Count; i++)
+                for (var j = i + 1; j < placements.Count; j++)
+                    if (LayoutValidator.Intersects(placements[i], placements[j]))
+                        return $"Deux modules se chevauchent : {placements[i].TypeId} et {placements[j].TypeId}.";
 
         return null;
     }

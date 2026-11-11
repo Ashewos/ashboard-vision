@@ -225,12 +225,12 @@ public sealed partial class FirstRunViewModel : ObservableObject, IDisposable
         string? reason = null;
         await _session.ApplyAsync(layout =>
         {
-            var placed = layout.Placements.Where(p => p.TypeId == typeId).ToList();
+            var placed = layout.Views[0].Placements.Where(p => p.TypeId == typeId).ToList();
             if (wanted)
             {
                 if (placed.Count > 0)
                     return null;
-                var added = _editor.Add(layout, typeId, Guid.NewGuid());
+                var added = _editor.Add(layout, layout.Views[0].Id, typeId, Guid.NewGuid());
                 if (!added.Ok)
                     reason = added.Error == PlacementError.NoRoom ? Texts.LayoutNoRoom : Texts.LayoutUnknownType;
                 return added.Ok ? added.Layout : null;
@@ -239,7 +239,7 @@ public sealed partial class FirstRunViewModel : ObservableObject, IDisposable
             var edited = layout;
             foreach (var module in placed)
             {
-                var removed = _editor.Remove(edited, module.InstanceId);
+                var removed = _editor.Remove(edited, edited.Views[0].Id, module.InstanceId);
                 if (!removed.Ok)
                 {
                     reason = Texts.LayoutUnknownType;
@@ -313,13 +313,13 @@ public sealed partial class FirstRunViewModel : ObservableObject, IDisposable
 
         var layout = _session.Document.Current;
         foreach (var item in Modules)
-            item.Sync(layout.Placements.Any(p => p.TypeId == item.TypeId));
+            item.Sync(layout.Views[0].Placements.Any(p => p.TypeId == item.TypeId));
 
         var visible = AllSteps.Where(step => step switch
         {
-            FirstRunStep.ClaudeCode => layout.Placements.Any(p => p.TypeId == ClaudeType),
-            FirstRunStep.Network => layout.Placements.Any(p => p.TypeId == NetworkType),
-            FirstRunStep.Weather => layout.Placements.Any(p => p.TypeId == WeatherType),
+            FirstRunStep.ClaudeCode => layout.Views[0].Placements.Any(p => p.TypeId == ClaudeType),
+            FirstRunStep.Network => layout.Views[0].Placements.Any(p => p.TypeId == NetworkType),
+            FirstRunStep.Weather => layout.Views[0].Placements.Any(p => p.TypeId == WeatherType),
             _ => true,
         }).ToList();
 
@@ -342,7 +342,7 @@ public sealed partial class FirstRunViewModel : ObservableObject, IDisposable
     /// <summary>Le formulaire d'un module placé : refait quand l'instance ou le type change, relu sinon. Vrai s'il a été refait ou retiré.</summary>
     private bool SyncForm(FormSlot slot, string property)
     {
-        var placed = _session.Document.Current.Placements.FirstOrDefault(p => p.TypeId == slot.TypeId);
+        var placed = _session.Document.Current.Views[0].Placements.FirstOrDefault(p => p.TypeId == slot.TypeId);
         var type = _welcome?.Types.FirstOrDefault(t => t.TypeId == slot.TypeId);
         if (placed is null || type is null)
         {

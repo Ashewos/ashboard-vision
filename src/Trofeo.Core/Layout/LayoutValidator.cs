@@ -11,9 +11,12 @@ public enum PlacementError { None, OutOfBounds, Overlap, BelowMinSize, UnknownTy
 /// <summary>Règles de placement : dans le damier, pas de chevauchement, taille minimum respectée.</summary>
 public static class LayoutValidator
 {
-    /// <summary>Vérifie un candidat ; l'instance de même <c>InstanceId</c> dans la disposition est ignorée.</summary>
+    /// <summary>
+    /// Vérifie un candidat contre les cases d'une vue ; l'instance de même <c>InstanceId</c> dans cette vue est ignorée.
+    /// Les cases des autres vues ne comptent pas : chaque vue a son propre damier.
+    /// </summary>
     public static PlacementError Check(
-        DashboardLayout layout,
+        IReadOnlyList<ModulePlacement> viewPlacements,
         ModulePlacement candidate,
         IReadOnlyDictionary<string, ModuleDescriptor> types)
     {
@@ -26,7 +29,7 @@ public static class LayoutValidator
         if (candidate.Columns < descriptor.MinSize.Columns || candidate.Rows < descriptor.MinSize.Rows)
             return PlacementError.BelowMinSize;
 
-        foreach (var other in layout.Placements)
+        foreach (var other in viewPlacements)
         {
             if (other.InstanceId == candidate.InstanceId) continue;
             if (Intersects(candidate, other)) return PlacementError.Overlap;

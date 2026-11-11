@@ -39,7 +39,7 @@ public sealed class ShortcutsTabTests : IDisposable
         List<ModulePlacement> placements = [Placement(ClaudeId, "claudecode", 0, 8, 4)];
         placements.Add(secondClaude ? Placement(Guid.NewGuid(), "claudecode", 8, 6, 3) : Placement(CodexId, "codex", 8, 6, 3));
         placements.Add(Placement(new Guid("5b0c5e2e-6a53-4c0b-9d0e-3f1a7c1d2b01"), "clock", 14, 2, 1));
-        _store.Save(new DashboardLayout(180, placements) { Shortcuts = shortcuts });
+        _store.Save(DashboardLayout.SingleView(180, placements, shortcuts));
         _document = new LayoutDocument(_store, _link);
         _document.Load();
         _session = new EditSession(_document);

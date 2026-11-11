@@ -506,7 +506,7 @@ static class Program
         }
 
         var layout = store.Load();
-        Trace.TraceInformation($"Disposition chargée : {layout.Placements.Count} module(s), rotation {layout.Rotation}°.");
+        Trace.TraceInformation($"Disposition chargée : {layout.Views[0].Placements.Count} module(s), rotation {layout.Rotation}°.");
         return layout;
     }
 

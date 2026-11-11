@@ -196,7 +196,7 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
                 _types.TryAdd(type.TypeId, type);
 
             var layout = _session.Document.Current;
-            Fill(Placed, [.. layout.Placements.Select(p => new ModuleListItem(p.InstanceId, p.TypeId, NameOf(p.TypeId), isPlaced: true, IsCommunityType(p.TypeId)))]);
+            Fill(Placed, [.. layout.Views[0].Placements.Select(p => new ModuleListItem(p.InstanceId, p.TypeId, NameOf(p.TypeId), isPlaced: true, IsCommunityType(p.TypeId)))]);
             Fill(Shelved, [.. (layout.Shelf ?? []).Select(p => new ModuleListItem(p.InstanceId, p.TypeId, NameOf(p.TypeId), isPlaced: false, IsCommunityType(p.TypeId)))]);
 
             // Le module choisi n'existe plus (oublié) ou rien n'est choisi encore : le premier module de l'écran.

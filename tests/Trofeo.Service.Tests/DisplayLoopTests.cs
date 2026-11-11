@@ -96,7 +96,7 @@ public sealed class DisplayLoopTests
                 new(InstanceId, typeId, 0, 0, cols, rows, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone()),
             };
             placements.AddRange(extraPlacements ?? []);
-            var layout = new DashboardLayout(180, placements);
+            var layout = DashboardLayout.SingleView(180, placements);
             Loop = new DisplayLoop(layout, registry, Screen, Scheduler, Time, background: background);
         }
 

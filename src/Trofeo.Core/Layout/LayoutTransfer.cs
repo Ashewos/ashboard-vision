@@ -14,6 +14,8 @@ public static class LayoutTransfer
     /// <summary>
     /// <c>{"Format": Format, "Layout": {...}}</c>. La disposition ne contient que des réglages : les secrets (clés,
     /// jetons) vivent dans le coffre, pas dans <c>layout.json</c>, et ne sont donc jamais exportés.
+    /// Le format de partage ne change pas avec les vues : une disposition d'avant les vues (<c>Placements</c> à la
+    /// racine) s'importe comme une seule vue « Vue 1 ».
     /// </summary>
     public static string Export(DashboardLayout layout) =>
         JsonSerializer.Serialize(new Dictionary<string, object> { ["Format"] = Format, ["Layout"] = layout }, LayoutJson.Options);

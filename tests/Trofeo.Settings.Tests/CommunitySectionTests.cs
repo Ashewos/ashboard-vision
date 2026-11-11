@@ -273,19 +273,19 @@ public sealed partial class CommunitySectionTests
         using var fixture = new CommunityFixture().WithModules(Module());
         await fixture.Section.RefreshAsync();
         var row = fixture.Section.Modules.Single();
-        Assert.Contains(fixture.Document.Current.Placements, p => p.TypeId == "alex.demo");
+        Assert.Contains(fixture.Document.Current.Views[0].Placements, p => p.TypeId == "alex.demo");
         var reloads = fixture.Link.ReloadCount;
 
         await row.ConfirmUninstallCommand.ExecuteAsync(null);
 
         Assert.Contains("uninstall alex.demo", fixture.Link.ModuleCalls);
         // Les cases placées et rangées du module ont disparu de la disposition, en mémoire comme dans le fichier.
-        Assert.DoesNotContain(fixture.Document.Current.Placements, p => p.TypeId == "alex.demo");
+        Assert.DoesNotContain(fixture.Document.Current.Views[0].Placements, p => p.TypeId == "alex.demo");
         Assert.DoesNotContain(fixture.Document.Current.Shelf ?? [], p => p.TypeId == "alex.demo");
-        Assert.DoesNotContain(fixture.Store.Load().Placements, p => p.TypeId == "alex.demo");
+        Assert.DoesNotContain(fixture.Store.Load().Views[0].Placements, p => p.TypeId == "alex.demo");
         Assert.DoesNotContain(fixture.Store.Load().Shelf ?? [], p => p.TypeId == "alex.demo");
         // Les autres modules n'ont pas bougé, et le service a rechargé la disposition.
-        Assert.Contains(fixture.Document.Current.Placements, p => p.TypeId == "claudecode");
+        Assert.Contains(fixture.Document.Current.Views[0].Placements, p => p.TypeId == "claudecode");
         Assert.Equal(reloads + 1, fixture.Link.ReloadCount);
     }
 
@@ -330,7 +330,7 @@ public sealed partial class CommunitySectionTests
         await fixture.Section.Modules.Single().ConfirmUninstallCommand.ExecuteAsync(null);
 
         Assert.Equal("Le dossier du module est utilisé par un autre programme.", fixture.Section.Message);
-        Assert.Contains(fixture.Document.Current.Placements, p => p.TypeId == "alex.demo");
+        Assert.Contains(fixture.Document.Current.Views[0].Placements, p => p.TypeId == "alex.demo");
         Assert.Equal(reloads, fixture.Link.ReloadCount);
     }
 

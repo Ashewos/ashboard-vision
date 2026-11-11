@@ -426,11 +426,11 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
 
     private static DashboardLayout? RemovePlacements(DashboardLayout layout, string typeId)
     {
-        var placements = layout.Placements.Where(p => p.TypeId != typeId).ToList();
+        var views = layout.Views.Select(v => v with { Placements = v.Placements.Where(p => p.TypeId != typeId).ToList() }).ToList();
         var shelf = layout.Shelf?.Where(p => p.TypeId != typeId).ToList();
-        if (placements.Count == layout.Placements.Count && (shelf is null || shelf.Count == layout.Shelf!.Count))
+        if (views.Sum(v => v.Placements.Count) == layout.AllPlacements.Count() && (shelf is null || shelf.Count == layout.Shelf!.Count))
             return null;
-        return layout with { Placements = placements, Shelf = shelf };
+        return layout with { Views = views, Shelf = shelf };
     }
 
     /// <summary>Une demande qui change les modules : vrai si le service l'a acceptée ; sinon son message reste affiché, tel quel. La liste est relue.</summary>

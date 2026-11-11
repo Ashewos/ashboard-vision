@@ -41,7 +41,7 @@ public sealed class AppearanceTabViewTests : IDisposable
     {
         var clock = new ModulePlacement(new Guid("5b0c5e2e-6a53-4c0b-9d0e-3f1a7c1d2b01"), "clock", 12, 0, 4, 2, TextSize.Normal,
             JsonDocument.Parse("{}").RootElement.Clone());
-        _store.Save(new DashboardLayout(180, [clock]) { Appearance = appearance });
+        _store.Save(DashboardLayout.SingleView(180, [clock], appearance: appearance));
         var document = new LayoutDocument(_store, _link);
         document.Load();
         var model = new MainViewModel(_link, document, new EditorPreferences(FirstRunDone: true), picker, ["Arial", "Verdana"]);

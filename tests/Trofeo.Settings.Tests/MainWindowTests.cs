@@ -280,7 +280,7 @@ public sealed class MainWindowTests : IDisposable
         Assert.False(line.IsEffectivelyVisible);
         Assert.False(button.IsEffectivelyVisible);
         Assert.True(File.Exists(file + ".avant-reglages"));
-        Assert.True(new LayoutStore(file).Load().Placements.Count > 0);
+        Assert.True(new LayoutStore(file).Load().Views[0].Placements.Count > 0);
     }
 
     [AvaloniaFact]

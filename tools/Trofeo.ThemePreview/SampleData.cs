@@ -88,7 +88,7 @@ internal sealed class PreviewScene : IDisposable
             ["network"] = (new NetworkFactory((_, _) => _network), "{}"),
         };
 
-        foreach (var placement in DashboardLayout.Default.Placements.Append(CodexPlacement))
+        foreach (var placement in DashboardLayout.Default.Views[0].Placements.Append(CodexPlacement))
         {
             var (factory, settings) = factories[placement.TypeId];
             using var json = JsonDocument.Parse(settings);
@@ -133,10 +133,8 @@ internal sealed class PreviewScene : IDisposable
     }
 
     /// <summary>La disposition par défaut, avec cette taille de texte partout.</summary>
-    public static DashboardLayout Layout(TextSize size) => DashboardLayout.Default with
-    {
-        Placements = DashboardLayout.Default.Placements.Select(p => p with { TextSize = size }).ToList(),
-    };
+    public static DashboardLayout Layout(TextSize size) => DashboardLayout.Default.WithPlacements(
+        DashboardLayout.DefaultViewId, DashboardLayout.Default.Views[0].Placements.Select(p => p with { TextSize = size }).ToList());
 
     public void Dispose()
     {

@@ -61,17 +61,13 @@ public sealed class FirstRunTests : IDisposable
     }
 
     /// <summary>La disposition par défaut, réduite aux modules de ces types.</summary>
-    private static DashboardLayout Layout(params string[] typeIds) => DashboardLayout.Default with
-    {
-        Placements = [.. DashboardLayout.Default.Placements.Where(p => typeIds.Contains(p.TypeId))],
-    };
+    private static DashboardLayout Layout(params string[] typeIds) => DashboardLayout.Default.WithPlacements(
+        DashboardLayout.DefaultViewId, [.. DashboardLayout.Default.Views[0].Placements.Where(p => typeIds.Contains(p.TypeId))]);
 
     private static DashboardLayout WithoutClaude() => Layout("monitoring", "nowplaying", "clock", "network");
 
-    private static DashboardLayout WithSettings(DashboardLayout layout, string typeId, string json) => layout with
-    {
-        Placements = [.. layout.Placements.Select(p => p.TypeId == typeId ? p with { Settings = Json(json) } : p)],
-    };
+    private static DashboardLayout WithSettings(DashboardLayout layout, string typeId, string json) => layout.WithPlacements(
+        layout.Views[0].Id, [.. layout.Views[0].Placements.Select(p => p.TypeId == typeId ? p with { Settings = Json(json) } : p)]);
 
     /// <summary>Passe les étapes (« Passer ») jusqu'à celle-ci.</summary>
     private static void GoTo(FirstRunViewModel wizard, FirstRunStep step)
@@ -82,7 +78,7 @@ public sealed class FirstRunTests : IDisposable
     }
 
     private static ModulePlacement Placed(MainViewModel model, string typeId) =>
-        model.Document.Current.Placements.Single(p => p.TypeId == typeId);
+        model.Document.Current.Views[0].Placements.Single(p => p.TypeId == typeId);
 
     // ---- Quand il s'ouvre ----
 
@@ -221,7 +217,7 @@ public sealed class FirstRunTests : IDisposable
 
         await model.FirstRun.SetModuleAsync("nowplaying", false);
 
-        Assert.DoesNotContain(model.Document.Current.Placements, p => p.TypeId == "nowplaying");
+        Assert.DoesNotContain(model.Document.Current.Views[0].Placements, p => p.TypeId == "nowplaying");
         Assert.Contains(model.Document.Current.Shelf!, p => p.TypeId == "nowplaying");     // rangé, avec ses réglages, pas détruit
         Assert.Contains(new LayoutStore(LayoutPath).Load().Shelf!, p => p.TypeId == "nowplaying");
         Assert.False(model.FirstRun.Modules.Single(m => m.TypeId == "nowplaying").IsChecked);
@@ -237,7 +233,7 @@ public sealed class FirstRunTests : IDisposable
         model.FirstRun.Modules.Single(m => m.TypeId == "network").IsChecked = false;   // ce que fait la case dans la fenêtre
         await model.FirstRun.PendingModuleChange;
 
-        Assert.DoesNotContain(model.Document.Current.Placements, p => p.TypeId == "network");
+        Assert.DoesNotContain(model.Document.Current.Views[0].Placements, p => p.TypeId == "network");
     }
 
     [Fact]
@@ -260,10 +256,8 @@ public sealed class FirstRunTests : IDisposable
     [Fact]
     public async Task Modules_CheckWithoutRoom_ShowsTheReason_AndStaysUnchecked()
     {
-        var full = DashboardLayout.Default with
-        {
-            Placements = [DashboardLayout.Default.Placements[0] with { Columns = 16, Rows = 4 }],
-        };
+        var full = DashboardLayout.Default.WithPlacements(
+            DashboardLayout.DefaultViewId, [DashboardLayout.Default.Views[0].Placements[0] with { Columns = 16, Rows = 4 }]);
         var model = Open(full);
         GoTo(model.FirstRun, FirstRunStep.Modules);
         var codex = model.FirstRun.Modules.Single(m => m.TypeId == "codex");
@@ -273,7 +267,7 @@ public sealed class FirstRunTests : IDisposable
         Assert.Equal("Plus de place libre : retire ou réduis un module.", codex.Reason);
         Assert.True(codex.HasReason);
         Assert.False(codex.IsChecked);
-        Assert.Single(model.Document.Current.Placements);
+        Assert.Single(model.Document.Current.Views[0].Placements);
         Assert.Equal(0, _link.ReloadCount);
     }
 
@@ -283,11 +277,11 @@ public sealed class FirstRunTests : IDisposable
         var model = Open();
         GoTo(model.FirstRun, FirstRunStep.Modules);
         await model.FirstRun.SetModuleAsync("network", false);
-        Assert.DoesNotContain(model.Document.Current.Placements, p => p.TypeId == "network");
+        Assert.DoesNotContain(model.Document.Current.Views[0].Placements, p => p.TypeId == "network");
 
         await model.Session.UndoAsync();
 
-        Assert.Contains(model.Document.Current.Placements, p => p.TypeId == "network");
+        Assert.Contains(model.Document.Current.Views[0].Placements, p => p.TypeId == "network");
         Assert.True(model.FirstRun.Modules.Single(m => m.TypeId == "network").IsChecked);   // la case suit l'annulation
     }
 
@@ -694,7 +688,7 @@ public sealed class FirstRunTests : IDisposable
         boxes.Single(b => Equals(b.Content, "Réseau")).IsChecked = false;
         await model.FirstRun.PendingModuleChange;
 
-        Assert.DoesNotContain(model.Document.Current.Placements, p => p.TypeId == "network");
+        Assert.DoesNotContain(model.Document.Current.Views[0].Placements, p => p.TypeId == "network");
     }
 
     [AvaloniaFact]

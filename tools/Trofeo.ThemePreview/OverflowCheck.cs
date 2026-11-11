@@ -30,7 +30,7 @@ internal static class OverflowCheck
             foreach (var size in Enum.GetValues<TextSize>())
             {
                 var layout = PreviewScene.Layout(size);
-                var rects = layout.Placements
+                var rects = layout.Views[0].Placements
                     .Select(p => (p, Rect: GridGeometry.ModuleRect(p.Column, p.Row, p.Columns, p.Rows, theme.Grid)))
                     .ToList();
 
@@ -64,8 +64,8 @@ internal static class OverflowCheck
         List<(ModulePlacement Placement, SKRectI Rect)> rects, PreviewScene scene, FrameComposer composer,
         IBackground background, IReadOnlyDictionary<Guid, IModule> none)
     {
-        using var with = composer.Compose(layout, scene.ByPlacement, theme, background, PreviewScene.Now);
-        using var without = composer.Compose(layout, none, theme, background, PreviewScene.Now);
+        using var with = composer.Compose(layout.Views[0].Placements, scene.ByPlacement, theme, background, PreviewScene.Now);
+        using var without = composer.Compose(layout.Views[0].Placements, none, theme, background, PreviewScene.Now);
         var a = with.Pixels;
         var b = without.Pixels;
 

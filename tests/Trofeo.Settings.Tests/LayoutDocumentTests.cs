@@ -157,7 +157,7 @@ public sealed class LayoutDocumentTests : IDisposable
         Assert.True(outcome.Saved);
         Assert.Null(outcome.Message);
         Assert.Equal(Garbage, File.ReadAllText(_file + ".avant-reglages"));
-        Assert.Equal(DashboardLayout.Default.Placements.Count, _store.Load().Placements.Count);
+        Assert.Equal(DashboardLayout.Default.Views[0].Placements.Count, _store.Load().Views[0].Placements.Count);
         Assert.Null(document.LoadError);
         Assert.Equal(1, _link.ReloadCount);
 

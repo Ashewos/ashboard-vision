@@ -50,12 +50,12 @@ public sealed class CommunityHardeningTests : IDisposable
     [Fact]
     public async Task Import_KeptSettingsMessage_ShowsTheCleanedNameOfAModule()
     {
-        var (link, document, session) = Open(new DashboardLayout(180, [new ModulePlacement(Guid.NewGuid(), "alex.minecraft", 0, 0, 4, 2, TextSize.Normal, Json("""{"port":25565}"""))]));
+        var (link, document, session) = Open(DashboardLayout.SingleView(180, [new ModulePlacement(Guid.NewGuid(), "alex.minecraft", 0, 0, 4, 2, TextSize.Normal, Json("""{"port":25565}"""))]));
         link.SetTypes([.. SampleData.Types(), Hostile_Type()]);
         var picker = new FakeFilePicker();
         var tab = new SettingsTabViewModel(link, session, new PreferencesStore(new EditorPreferences(), System.IO.Path.Combine(_dir, "p.json")), SystemServices.None, picker);
         var shared = System.IO.Path.Combine(_dir, "ami.trofeo.json");
-        File.WriteAllText(shared, LayoutTransfer.Export(new DashboardLayout(180, [document.Current.Placements[0] with { Settings = Json("""{"port":3389}""") }])));
+        File.WriteAllText(shared, LayoutTransfer.Export(DashboardLayout.SingleView(180, [document.Current.Views[0].Placements[0] with { Settings = Json("""{"port":3389}""") }])));
         picker.Result = shared;
 
         await tab.ImportAsync();
@@ -68,12 +68,12 @@ public sealed class CommunityHardeningTests : IDisposable
     [Fact]
     public async Task Import_TooSmallMessage_ShowsTheCleanedNameOfAModule()
     {
-        var (link, document, session) = Open(new DashboardLayout(180, []));
+        var (link, document, session) = Open(DashboardLayout.SingleView(180, []));
         link.SetTypes([.. SampleData.Types(), Hostile_Type([new NumberField("n", "N", 1, 5, 2)], min: new GridSize(4, 2))]);
         var picker = new FakeFilePicker();
         var tab = new SettingsTabViewModel(link, session, new PreferencesStore(new EditorPreferences(), System.IO.Path.Combine(_dir, "p.json")), SystemServices.None, picker);
         var shared = System.IO.Path.Combine(_dir, "ami.trofeo.json");
-        File.WriteAllText(shared, LayoutTransfer.Export(new DashboardLayout(180, [new ModulePlacement(Guid.NewGuid(), "alex.minecraft", 0, 0, 2, 1, TextSize.Normal, Json("{}"))])));
+        File.WriteAllText(shared, LayoutTransfer.Export(DashboardLayout.SingleView(180, [new ModulePlacement(Guid.NewGuid(), "alex.minecraft", 0, 0, 2, 1, TextSize.Normal, Json("{}"))])));
         picker.Result = shared;
 
         await tab.ImportAsync();
@@ -106,10 +106,8 @@ public sealed class CommunityHardeningTests : IDisposable
     [Fact]
     public void Shortcuts_TargetNameOfACommunityType_IsCleaned()
     {
-        var layout = DashboardLayout.Default with
-        {
-            Placements = [new ModulePlacement(Guid.NewGuid(), "alex.minecraft", 0, 0, 4, 2, TextSize.Normal, Json("{}"))],
-        };
+        var layout = DashboardLayout.Default.WithPlacements(
+            DashboardLayout.DefaultViewId, [new ModulePlacement(Guid.NewGuid(), "alex.minecraft", 0, 0, 4, 2, TextSize.Normal, Json("{}"))]);
         var (link, _, session) = Open(layout);
         link.Welcome = SampleData.Welcome() with { Types = [.. SampleData.Types(), Hostile_Type(commands: true)] };
         var tab = new ShortcutsTabViewModel(link, session);

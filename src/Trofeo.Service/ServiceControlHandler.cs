@@ -180,7 +180,7 @@ public sealed class ServiceControlHandler(
                 }
             }
 
-            Trace.TraceInformation($"Disposition rechargée : {layout.Placements.Count} module(s), {warnings.Count} avertissement(s).");
+            Trace.TraceInformation($"Disposition rechargée : {layout.AllPlacements.Count()} module(s), {warnings.Count} avertissement(s).");
             return new Reloaded(true, null, warnings);
         }
         finally
@@ -217,7 +217,7 @@ public sealed class ServiceControlHandler(
     public async Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct)
     {
         var layout = loop.Layout;
-        var placed = layout.Placements.FirstOrDefault(p => p.InstanceId == instanceId);
+        var placed = layout.Views[0].Placements.FirstOrDefault(p => p.InstanceId == instanceId);
         var placement = placed ?? layout.Shelf?.FirstOrDefault(p => p.InstanceId == instanceId);
         if (placement is null) return new ActionResult(false, "Module introuvable dans la disposition.");
 

@@ -42,7 +42,7 @@ public sealed class DisplayLoop : IDisposable
         IModule[] list, Dictionary<Guid, ModulePlacement> placed)
     {
         public static Live Empty { get; } = new(
-            new DashboardLayout(0, []), FrozenDictionary<Guid, IModule>.Empty, [], [], []);
+            DashboardLayout.SingleView(0, []), FrozenDictionary<Guid, IModule>.Empty, [], [], []);
 
         public DashboardLayout Layout { get; } = layout;
         public FrozenDictionary<Guid, IModule> Modules { get; } = modules;
@@ -59,7 +59,7 @@ public sealed class DisplayLoop : IDisposable
         {
             var entries = new List<KeyValuePair<Guid, IModule>>(modules.Count);
             var seen = new HashSet<Guid>();
-            foreach (var placement in layout.Placements)
+            foreach (var placement in layout.Views[0].Placements)
             {
                 if (modules.TryGetValue(placement.InstanceId, out var module) && seen.Add(placement.InstanceId))
                 {
@@ -184,7 +184,7 @@ public sealed class DisplayLoop : IDisposable
             return target;
         }
 
-        foreach (var placement in live.Layout.Placements.OrderBy(p => p.Column).ThenBy(p => p.Row))
+        foreach (var placement in live.Layout.Views[0].Placements.OrderBy(p => p.Column).ThenBy(p => p.Row))
         {
             if (live.Modules.TryGetValue(placement.InstanceId, out var module) && module is ICommandableModule commandable)
             {
@@ -492,11 +492,11 @@ public sealed class DisplayLoop : IDisposable
         // 1. Ce qu'on garde, ce qu'on crée.
         var plan = new List<(ModulePlacement Placement, IModule? Keep, bool Duplicate)>();
         var seen = new HashSet<Guid>();
-        foreach (var placement in layout.Placements)
+        foreach (var placement in layout.Views[0].Placements)
         {
             try
             {
-                var error = LayoutValidator.Check(layout, placement, _registry.Descriptors);
+                var error = LayoutValidator.Check(layout.Views[0].Placements, placement, _registry.Descriptors);
                 if (error == PlacementError.UnknownType)
                 {
                     Refuse(warnings, $"Module ignoré : type inconnu « {placement.TypeId} ».", $"({placement.InstanceId})");
@@ -648,11 +648,11 @@ public sealed class DisplayLoop : IDisposable
             var old = _live;
             var placement = old.Placed.TryGetValue(instanceId, out var accepted)
                 ? accepted
-                : old.Layout.Placements.FirstOrDefault(p => p.InstanceId == instanceId);
+                : old.Layout.Views[0].Placements.FirstOrDefault(p => p.InstanceId == instanceId);
             if (placement is null) return false;
 
             if (!old.Placed.ContainsKey(instanceId)
-                && LayoutValidator.Check(old.Layout, placement, _registry.Descriptors) != PlacementError.None)
+                && LayoutValidator.Check(old.Layout.Views[0].Placements, placement, _registry.Descriptors) != PlacementError.None)
             {
                 return false;
             }
@@ -997,7 +997,7 @@ public sealed class DisplayLoop : IDisposable
             var renderStart = _time.GetTimestamp();
             try
             {
-                using var bitmap = _composer.Compose(live.Layout, live.Modules, _theme, _background, _time.GetLocalNow());
+                using var bitmap = _composer.Compose(live.Layout.Views[0].Placements, live.Modules, _theme, _background, _time.GetLocalNow());
                 jpeg = JpegEncoder.Encode(bitmap, live.Layout.Rotation);
             }
             catch (Exception ex)
