@@ -234,18 +234,19 @@ public sealed class DisplayLoop : IDisposable
 
     /// <summary>
     /// Le module qui reçoit une commande de raccourci : l'instance demandée si elle accepte les commandes, sinon le
-    /// premier module qui les accepte, dans l'ordre de la vue affichée (colonne, puis rangée) ; les cases des vues cachées ne
-    /// comptent pas. <c>null</c> s'il n'y en a aucun.
+    /// premier module qui les accepte, dans l'ordre de la vue affichée (colonne, puis rangée). Une instance qui est une case
+    /// d'une vue cachée rend <c>null</c> (le raccourci n'agit pas) ; le repli ne sert que pour une instance absente ou qui
+    /// n'accepte pas les commandes. <c>null</c> s'il n'y en a aucun.
     /// Appelable depuis le thread de l'interface, y compris pendant un changement de disposition : chaque appel lit
     /// un état cohérent (modules et disposition ensemble). L'appelant doit cesser d'appeler avant de libérer la boucle.
     /// </summary>
     public ICommandableModule? FindCommandTarget(Guid? instanceId)
     {
         var live = _live;
-        if (instanceId is { } id && live.Modules.TryGetValue(id, out var requested) && requested is ICommandableModule target
-            && live.DisplayedSet.Contains(requested))
+        if (instanceId is { } id && live.Modules.TryGetValue(id, out var requested) && requested is ICommandableModule target)
         {
-            return target;
+            // Un raccourci visé sur une case d'une vue cachée n'agit pas : ni lui, ni un repli sur la vue affichée.
+            return live.DisplayedSet.Contains(requested) ? target : null;
         }
 
         foreach (var placement in live.Placements.OrderBy(p => p.Column).ThenBy(p => p.Row))

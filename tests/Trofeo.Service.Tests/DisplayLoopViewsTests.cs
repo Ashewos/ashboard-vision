@@ -340,14 +340,17 @@ public sealed class DisplayLoopViewsTests : IDisposable
     {
         var rig = Rig();
 
-        // Une cible demandée dans une vue cachée n'est pas atteinte : on retombe sur la première case de la vue affichée.
-        Assert.Same(_factory.Created[P1], rig.Loop.FindCommandTarget(P2));
+        // Une cible nommée dans une vue cachée rend null : le raccourci n'agit pas (pas de repli sur la vue affichée).
+        Assert.Null(rig.Loop.FindCommandTarget(P2));
+        Assert.Same(_factory.Created[P1], rig.Loop.FindCommandTarget(P1));
         Assert.Same(_factory.Created[P1], rig.Loop.FindCommandTarget(null));
+        Assert.Same(_factory.Created[P1], rig.Loop.FindCommandTarget(Guid.NewGuid())); // identifiant inconnu : le repli reste
 
         rig.Loop.ShowView(V2, +1);
 
-        Assert.Same(_factory.Created[P2], rig.Loop.FindCommandTarget(P1));
+        Assert.Null(rig.Loop.FindCommandTarget(P1));
         Assert.Same(_factory.Created[P2], rig.Loop.FindCommandTarget(P2));
+        Assert.Same(_factory.Created[P2], rig.Loop.FindCommandTarget(null));
     }
 
     [Fact]
