@@ -1,18 +1,21 @@
 using System.Diagnostics;
 using System.Reflection;
+using AshboardVision.Sdk;
 using Trofeo.Control;
 using Trofeo.Core.Layout;
 using Trofeo.Core.Rendering;
 using Trofeo.Core.Shortcuts;
 using Trofeo.Device;
 using Trofeo.Distribution;
+using Trofeo.Extensions;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Display;
 
 /// <summary>
 /// Ce que le service répond à la fenêtre de réglage : poignée de main, état, rechargement à chaud de la disposition,
-/// recherches et actions des modules, aperçu de l'écran.
+/// recherches et actions des modules, aperçu de l'écran, modules complémentaires. Le canal de contrôle ne connaît pas
+/// <c>Trofeo.Extensions</c> : c'est ici que ses types sont traduits en copies simples.
 /// </summary>
 /// <param name="screen">L'état du lien avec l'écran (fourni par le programme, qui connaît le périphérique).</param>
 /// <param name="sensors">L'état de l'assistant des capteurs (fourni par le programme).</param>
@@ -22,6 +25,10 @@ namespace Trofeo.Display;
 /// son fond peut être gardé quand rien de ce qui le décide n'a changé.
 /// </param>
 /// <param name="hotkeys">Pose les raccourcis après un rechargement ; <c>null</c> : pas de raccourcis.</param>
+/// <param name="community">
+/// Les modules complémentaires. Le handler lui transmet le plafond d'images et l'apparence à chaque rechargement, et remet à neuf les
+/// cases posées quand ce que leur type exécute change (<see cref="CommunityTypeWatcher"/>).
+/// </param>
 /// <param name="buildWarnings">
 /// Reçoit les avertissements de <paramref name="buildConfig"/> (apparence, fond) : ils rejoignent ceux du rechargement.
 /// <paramref name="buildConfig"/> doit les lui adresser.
@@ -33,11 +40,17 @@ namespace Trofeo.Display;
 /// <param name="updates">Les mises à jour ; <c>null</c> : le service tourne sans (l'état reste « inconnu » et rien ne s'installe).</param>
 public sealed class ServiceControlHandler(
     LayoutStore store, DisplayLoop loop, ModuleRegistry registry, Func<ScreenInfo> screen, Func<SensorInfo> sensors,
-    ProcessMeter meter, Func<DashboardLayout, LoopConfig?, LoopConfig> buildConfig, IHotkeyHost? hotkeys, WarningSink? buildWarnings = null,
-    LoopConfig? initialConfig = null, UpdateService? updates = null)
+    ProcessMeter meter, Func<DashboardLayout, LoopConfig?, LoopConfig> buildConfig, IHotkeyHost? hotkeys, ICommunityModules community,
+    WarningSink? buildWarnings = null, LoopConfig? initialConfig = null, UpdateService? updates = null)
     : IControlHandler, IDisposable
 {
+    /// <summary>Le plafond d'images de la boucle (<see cref="DisplayLoop"/>) : un hôte de module n'a aucune raison d'en écrire davantage.</summary>
+    public const int HostMaxFpsCap = 12;
+
     private static readonly string ServiceVersion = ReadVersion();
+
+    // Remet à neuf les cases posées d'un module complémentaire quand son type change vraiment ; libéré avec le handler.
+    private readonly CommunityTypeWatcher _watcher = new(community, loop);
 
     /// <summary>La version qui tourne (<c>AssemblyInformationalVersion</c>, sans le <c>+hash</c> du commit).</summary>
     internal static string InstalledVersion => ServiceVersion;
@@ -58,16 +71,24 @@ public sealed class ServiceControlHandler(
     private IReadOnlyList<ShortcutBinding>? _appliedShortcuts = initialConfig is null ? null : initialConfig.Layout.Shortcuts ?? ShortcutDefaults.All;
     private bool _appliedCommandable = loop.FindCommandTarget(null) is not null;
 
-    public Welcome Hello()
+    public Welcome Hello() => new(ServiceVersion, ControlPipe.ProtocolVersion, GetTypes());
+
+    public IReadOnlyList<ModuleTypeInfo> GetTypes()
     {
+        var entries = community.Entries;
         var types = new List<ModuleTypeInfo>();
         foreach (var d in registry.Types)
         {
             var schema = registry.Factory(d.TypeId) is IConfigurableModuleFactory configurable ? configurable.Schema : SettingsSchema.Empty;
-            types.Add(new ModuleTypeInfo(d.TypeId, d.DisplayName, d.MinSize, d.Presets, d.AcceptsCommands, schema));
+            // Le premier module de cet identifiant, comme le registre : seul un type de la communauté a une fiche.
+            var entry = entries.FirstOrDefault(e => e.Id == d.TypeId && e.Manifest is not null);
+            var sheet = entry?.Manifest is { } manifest
+                ? new CommunityTypeInfo(manifest.Author, manifest.Description, manifest.Version, manifest.Permissions, community.GrantedTo(entry))
+                : null;
+            types.Add(new ModuleTypeInfo(d.TypeId, d.DisplayName, d.MinSize, d.Presets, d.AcceptsCommands, schema, sheet));
         }
 
-        return new Welcome(ServiceVersion, ControlPipe.ProtocolVersion, types);
+        return types;
     }
 
     public ServiceStatus GetStatus()
@@ -129,6 +150,10 @@ public sealed class ServiceControlHandler(
                 if (buildWarnings is not null) warnings.AddRange(buildWarnings.Drain());
             }
 
+            // Les hôtes des modules complémentaires, avant que les cases soient recréées. Ici et pas dans buildConfig : celui-ci ne tourne
+            // que si l'apparence change, et un plafond d'images modifié seul ne leur parviendrait pas.
+            ApplyHostOptions(community, layout);
+
             warnings.AddRange(await loop.ApplyAsync(config).ConfigureAwait(false));
             _applied = config;
             _appliedAppearance = layout.Appearance;
@@ -163,6 +188,13 @@ public sealed class ServiceControlHandler(
             _reloadGate.Release();
         }
     }
+
+    /// <summary>
+    /// Transmet aux hôtes des modules complémentaires le plafond d'images (borné à celui de la boucle) et l'apparence de la disposition.
+    /// À appeler au démarrage, puis à chaque rechargement.
+    /// </summary>
+    public static void ApplyHostOptions(ICommunityModules community, DashboardLayout layout) =>
+        community.SetDisplayOptions(Math.Clamp(layout.MaxFps ?? HostMaxFpsCap, 1, HostMaxFpsCap), layout.Appearance ?? AppearanceSettings.Default);
 
     public Task<bool> RestartModuleAsync(Guid instanceId, CancellationToken ct) => loop.RestartAsync(instanceId);
 
@@ -253,8 +285,82 @@ public sealed class ServiceControlHandler(
         return new ActionResult(ok, message);
     }
 
-    /// <summary>L'arrêt du service annule l'installation en cours.</summary>
-    public void Dispose() => _lifetime.Cancel();
+    // ---- Modules complémentaires ----
+
+    public CommunityOverview GetCommunity()
+    {
+        var modules = community.Entries.Select(ToModuleInfo).ToList();
+        var store = community.StoreInfo;
+        return new CommunityOverview(modules, store.ModulesRoot, store.DeveloperMode, store.DevFolders, store.Tampered);
+    }
+
+    // La mise à jour proposée (version, notes) est celle que GitHub a annoncée ; ses permissions ne se lisent qu'à la préparation (clic sur « Mettre à jour »).
+    private CommunityModuleInfo ToModuleInfo(CommunityEntry entry)
+    {
+        var manifest = entry.Manifest;
+        var update = community.UpdateFor(entry.Id);
+        return new CommunityModuleInfo(
+            entry.Id, manifest?.Name ?? entry.Id, manifest?.Author ?? "", manifest?.Description ?? "",
+            manifest?.Version ?? entry.Approval?.Version, Enum.Parse<LinkCommunityState>(entry.State.ToString()), entry.Message,
+            manifest?.Permissions ?? [], community.GrantedTo(entry), entry.FromDevFolder,
+            UpdateVersion: update?.Version, UpdateNotes: update?.Notes,
+            DevFolderPath: entry.FromDevFolder ? entry.Directory : null);
+    }
+
+    public PackageInfo InspectPackage(string path) => ToPackageInfo(community.Inspect(path));
+
+    // Le contenu d'un dossier de travail : le manifeste est lu, rien n'est lancé ; chaque refus est dans les erreurs.
+    public PackageInfo InspectDevFolder(string path) => ToPackageInfo(community.InspectDevFolder(path));
+
+    private static PackageInfo ToPackageInfo(PackageInspection inspection)
+    {
+        var manifest = inspection.Manifest;
+        return new PackageInfo(
+            manifest?.Id, manifest?.Name, manifest?.Author, manifest?.Version, manifest?.Description, manifest?.Permissions ?? [],
+            inspection.Errors, inspection.Conflict, inspection.Installed?.Version);
+    }
+
+    public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        community.InstallAsync(path, granted, ct);
+
+    public ActionResult ApproveModule(string id, IReadOnlyList<ModulePermission> granted) => community.Approve(id, granted);
+
+    public Task<ActionResult> SetModulePermissionsAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        community.SetPermissionsAsync(id, granted);
+
+    public Task<ActionResult> UninstallModuleAsync(string id, CancellationToken ct) => community.UninstallAsync(id);
+
+    public Task<ActionResult> RelaunchModuleAsync(string id, CancellationToken ct) => community.RelaunchAsync(id);
+
+    public ActionResult SetModulesRoot(string path) => community.SetModulesRoot(path);
+
+    public ActionResult SetDeveloperMode(bool on) => community.SetDeveloperMode(on);
+
+    public ActionResult AddDevFolder(string path, IReadOnlyList<ModulePermission> granted) => community.AddDevFolder(path, granted);
+
+    public ActionResult RemoveDevFolder(string path) => community.RemoveDevFolder(path);
+
+    public Task<ActionResult> ReloadDevModuleAsync(string id, CancellationToken ct) => community.ReloadDevModuleAsync(id);
+
+    public Task CheckModuleUpdatesAsync(CancellationToken ct) => community.CheckUpdatesAsync(ct);
+
+    // Le clic sur « Mettre à jour » : le paquet est téléchargé et lu ici, puis gardé pour l'installation (ou abandonné).
+    public Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id, CancellationToken ct) => community.PrepareUpdateAsync(id, ct);
+
+    public void CancelModuleUpdate(string id) => community.CancelUpdate(id);
+
+    public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        community.InstallUpdateAsync(id, granted, ct);
+
+    // Lire la consommation fait passer les relevés des modules à un toutes les 5 s tant que la fenêtre continue de la lire.
+    public IReadOnlyList<ModuleConsumption> GetConsumption() => community.Consumption(meter.Read());
+
+    /// <summary>L'arrêt du service annule l'installation en cours et arrête d'écouter les modules complémentaires.</summary>
+    public void Dispose()
+    {
+        _watcher.Dispose();
+        _lifetime.Cancel();
+    }
 
     /// <summary>L'état des mises à jour tel que la fenêtre de réglage le connaît.</summary>
     public static UpdateInfo ToUpdateInfo(UpdateStatus status) => new(

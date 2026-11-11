@@ -1,6 +1,8 @@
 # Publie une version d'Ashboard Vision : étiquette vX.Y.Z (stable depuis main, bêta depuis Canary).
 #
 # - Étiquette `v*` poussée : vérifie, teste, fabrique l'installateur et crée la version GitHub (préversion pour une bêta).
+#   La version porte l'installateur, son `.sha256` et les quatre paquets du SDK des modules (`AshboardVision.Sdk*.nupkg`, fabriqués par
+#   installer/build.ps1). Ces paquets ne vont jamais sur nuget.org : aucun `dotnet nuget push` ici.
 # - Lancement manuel : ne publie jamais. Avec `essai`, construit seulement (numéro lu dans Directory.Build.props, ni vérification
 #   de branche, ni notes) et dépose l'installateur comme artefact du lancement. Sans `essai`, fait aussi les vérifications et
 #   l'extraction des notes, comme une vraie publication, sans la dernière étape.
@@ -154,6 +156,10 @@ jobs:
           foreach ($f in $setup, "$setup.sha256") {
             if (-not (Test-Path -LiteralPath $f)) { throw "Fichier attendu absent : $f" }
           }
+          # Les quatre paquets du SDK, à côté de l'installateur (installer/build.ps1 les copie dans installer/out).
+          $paquets = @(Get-ChildItem -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'installer/out') -Filter 'AshboardVision.Sdk*.nupkg')
+          if ($paquets.Count -ne 4) { throw "Il faut quatre paquets du SDK dans installer/out, il y en a $($paquets.Count) : $(($paquets | ForEach-Object Name) -join ', ')." }
+          Write-Host "Paquets du SDK : $(($paquets | ForEach-Object Name) -join ', ')"
           "setup=$setup" >> $env:GITHUB_OUTPUT
 
       - name: Extraire les notes de version de CHANGELOG.md
@@ -195,6 +201,7 @@ jobs:
           path: |
             installer/out/Ashboard-Vision-Setup-${{ steps.contexte.outputs.version }}.exe
             installer/out/Ashboard-Vision-Setup-${{ steps.contexte.outputs.version }}.exe.sha256
+            installer/out/AshboardVision.Sdk*.nupkg
           if-no-files-found: error
           retention-days: 14
 
@@ -209,9 +216,13 @@ jobs:
           NOTES: ${{ steps.notes.outputs.fichier }}
         run: |
           $ErrorActionPreference = 'Stop'
+          # L'installateur, son empreinte et les quatre paquets du SDK (aucun envoi vers nuget.org).
+          $paquets = @(Get-ChildItem -LiteralPath (Split-Path $env:SETUP -Parent) -Filter 'AshboardVision.Sdk*.nupkg' | ForEach-Object FullName)
+          if ($paquets.Count -ne 4) { throw "Il faut quatre paquets du SDK à joindre, il y en a $($paquets.Count)." }
           $arguments = @(
             'release', 'create', "v$($env:VERSION)",
-            $env:SETUP, "$($env:SETUP).sha256",
+            $env:SETUP, "$($env:SETUP).sha256"
+          ) + $paquets + @(
             '--title', "Ashboard Vision $($env:VERSION)",
             '--notes-file', $env:NOTES,
             '--verify-tag'

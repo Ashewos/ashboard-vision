@@ -49,6 +49,57 @@ public sealed class DpapiSecretVaultTests : IDisposable
     }
 
     [Fact]
+    public void Vault_TrySet_RefusedByTheGuard_WritesNothing()
+    {
+        var vault = new DpapiSecretVault(FilePath);
+        vault.Set("alex.demo", "token", "avant");
+        IReadOnlyDictionary<string, string>? seen = null;
+
+        var accepted = vault.TrySet("alex.demo", "token", "apres", current =>
+        {
+            seen = new Dictionary<string, string>(current);
+            return false;
+        });
+
+        Assert.False(accepted);
+        Assert.Equal("avant", vault.Get("alex.demo", "token"));
+        Assert.Equal(new Dictionary<string, string> { ["token"] = "avant" }, seen);
+    }
+
+    [Fact]
+    public void Vault_TrySet_AcceptedByTheGuard_Writes_AndSeesAnEmptyScope()
+    {
+        var vault = new DpapiSecretVault(FilePath);
+        var count = -1;
+
+        var accepted = vault.Scope("alex.demo").TrySet("token", "abc", current =>
+        {
+            count = current.Count;
+            return true;
+        });
+
+        Assert.True(accepted);
+        Assert.Equal(0, count);
+        Assert.Equal("abc", vault.Get("alex.demo", "token"));
+    }
+
+    [Fact]
+    public void Vault_RemoveScope_ErasesOnlyThatScope()
+    {
+        var vault = new DpapiSecretVault(FilePath);
+        vault.Scope("alex.demo").Set("token", "a");
+        vault.Scope("alex.demo").Set("autre", "b");
+        vault.Scope("network").Set("token", "c");
+
+        vault.RemoveScope("alex.demo");
+        vault.RemoveScope("inconnu"); // sans effet
+
+        Assert.Null(vault.Get("alex.demo", "token"));
+        Assert.Null(vault.Get("alex.demo", "autre"));
+        Assert.Equal("c", vault.Get("network", "token"));
+    }
+
+    [Fact]
     public void Vault_Scopes_AreIsolated()
     {
         var vault = new DpapiSecretVault(FilePath);

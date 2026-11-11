@@ -3,12 +3,14 @@
              xmlns:t="clr-namespace:Trofeo.Settings"
              xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
              xmlns:views="clr-namespace:Trofeo.Settings.Views"
+             xmlns:controls="clr-namespace:Trofeo.Settings.Controls"
              x:Class="Trofeo.Settings.Views.SettingsTabView"
              x:DataType="vm:SettingsTabViewModel">
 
   <!-- Deux colonnes calmes et équilibrées, alignées à gauche : l'écran, l'aperçu, le démarrage et les mises à jour ; puis les capteurs, la consommation, le partage et l'assistant. -->
   <ScrollViewer VerticalScrollBarVisibility="Auto" AllowAutoHide="False">
-    <Grid ColumnDefinitions="*,16,*" Margin="0,0,8,0">
+    <StackPanel Spacing="16" Margin="0,0,8,0">
+    <Grid ColumnDefinitions="*,16,*">
 
       <StackPanel Grid.Column="0" Spacing="16">
 
@@ -143,5 +145,165 @@
         </Border>
       </StackPanel>
     </Grid>
+
+    <!-- Les modules complémentaires (créés par la communauté) : une ligne par module, l'installation, les mises à jour. -->
+    <Border Name="CommunityPanel" Classes="panel" Padding="20" DataContext="{Binding Community}" x:DataType="vm:CommunitySectionViewModel">
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+          <StackPanel Grid.Column="0" Spacing="4">
+            <TextBlock Classes="section" Text="{x:Static t:Texts.SettingsCommunity}" />
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.CommunityHelp}" />
+          </StackPanel>
+          <Button Grid.Column="1" Name="InstallModuleButton" Classes="primary" VerticalAlignment="Top"
+                  Content="{x:Static t:Texts.CommunityInstallButton}" Command="{Binding InstallFromFileCommand}" IsEnabled="{Binding IsIdle}" />
+        </Grid>
+
+        <!-- La liste des modules validés a été modifiée hors du logiciel. -->
+        <Border Name="TamperedBanner" Classes="note" BorderBrush="{DynamicResource Amber}" IsVisible="{Binding StoreTampered}">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <controls:CommunityBadge Size="22" VerticalAlignment="Top" />
+            <TextBlock Classes="warning" TextWrapping="Wrap" Text="{Binding TamperedText}" />
+          </Grid>
+        </Border>
+
+        <TextBlock Name="CommunityMessage" Classes="error" TextWrapping="Wrap" MaxLines="6" TextTrimming="CharacterEllipsis"
+                   Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+
+        <TextBlock Name="CommunityNone" Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.CommunityNone}" IsVisible="{Binding HasNoModules}" />
+
+        <ItemsControl Name="CommunityList" ItemsSource="{Binding Modules}" IsVisible="{Binding HasModules}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:CommunityModuleRow">
+              <Border Classes="note" Margin="0,0,0,8" Padding="14,12">
+                <StackPanel Spacing="8">
+                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                    <controls:CommunityBadge Grid.Column="0" Size="18" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Spacing="2">
+                      <TextBlock Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="muted" Text="{Binding AuthorLine}" TextTrimming="CharacterEllipsis" IsVisible="{Binding HasAuthorLine}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" MaxWidth="320" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" TextAlignment="Right"
+                               VerticalAlignment="Center" Text="{Binding StateText}" Classes.ok="{Binding StateIsOk}" Classes.warning="{Binding StateIsProblem}" />
+                  </Grid>
+                  <TextBlock Classes="muted" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" Text="{Binding PermissionsText}" />
+                  <TextBlock Classes="warning" TextWrapping="Wrap" MaxLines="4" TextTrimming="CharacterEllipsis" Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+                  <TextBlock Classes="lead" Foreground="{DynamicResource Accent}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                             Text="{Binding UpdateOffer}" IsVisible="{Binding HasUpdateOffer}" />
+                  <WrapPanel IsVisible="{Binding IsNotConfirming}">
+                    <Button Classes="small primary" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityApprove}" Command="{Binding ApproveCommand}"
+                            IsVisible="{Binding CanApprove}" IsEnabled="{Binding CanApproveNow}" />
+                    <Button Classes="small" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityPermissions}" Command="{Binding PermissionsCommand}"
+                            IsVisible="{Binding CanPermissions}" IsEnabled="{Binding CanPermissionsNow}" />
+                    <Button Classes="small" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityUpdate}" Command="{Binding UpdateCommand}"
+                            IsVisible="{Binding CanUpdate}" IsEnabled="{Binding CanUpdateNow}" />
+                    <Button Classes="small" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityRelaunch}" Command="{Binding RelaunchCommand}"
+                            IsVisible="{Binding CanRelaunch}" IsEnabled="{Binding CanRelaunchNow}" />
+                    <Button Classes="small" Margin="0,0,8,0" Content="{x:Static t:Texts.CommunityUninstall}" Command="{Binding AskUninstallCommand}"
+                            IsVisible="{Binding CanUninstall}" IsEnabled="{Binding CanUninstallNow}" />
+                  </WrapPanel>
+                  <StackPanel Spacing="6" IsVisible="{Binding ConfirmingUninstall}">
+                    <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding UninstallConfirmText}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Classes="small danger" Content="{x:Static t:Texts.CommunityUninstall}" Command="{Binding ConfirmUninstallCommand}" IsEnabled="{Binding IsIdle}" />
+                      <Button Classes="small" Content="{x:Static t:Texts.ModulesCancel}" Command="{Binding CancelUninstallCommand}" />
+                    </StackPanel>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Le dossier des modules : le chemin, « Changer… ». -->
+        <Border Name="ModulesFolderBox" Classes="note" Padding="14,12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Grid.Column="0" Spacing="4">
+              <TextBlock Classes="name" Text="{x:Static t:Texts.CommunityFolderTitle}" />
+              <TextBlock Name="ModulesRootText" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Text="{Binding ModulesRoot}" />
+              <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.CommunityFolderHelp}" />
+            </StackPanel>
+            <Button Grid.Column="1" Name="ChangeFolderButton" VerticalAlignment="Top" Content="{x:Static t:Texts.CommunityFolderChange}"
+                    Command="{Binding ChangeModulesFolderCommand}" IsEnabled="{Binding IsIdle}" />
+          </Grid>
+        </Border>
+
+        <!-- Le mode développeur : l'interrupteur, puis (allumé) les dossiers de travail. -->
+        <Border Name="DeveloperBox" Classes="note" Padding="14,12">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Classes="name" Text="{x:Static t:Texts.DeveloperTitle}" VerticalAlignment="Center" Margin="0,0,24,0" />
+              <ToggleSwitch Grid.Column="1" Name="DeveloperSwitch" OnContent="" OffContent="" VerticalAlignment="Center"
+                            AutomationProperties.Name="{x:Static t:Texts.DeveloperTitle}"
+                            IsChecked="{Binding DeveloperMode}" IsEnabled="{Binding IsIdle}" />
+            </Grid>
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.DeveloperHelp}" />
+            <StackPanel Name="DevFoldersBox" Spacing="8" IsVisible="{Binding DeveloperMode}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Classes="section" Text="{x:Static t:Texts.DeveloperFolders}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Name="AddDevFolderButton" Classes="small" Content="{x:Static t:Texts.DeveloperAddFolder}"
+                        Command="{Binding AddDevFolderCommand}" IsEnabled="{Binding IsIdle}" />
+              </Grid>
+              <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.DeveloperNoFolders}" IsVisible="{Binding HasNoDevFolders}" />
+              <ItemsControl Name="DevFolderList" ItemsSource="{Binding DevFolders}" IsVisible="{Binding HasDevFolders}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:DevFolderRow">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,0,0,8">
+                      <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Text="{Binding PathText}" />
+                        <TextBlock Classes="muted" TextTrimming="CharacterEllipsis" Text="{Binding ModuleName}" IsVisible="{Binding HasModule}" />
+                        <TextBlock Classes="warning" TextWrapping="Wrap" Text="{Binding NoModuleText}" IsVisible="{Binding HasNoModule}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                        <Button Classes="small" Content="{x:Static t:Texts.DeveloperReload}" Command="{Binding ReloadCommand}" IsEnabled="{Binding CanReloadNow}" />
+                        <Button Classes="small" Content="{x:Static t:Texts.DeveloperRemove}" Command="{Binding RemoveCommand}" IsEnabled="{Binding CanRemoveNow}" />
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </Border>
+
+    <!-- La consommation des modules : relue toutes les 5 secondes, seulement tant que ce tableau est sous les yeux. -->
+    <Border Name="ConsumptionPanel" Classes="panel" Padding="20" DataContext="{Binding Community.Consumption}" x:DataType="vm:ModuleConsumptionViewModel">
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+          <StackPanel Grid.Column="0" Spacing="4">
+            <TextBlock Classes="section" Text="{x:Static t:Texts.ConsumptionTitle}" />
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.ConsumptionHelp}" />
+          </StackPanel>
+          <Button Grid.Column="1" Name="ConsumptionToggle" Classes="small" VerticalAlignment="Top"
+                  Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" />
+        </Grid>
+        <TextBlock Name="ConsumptionFailure" Classes="error" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
+                   Text="{Binding Failure}" IsVisible="{Binding HasFailure}" />
+        <StackPanel Name="ConsumptionTable" Spacing="6" IsVisible="{Binding IsExpanded}">
+          <Grid ColumnDefinitions="*,110,110" ColumnSpacing="12">
+            <TextBlock Grid.Column="0" Classes="muted" Text="{x:Static t:Texts.ConsumptionModule}" />
+            <TextBlock Grid.Column="1" Classes="muted" TextAlignment="Right" Text="{x:Static t:Texts.ConsumptionCpu}" />
+            <TextBlock Grid.Column="2" Classes="muted" TextAlignment="Right" Text="{x:Static t:Texts.ConsumptionMemory}" />
+          </Grid>
+          <ItemsControl Name="ConsumptionList" ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ConsumptionRow">
+                <Grid ColumnDefinitions="*,110,110" ColumnSpacing="12" Margin="0,0,0,6">
+                  <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                    <!-- Le repère orange (jeton Amber) : le service juge ce module gourmand depuis une minute. -->
+                    <TextBlock Name="HighMark" Classes="warning" FontWeight="SemiBold" Text="{Binding HighText}" IsVisible="{Binding IsHigh}" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="1" Classes="number" TextAlignment="Right" Classes.warning="{Binding IsHigh}" Text="{Binding CpuText}" />
+                  <TextBlock Grid.Column="2" Classes="number" TextAlignment="Right" Classes.warning="{Binding IsHigh}" Text="{Binding MemoryText}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+    </StackPanel>
   </ScrollViewer>
 </UserControl>

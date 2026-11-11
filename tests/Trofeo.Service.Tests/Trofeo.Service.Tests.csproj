@@ -2,6 +2,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Trofeo.Service\Trofeo.Service.csproj" />
+    <!-- Pour essayer la case de remplacement d'un module complémentaire avec la vraie boucle d'affichage
+         (le service lui-même ne référence pas encore Trofeo.Extensions). -->
+    <ProjectReference Include="..\..\src\Trofeo.Extensions\Trofeo.Extensions.csproj" />
     <ProjectReference Include="..\Trofeo.TestDoubles\Trofeo.TestDoubles.csproj" />
   </ItemGroup>
 

@@ -20,6 +20,16 @@ public partial class App : Application
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
+    /// <summary>
+    /// Ce que fait la fenêtre quand un second lancement se présente : revenir au premier plan, et traiter les chemins <c>.avmod</c> qu'il passe comme
+    /// sa propre ligne de commande (même règle, même boîte, même clic sur « Installer »). <paramref name="post"/> exécute l'action sur le fil de l'interface.
+    /// </summary>
+    internal static void ConnectSecondLaunches(SingleInstance instance, MainViewModel model, Action<Action> post, Action bringToFront)
+    {
+        instance.ShowRequested += () => post(bringToFront);
+        instance.ArgumentsReceived += received => post(() => model.OpenPackageArguments(received));
+    }
+
     public override void OnFrameworkInitializationCompleted()
     {
         // Sans durée de vie de bureau (tests sans affichage, aperçus), l'appelant monte sa propre fenêtre.
@@ -38,6 +48,10 @@ public partial class App : Application
             var window = new MainWindow { DataContext = model };
             desktop.MainWindow = window;
 
+            // Trofeo.Settings.exe <chemin.avmod> : la boîte d'installation s'ouvre dès que le service est joint (rien ne s'installe sans clic).
+            // Un fichier qui ne peut pas s'ouvrir (partage réseau, fichier disparu) est dit dans la section des modules.
+            model.OpenPackageArguments(desktop.Args);
+
             // Une exception de l'interface ne ferme plus la fenêtre : elle va au journal et sur la ligne ambre.
             if (Guard is { } guard)
             {
@@ -46,7 +60,7 @@ public partial class App : Application
             }
 
             if (Instance is { } instance)
-                instance.ShowRequested += () => Dispatcher.UIThread.Post(window.BringToFront);
+                ConnectSecondLaunches(instance, model, action => Dispatcher.UIThread.Post(action), window.BringToFront);
 
             desktop.Exit += (_, _) =>
             {

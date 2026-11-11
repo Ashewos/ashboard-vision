@@ -7,6 +7,7 @@ using Trofeo.Core.Rendering;
 using Trofeo.Core.Shortcuts;
 using Trofeo.Device;
 using Trofeo.Distribution;
+using Trofeo.Extensions;
 using Trofeo.Modules.Agents;
 using Trofeo.Modules.Clock;
 using Trofeo.Modules.NowPlaying;
@@ -17,7 +18,7 @@ using static Trofeo.Display.Tests.LoopRig;
 namespace Trofeo.Display.Tests;
 
 [Collection(GlobalTraceCollection.Name)]
-public sealed class ServiceControlHandlerTests
+public sealed partial class ServiceControlHandlerTests
 {
     private static readonly Guid Conf1 = new("cccccccc-0000-0000-0000-000000000001");
     private static readonly Guid Conf2 = new("cccccccc-0000-0000-0000-000000000002");
@@ -93,7 +94,8 @@ public sealed class ServiceControlHandlerTests
 
         public Rig(
             DashboardLayout? layout = null, Func<ScreenInfo>? screen = null, Func<SensorInfo>? sensors = null,
-            Func<DashboardLayout, LoopConfig?, LoopConfig>? build = null, LoopConfig? initialConfig = null, UpdateService? updates = null)
+            Func<DashboardLayout, LoopConfig?, LoopConfig>? build = null, LoopConfig? initialConfig = null, UpdateService? updates = null,
+            IReadOnlyList<CommunityEntry>? communityEntries = null)
         {
             Directory.CreateDirectory(_dir);
             LayoutPath = Path.Combine(_dir, "layout.json");
@@ -103,13 +105,14 @@ public sealed class ServiceControlHandlerTests
                 extraFactories: [Factory],
                 secrets: type => Secrets.TryGetValue(type, out var s) ? s : Secrets[type] = new FakeSecretStore());
             LoopRig.AddHealthyScreen();
+            if (communityEntries is not null) Community.Entries = communityEntries; // ce que le handler voit comme état de départ
             Handler = new ServiceControlHandler(
                 Store, LoopRig.Loop, LoopRig.Registry,
                 screen ?? (() => new ScreenInfo(LinkScreenState.Ready, null)),
                 sensors ?? (() => new SensorInfo(true, false, false)),
                 new ProcessMeter(() => (TimeSpan.Zero, 1, 2), LoopRig.Time, 4),
                 build ?? ((layout, current) => LoopConfigFactory.Build(layout, new NoSystemFonts(), null, Sink.Warn, current)),
-                Hotkeys, Sink, initialConfig, updates);
+                Hotkeys, Community, Sink, initialConfig, updates);
         }
 
         public string LayoutPath { get; }
@@ -118,6 +121,7 @@ public sealed class ServiceControlHandlerTests
         public ConfigurableProbeFactory Factory { get; } = new();
         public LoopRig LoopRig { get; }
         public FakeHotkeyHost Hotkeys { get; } = new();
+        public FakeCommunityModules Community { get; } = new();
         public WarningSink Sink { get; } = new();
         public ServiceControlHandler Handler { get; }
 
@@ -434,7 +438,7 @@ public sealed class ServiceControlHandlerTests
         var failing = new ServiceControlHandler(
             rig.Store, rig.LoopRig.Loop, rig.LoopRig.Registry, () => new ScreenInfo(LinkScreenState.Ready, null),
             () => new SensorInfo(false, false, false), new ProcessMeter(() => (TimeSpan.Zero, 0, 0), rig.LoopRig.Time, 1),
-            (_, _) => throw new InvalidOperationException("police corrompue"), rig.Hotkeys);
+            (_, _) => throw new InvalidOperationException("police corrompue"), rig.Hotkeys, rig.Community);
         var before = rig.LoopRig.Loop.Layout;
         rig.Store.Save(Layout(Place(B, "other")));
 
@@ -598,7 +602,7 @@ public sealed class ServiceControlHandlerTests
         var handler = new ServiceControlHandler(
             rig.Store, rig.LoopRig.Loop, registry, () => new ScreenInfo(LinkScreenState.Ready, null),
             () => new SensorInfo(false, false, false), new ProcessMeter(() => (TimeSpan.Zero, 0, 0), rig.LoopRig.Time, 1),
-            (_, _) => throw new InvalidOperationException(), null);
+            (_, _) => throw new InvalidOperationException(), null, rig.Community);
 
         var welcome = handler.Hello();
 

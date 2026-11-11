@@ -6,7 +6,10 @@ namespace Trofeo.ModuleKit;
 /// </summary>
 public interface IModuleLog
 {
+    /// <summary>Écrit un message d'information.</summary>
     void Info(string message);
+
+    /// <summary>Écrit un avertissement.</summary>
     void Warning(string message);
 
     /// <summary>Un même message d'erreur n'est écrit en entier qu'une fois par minute.</summary>

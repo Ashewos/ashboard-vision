@@ -22,7 +22,7 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
     private readonly ISecretAccess _secrets;
     private readonly TimeProvider _time;
     private readonly Dictionary<string, ModuleTypeInfo> _types = [];
-    private Welcome? _welcome;
+    private IReadOnlyList<ModuleTypeInfo>? _knownTypes;
     private Guid? _selectedId;
     private bool _refreshing;
 
@@ -95,6 +95,29 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
     public bool HasNoSelection => Selected is null;
     public string SelectedName => Selected?.Name ?? "";
 
+    // ---- Un module complémentaire : le point d'exclamation, la mention et les permissions accordées ----
+
+    private CommunityTypeInfo? SelectedCommunity => SelectedType?.Community;
+
+    /// <summary>Le module choisi vient de la communauté : le point d'exclamation jaune et la mention s'affichent dans son en-tête.</summary>
+    public bool SelectedIsCommunity => SelectedCommunity is not null;
+
+    /// <summary>« Module complémentaire : créé par la communauté, pas par Ashboard Vision ».</summary>
+    public string SelectedCommunityNotice => Texts.CommunityNotice;
+
+    /// <summary>« par Alex · version 1.2.0 » (texte du module, nettoyé).</summary>
+    public string SelectedCommunityDetails => SelectedCommunity is { } community
+        ? string.Format(Texts.CommunityAuthorVersion, UntrustedText.Line(community.Author), UntrustedText.Line(community.Version))
+        : "";
+
+    /// <summary>La description que le module donne de lui-même (texte brut, nettoyé).</summary>
+    public string SelectedCommunityDescription => SelectedCommunity is { } community ? UntrustedText.Block(community.Description) : "";
+
+    public bool HasSelectedCommunityDescription => SelectedCommunityDescription.Length > 0;
+
+    /// <summary>« Permissions accordées : Internet. » ou « Aucune permission accordée. ».</summary>
+    public string SelectedCommunityPermissions => SelectedCommunity is { } community ? PermissionLabels.List(community.Granted) : "";
+
     /// <summary>Les mots de l'état du module placé ; rien pour un module retiré.</summary>
     public string SelectedHealthText => Selected?.HealthText ?? "";
 
@@ -156,7 +179,7 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
     private void OnLinkChanged()
     {
         // Le service renvoie son état chaque seconde ; les listes et le formulaire ne se refont que si ce qu'il a annoncé a changé.
-        if (!ReferenceEquals(_welcome, _link.Welcome))
+        if (!ReferenceEquals(_knownTypes, _link.KnownTypes()))
             Refresh();
         else
             RefreshStatus();
@@ -167,14 +190,14 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
         _refreshing = true;
         try
         {
-            _welcome = _link.Welcome;
+            _knownTypes = _link.KnownTypes();
             _types.Clear();
-            foreach (var type in _welcome?.Types ?? [])
+            foreach (var type in _knownTypes ?? [])
                 _types.TryAdd(type.TypeId, type);
 
             var layout = _session.Document.Current;
-            Fill(Placed, [.. layout.Placements.Select(p => new ModuleListItem(p.InstanceId, p.TypeId, NameOf(p.TypeId), isPlaced: true))]);
-            Fill(Shelved, [.. (layout.Shelf ?? []).Select(p => new ModuleListItem(p.InstanceId, p.TypeId, NameOf(p.TypeId), isPlaced: false))]);
+            Fill(Placed, [.. layout.Placements.Select(p => new ModuleListItem(p.InstanceId, p.TypeId, NameOf(p.TypeId), isPlaced: true, IsCommunityType(p.TypeId)))]);
+            Fill(Shelved, [.. (layout.Shelf ?? []).Select(p => new ModuleListItem(p.InstanceId, p.TypeId, NameOf(p.TypeId), isPlaced: false, IsCommunityType(p.TypeId)))]);
 
             // Le module choisi n'existe plus (oublié) ou rien n'est choisi encore : le premier module de l'écran.
             if (_selectedId is not { } id || Find(id) is null)
@@ -201,7 +224,10 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
             target.Add(item);
     }
 
-    private string NameOf(string typeId) => _types.TryGetValue(typeId, out var type) ? type.DisplayName : typeId;
+    // Le nom d'un module complémentaire vient de son manifeste : une donnée non fiable, nettoyée avant d'être montrée.
+    private string NameOf(string typeId) => _types.TryGetValue(typeId, out var type) ? type.Label() : typeId;
+
+    private bool IsCommunityType(string typeId) => _types.TryGetValue(typeId, out var type) && type.Community is not null;
 
     /// <summary>L'état de chaque module, ses messages et ses remarques : ce que le service en dit.</summary>
     private void RefreshStatus()
@@ -241,6 +267,7 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
                  {
                      nameof(SelectedId), nameof(Selected), nameof(SelectedPlaced), nameof(SelectedShelved), nameof(HasSelection),
                      nameof(HasNoSelection), nameof(SelectedName), nameof(HasHealth), nameof(HasNoSchema),
+                     nameof(SelectedIsCommunity), nameof(SelectedCommunityNotice), nameof(SelectedCommunityDetails), nameof(SelectedCommunityPermissions), nameof(SelectedCommunityDescription), nameof(HasSelectedCommunityDescription),
                  })
             OnPropertyChanged(name);
         RefreshStatus();

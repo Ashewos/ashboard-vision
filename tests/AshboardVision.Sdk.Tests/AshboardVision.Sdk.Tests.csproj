@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Comme le SDK testé, ces tests ne dépendent pas de Windows : ils tournent aussi sous Linux. Ils vérifient les paquets
+       (PackageTests : un vrai « dotnet pack » dans un dossier temporaire) et le gel de l'API publique (PublicApiTests). Seuls les tests du banc
+       d'essai (ToolTests, ToolPackageTests) ont besoin de Windows, et s'ignorent ailleurs. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\AshboardVision.Sdk.Testing\AshboardVision.Sdk.Testing.csproj" />
+    <!-- Les tests des aides de test lisent les thèmes et la géométrie du damier de Core (qui n'est pas transmis par le paquet de test). -->
+    <ProjectReference Include="..\..\src\Trofeo.Core\Trofeo.Core.csproj" />
+    <ProjectReference Include="..\..\src\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
+    <!-- Le module d'essai de l'hôte : le banc d'essai (ToolTests) l'essaie pour de vrai. Construit avant les tests, puis copié dans le sous-dossier
+         « sample » de la sortie (les tests le recopient dans un dossier temporaire avec un manifeste avant de le donner à l'outil). -->
+    <ProjectReference Include="..\Trofeo.ModuleHost.Tests.SampleModule\Trofeo.ModuleHost.Tests.SampleModule.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- Les fausses données de capteurs du banc d'essai : un seul fichier source, inclus ici pour que les tests en vérifient les unités (l'outil
+       lui-même vise une plateforme qu'un projet de tests ne peut pas référencer). -->
+  <ItemGroup>
+    <Compile Include="..\..\tools\AshboardVision.Sdk.Tool\SampleSensors.cs" Link="Tool\SampleSensors.cs" />
+    <Compile Include="..\..\tools\AshboardVision.Sdk.Tool\InMemorySecrets.cs" Link="Tool\InMemorySecrets.cs" />
+  </ItemGroup>
+
+  <Target Name="CopySampleModule" AfterTargets="Build">
+    <ItemGroup>
+      <SampleFile Include="$(MSBuildThisFileDirectory)..\Trofeo.ModuleHost.Tests.SampleModule\bin\$(Configuration)\net10.0\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SampleFile)" DestinationFolder="$(OutDir)sample\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

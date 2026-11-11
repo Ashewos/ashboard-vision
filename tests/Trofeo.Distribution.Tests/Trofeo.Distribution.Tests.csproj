@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <None Include="Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\*.log" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

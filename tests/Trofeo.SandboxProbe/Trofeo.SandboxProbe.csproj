@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Petit programme de test de l'enfermement des modules (Trofeo.Extensions.Tests le lance dans un AppContainer).
+       Ce n'est pas un projet de tests : pas de xunit ni de point d'entrée de test. -->
+  <!-- runtimeconfig.template.json : System.GC.HeapHardLimit au-dessus de la limite du job (512 Mio). Sans cela, le ramasse-miettes
+       de .NET s'impose 75 % de la limite d'un job et plante AVANT que Windows ne refuse de la mémoire : le job ne signale alors
+       aucun dépassement (JobUsage.MemoryLimitHit resterait faux). L'hôte de module a le même réglage (src/Trofeo.ModuleHost/runtimeconfig.template.json) ; le test
+       Probe_ManagedChurn_StaysAliveUnderTheJobLimit mesure qu'un module qui produit beaucoup de déchets survit avec lui. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsTestSupportLibrary>true</IsTestSupportLibrary>
+  </PropertyGroup>
+
+</Project>

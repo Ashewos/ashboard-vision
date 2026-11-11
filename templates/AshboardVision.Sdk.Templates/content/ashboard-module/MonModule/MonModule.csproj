@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Le module : une DLL (MonModule.dll) et son manifest.json, côte à côte dans le dossier de sortie (bin/Debug/net10.0). Le logiciel fournit
+       lui-même le SDK et SkiaSharp au module : les copies qui se retrouvent dans le dossier de sortie ne servent à rien à l'exécution. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ModuleNamespace</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Le SDK, en version exacte : 1.0.0 est celle que vise "sdk": "1.0" dans manifest.json. Une version flottante (1.0.*) obligerait chaque
+         restauration à interroger les sources de paquets (donc à échouer hors ligne) ; pour viser une version plus récente du SDK, change ce
+         numéro ET le champ "sdk" du manifeste ensemble (voir le README). -->
+    <PackageReference Include="AshboardVision.Sdk" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="manifest.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Ashewos",
+  "classifications": [
+    "Ashboard Vision",
+    "Module",
+    "Community"
+  ],
+  "identity": "AshboardVision.Sdk.Templates.Module",
+  "name": "Module Ashboard Vision",
+  "description": "Un module de la communauté pour Ashboard Vision : affiche « Bonjour » et l'heure, suit le thème, ne demande aucune permission, avec son projet de tests.",
+  "shortName": "ashboard-module",
+  "sourceName": "MonModule",
+  "preferNameDirectory": true,
+  "tags": {
+    "language": "C#",
+    "type": "solution"
+  },
+  "symbols": {
+    "id": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "L'identifiant du module, de la forme auteur.module (minuscules, chiffres et tirets, avec un point au milieu, 40 caractères au plus). Le banc d'essai (ashboard-module check) refuse un identifiant mal formé.",
+      "defaultValue": "auteur.mon-module"
+    },
+    "author": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "Ton nom, tel qu'il s'affiche dans la fenêtre de réglage d'Ashboard Vision.",
+      "defaultValue": "Ton nom"
+    },
+    "idJson": {
+      "type": "derived",
+      "valueSource": "id",
+      "valueTransform": "jsonEncode",
+      "replaces": "\"auteur.mon-module\""
+    },
+    "authorJson": {
+      "type": "derived",
+      "valueSource": "author",
+      "valueTransform": "jsonEncode",
+      "replaces": "\"Ton nom\""
+    },
+    "className": {
+      "type": "derived",
+      "valueSource": "name",
+      "valueTransform": "identifiantCsharp",
+      "replaces": "ModuleClassName"
+    },
+    "namespaceName": {
+      "type": "derived",
+      "valueSource": "name",
+      "valueTransform": "espaceDeNoms",
+      "replaces": "ModuleNamespace"
+    }
+  },
+  "forms": {
+    "identifiantCsharp": {
+      "identifier": "safe_name"
+    },
+    "espaceDeNoms": {
+      "identifier": "safe_namespace"
+    }
+  }
+}

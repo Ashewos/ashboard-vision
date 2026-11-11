@@ -308,7 +308,7 @@ public sealed partial class FirstRunViewModel : ObservableObject, IDisposable
             _editor = LayoutEditors.From(_welcome?.Types ?? []);
             Modules.Clear();
             foreach (var type in _welcome?.Types.GroupBy(t => t.TypeId).Select(g => g.First()) ?? [])
-                Modules.Add(new FirstRunModuleItem(type.TypeId, type.DisplayName, this));
+                Modules.Add(new FirstRunModuleItem(type.TypeId, type.Label(), this, type.Community is not null));
         }
 
         var layout = _session.Document.Current;
@@ -396,13 +396,18 @@ public sealed partial class FirstRunViewModel : ObservableObject, IDisposable
 }
 
 /// <summary>Une case de l'étape des modules : un type, coché quand un module de ce type est sur l'écran.</summary>
-public sealed partial class FirstRunModuleItem(string typeId, string name, FirstRunViewModel owner) : ObservableObject
+public sealed partial class FirstRunModuleItem(string typeId, string name, FirstRunViewModel owner, bool isCommunity = false) : ObservableObject
 {
     private bool _isChecked;
     private bool _syncing;
 
     public string TypeId { get; } = typeId;
     public string Name { get; } = name;
+
+    /// <summary>Un module de la communauté (déjà validé) : le même point d'exclamation jaune que dans les autres listes.</summary>
+    public bool IsCommunity { get; } = isCommunity;
+
+    public string CommunityNotice => Texts.CommunityNotice;
 
     /// <summary>L'état de la case (liaison à double sens) ; le changer ajoute ou retire le module.</summary>
     public bool IsChecked

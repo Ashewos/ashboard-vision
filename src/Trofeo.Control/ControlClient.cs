@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text.Json;
+using AshboardVision.Sdk;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Control;
@@ -23,14 +24,25 @@ public sealed class ControlClient : IAsyncDisposable
     // Le téléchargement de l'installateur, puis la réponse de l'utilisateur à la demande d'autorisation de Windows.
     private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(10);
 
+    // Installer, désinstaller, relancer un module : copie et empreinte des fichiers, ou arrêt d'un hôte qui a quelques secondes pour finir.
+    private static readonly TimeSpan ModuleOperationTimeout = TimeSpan.FromMinutes(2);
+
+    // Préparer la mise à jour d'un module : le service télécharge le paquet (10 minutes au plus de son côté) ; le client attend un peu plus.
+    private static readonly TimeSpan PrepareTimeout = TimeSpan.FromMinutes(11);
+
     /// <summary>
-    /// Le délai d'une requête selon son type : 10 minutes pour installer une mise à jour, 150 s pour une action, 45 s pour vérifier les
-    /// mises à jour ou régler leur canal, 20 s pour un rechargement ou un redémarrage, 10 s sinon.
+    /// Le délai d'une requête selon son type : 10 minutes pour installer une mise à jour du logiciel, 11 pour préparer celle d'un module
+    /// (le service télécharge son paquet), 2 minutes pour installer, retirer ou relancer un module (y compris installer une mise à jour
+    /// préparée : plus rien à télécharger), 150 s pour une action, 45 s pour vérifier les mises à jour (du logiciel ou des modules) ou
+    /// régler leur canal, 20 s pour un rechargement ou un redémarrage, 10 s sinon.
     /// </summary>
     internal static TimeSpan TimeoutFor(string requestType) => requestType switch
     {
         MessageTypes.InstallUpdate => InstallTimeout,
-        MessageTypes.CheckUpdates or MessageTypes.SetUpdatePreferences => UpdateCheckTimeout,
+        MessageTypes.PrepareModuleUpdate => PrepareTimeout,
+        MessageTypes.InstallPackage or MessageTypes.InstallModuleUpdate or MessageTypes.SetModulePermissions
+            or MessageTypes.UninstallModule or MessageTypes.RelaunchModule or MessageTypes.ReloadDevModule => ModuleOperationTimeout,
+        MessageTypes.CheckUpdates or MessageTypes.SetUpdatePreferences or MessageTypes.CheckModuleUpdates => UpdateCheckTimeout,
         MessageTypes.Action => ActionTimeout,
         MessageTypes.Reload or MessageTypes.Restart => LongTimeout,
         _ => DefaultTimeout,
@@ -139,6 +151,86 @@ public sealed class ControlClient : IAsyncDisposable
     public async Task SubscribePreviewAsync(int maxFps, CancellationToken ct) =>
         await SendAsync(new Request(NextId(), MessageTypes.Preview) { MaxFps = maxFps }, DefaultTimeout, ct).ConfigureAwait(false);
 
+    // ---- Modules complémentaires ----
+
+    /// <summary>Les types de modules connus du service maintenant (la liste de <see cref="Welcome"/> date de la connexion).</summary>
+    public async Task<IReadOnlyList<ModuleTypeInfo>> GetTypesAsync(CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.Types), TimeoutFor(MessageTypes.Types), ct).ConfigureAwait(false)).Types
+        ?? throw Incomplete();
+
+    public async Task<CommunityOverview> GetCommunityAsync(CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.Community), TimeoutFor(MessageTypes.Community), ct).ConfigureAwait(false)).Community
+        ?? throw Incomplete();
+
+    /// <summary>Ce que le service voit dans un <c>.avmod</c>, sans rien installer.</summary>
+    public async Task<PackageInfo> InspectPackageAsync(string path, CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.InspectPackage) { Path = path }, TimeoutFor(MessageTypes.InspectPackage), ct)
+            .ConfigureAwait(false)).Package
+        ?? throw Incomplete();
+
+    public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.InstallPackage) { Path = path, Granted = granted }, ct);
+
+    public Task<ActionResult> ApproveModuleAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.ApproveModule) { ModuleId = id, Granted = granted }, ct);
+
+    public Task<ActionResult> SetModulePermissionsAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.SetModulePermissions) { ModuleId = id, Granted = granted }, ct);
+
+    public Task<ActionResult> UninstallModuleAsync(string id, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.UninstallModule) { ModuleId = id }, ct);
+
+    public Task<ActionResult> RelaunchModuleAsync(string id, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.RelaunchModule) { ModuleId = id }, ct);
+
+    public Task<ActionResult> SetModulesRootAsync(string path, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.SetModulesRoot) { Path = path }, ct);
+
+    public Task<ActionResult> SetDeveloperModeAsync(bool on, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.SetDeveloperMode) { On = on }, ct);
+
+    public Task<ActionResult> AddDevFolderAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.AddDevFolder) { Path = path, Granted = granted }, ct);
+
+    /// <summary>Ce que le service lit dans le manifeste d'un dossier de travail, sans rien lancer ni rien ajouter.</summary>
+    public async Task<PackageInfo> InspectDevFolderAsync(string path, CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.InspectDevFolder) { Path = path }, TimeoutFor(MessageTypes.InspectDevFolder), ct)
+            .ConfigureAwait(false)).Package
+        ?? throw Incomplete();
+
+    public Task<ActionResult> RemoveDevFolderAsync(string path, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.RemoveDevFolder) { Path = path }, ct);
+
+    public Task<ActionResult> ReloadDevModuleAsync(string id, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.ReloadDevModule) { ModuleId = id }, ct);
+
+    /// <summary>Demande la recherche des mises à jour des modules ; le résultat se lit avec <see cref="GetCommunityAsync"/>.</summary>
+    public async Task CheckModuleUpdatesAsync(CancellationToken ct) =>
+        await SendAsync(new Request(NextId(), MessageTypes.CheckModuleUpdates), TimeoutFor(MessageTypes.CheckModuleUpdates), ct).ConfigureAwait(false);
+
+    /// <summary>Télécharge, vérifie et lit le paquet de la mise à jour proposée ; le service garde le fichier pour l'installation.</summary>
+    public async Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id, CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.PrepareModuleUpdate) { ModuleId = id }, TimeoutFor(MessageTypes.PrepareModuleUpdate), ct)
+            .ConfigureAwait(false)).Preparation
+        ?? throw Incomplete();
+
+    /// <summary>Abandonne la préparation d'une mise à jour : le service supprime le fichier.</summary>
+    public async Task CancelModuleUpdateAsync(string id, CancellationToken ct) =>
+        await SendAsync(new Request(NextId(), MessageTypes.CancelModuleUpdate) { ModuleId = id }, TimeoutFor(MessageTypes.CancelModuleUpdate), ct)
+            .ConfigureAwait(false);
+
+    public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
+        SendActionAsync(new Request(NextId(), MessageTypes.InstallModuleUpdate) { ModuleId = id, Granted = granted }, ct);
+
+    public async Task<IReadOnlyList<ModuleConsumption>> GetConsumptionAsync(CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.Consumption), TimeoutFor(MessageTypes.Consumption), ct).ConfigureAwait(false)).Consumption
+        ?? throw Incomplete();
+
+    /// <summary>Une requête dont la réponse est un <see cref="ActionResult"/>, avec le délai de son type.</summary>
+    private async Task<ActionResult> SendActionAsync(Request request, CancellationToken ct) =>
+        (await SendAsync(request, TimeoutFor(request.Type), ct).ConfigureAwait(false)).Action
+        ?? throw Incomplete();
+
     private static ControlException Incomplete() => new("Réponse du service incomplète.");
 
     private int NextId() => Interlocked.Increment(ref _nextId);
@@ -204,7 +296,7 @@ public sealed class ControlClient : IAsyncDisposable
                 }
                 else
                 {
-                    var response = JsonSerializer.Deserialize<Response>(frame.Value.Payload, ControlJson.Options);
+                    var response = ReadResponse(frame.Value.Payload);
                     if (response is not null && _pending.TryRemove(response.ReplyTo, out var waiting))
                         waiting.TrySetResult(response);
                 }
@@ -225,6 +317,39 @@ public sealed class ControlClient : IAsyncDisposable
                 RaiseDisconnected();
         }
     }
+
+    /// <summary>
+    /// Lit une réponse. Une réponse que cette version ne sait pas lire (un service plus récent : genre de champ inconnu, par exemple)
+    /// ne coupe pas la liaison et ne passe pas pour un service arrêté : on en sauve l'identifiant de la requête et, pour la poignée de
+    /// main, la version du protocole, et le demandeur reçoit un message clair. Du JSON qui n'en est pas du tout reste une violation du
+    /// protocole (<see cref="JsonException"/>, la connexion se ferme).
+    /// </summary>
+    private static Response? ReadResponse(byte[] payload)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<Response>(payload, ControlJson.Options);
+        }
+        catch (JsonException)
+        {
+            using var document = JsonDocument.Parse(payload); // lève JsonException si ce n'est pas du JSON
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("replyTo", out var replyTo) || !replyTo.TryGetInt32(out var id))
+                throw;
+
+            if (root.TryGetProperty("welcome", out var welcome) && welcome.ValueKind == JsonValueKind.Object
+                && welcome.TryGetProperty("protocolVersion", out var version) && version.TryGetInt32(out var protocol)
+                && protocol != ControlPipe.ProtocolVersion)
+            {
+                var serviceVersion = welcome.TryGetProperty("serviceVersion", out var text) && text.ValueKind == JsonValueKind.String ? text.GetString() : null;
+                return new Response(id, MessageTypes.Hello) { Welcome = new Welcome(serviceVersion ?? "", protocol, []) };
+            }
+
+            return new Response(id, MessageTypes.Error) { Message = UnreadableResponse };
+        }
+    }
+
+    private const string UnreadableResponse = "Le service a répondu par quelque chose que cette fenêtre ne comprend pas : mets les deux à jour.";
 
     private void RaiseFrame(PreviewFrame frame)
     {

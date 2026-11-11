@@ -10,8 +10,8 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
-        // Une seule fenêtre : un second lancement ramène la première au premier plan, puis quitte.
-        using var instance = SingleInstance.Acquire();
+        // Une seule fenêtre : un second lancement ramène la première au premier plan (en lui passant le .avmod qu'on vient d'ouvrir), puis quitte.
+        using var instance = SingleInstance.Acquire(arguments: args);
         if (!instance.IsFirst)
             return 0;
 

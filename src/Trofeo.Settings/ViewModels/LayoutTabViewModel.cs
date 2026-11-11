@@ -24,7 +24,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     private readonly LayoutDocument _document;
     private readonly Dictionary<string, ModuleTypeInfo> _types = [];
     private LayoutEditor _editor = new(new Dictionary<string, ModuleDescriptor>());
-    private Welcome? _welcome;
+    private IReadOnlyList<ModuleTypeInfo>? _knownTypes;
     private Guid? _selectedId;
     private PlacedModuleItem? _selectedItem;
     private Drag? _drag;
@@ -422,12 +422,15 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
 
     // ---- La liste, tenue à jour ----
 
-    private string NameOf(string typeId) => _types.TryGetValue(typeId, out var type) ? type.DisplayName : typeId;
+    // Le nom d'un module complémentaire vient de son manifeste : une donnée non fiable, nettoyée avant d'être montrée.
+    private string NameOf(string typeId) => _types.TryGetValue(typeId, out var type) ? type.Label() : typeId;
+
+    private bool IsCommunityType(string typeId) => _types.TryGetValue(typeId, out var type) && type.Community is not null;
 
     private void OnLinkChanged()
     {
         // Le service renvoie son état chaque seconde ; la liste ne se reconstruit que si ce qu'il a annoncé a changé.
-        if (!ReferenceEquals(_welcome, _link.Welcome))
+        if (!ReferenceEquals(_knownTypes, _link.KnownTypes()))
             Refresh();
         else
             RefreshHealth();
@@ -445,17 +448,17 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
         _refreshing = true;
         try
         {
-            _welcome = _link.Welcome;
+            _knownTypes = _link.KnownTypes();
             _types.Clear();
-            foreach (var type in _welcome?.Types ?? [])
+            foreach (var type in _knownTypes ?? [])
                 _types.TryAdd(type.TypeId, type);
             _editor = LayoutEditors.From(_types.Values);
-            CanEdit = _welcome is not null;
+            CanEdit = _knownTypes is not null;
             if (!CanEdit)
                 CancelDrag();
 
             var layout = _document.Current;
-            var placed = layout.Placements.Select(p => new PlacedModuleItem(p, NameOf(p.TypeId))).ToList();
+            var placed = layout.Placements.Select(p => new PlacedModuleItem(p, NameOf(p.TypeId), IsCommunityType(p.TypeId))).ToList();
             ApplyHealth(placed);
             if (Placed.Count == placed.Count && Placed.Zip(placed).All(pair => pair.First.SameShape(pair.Second)))
             {
@@ -481,9 +484,9 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
                 }
             }
 
-            var types = _types.Values.Select(t => (t.TypeId, t.DisplayName)).ToList();
-            if (!AddTypes.Select(t => (t.TypeId, t.Name)).SequenceEqual(types))
-                AddTypes = types.Select(t => new AddTypeItem(t.TypeId, t.DisplayName, this)).ToList();
+            var types = _types.Values.Select(t => (t.TypeId, Name: t.Label(), IsCommunity: t.Community is not null)).ToList();
+            if (!AddTypes.Select(t => (t.TypeId, t.Name, t.IsCommunity)).SequenceEqual(types))
+                AddTypes = types.Select(t => new AddTypeItem(t.TypeId, t.Name, this, t.IsCommunity)).ToList();
 
             HasPlaced = Placed.Count > 0;
             HasShelved = Shelved.Count > 0;

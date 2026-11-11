@@ -5,7 +5,7 @@ namespace Trofeo.ModuleKit;
 
 /// <summary>
 /// Lecture et écriture de réglages JSON par chemin pointé (« unifi.host »). Ne lève jamais pour une forme
-/// inattendue. Les éléments rendus sont des copies, jamais liées à un document libéré ; les entrées ne sont jamais modifiées.
+/// inattendue. Les éléments rendus sont des copies, jamais liées à un document libéré ; les entrées ne sont jamais modifiées. Réservé aux modules d'origine ; sans garantie pour un module complémentaire.
 /// </summary>
 public static class SettingsDocument
 {
@@ -59,9 +59,11 @@ public static class SettingsDocument
         return ToElement(root);
     }
 
+    /// <summary>Le texte au chemin donné, ou <c>null</c> s'il est absent ou si ce n'est pas un texte.</summary>
     public static string? GetString(JsonElement settings, string key) =>
         Get(settings, key) is { ValueKind: JsonValueKind.String } e ? e.GetString() : null;
 
+    /// <summary>Le booléen au chemin donné, ou <c>null</c> s'il est absent ou si ce n'est pas un booléen.</summary>
     public static bool? GetBool(JsonElement settings, string key) =>
         Get(settings, key) is { } e && e.ValueKind is JsonValueKind.True or JsonValueKind.False
             ? e.GetBoolean()
@@ -102,6 +104,8 @@ public static class SettingsDocument
             ChoiceField c => c.Default,
             ToggleField t => t.Default ? "true" : "false",
             TextField => "",
+            NumberField n => n.Default.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            PortField p => p.Default.ToString(System.Globalization.CultureInfo.InvariantCulture),
             _ => null,
         };
 

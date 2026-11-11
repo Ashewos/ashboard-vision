@@ -30,7 +30,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ShortcutsTab = new ShortcutsTabViewModel(link, Session);
         PreferencesStore = new PreferencesStore(preferences, preferencesPath);
         SettingsTab = new SettingsTabViewModel(
-            link, Session, PreferencesStore, system ?? SystemServices.None, picker);
+            link, Session, PreferencesStore, system ?? SystemServices.None, picker, time);
         Pill = new ScreenPillViewModel(link);
         FirstRun = new FirstRunViewModel(link, Session, PreferencesStore, SettingsTab, Pill, secrets ?? new NoSecretAccess(), time);
         _isFirstRunVisible = !preferences.FirstRunDone;
@@ -39,6 +39,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _selectedTab = Tabs[0];
 
         _link.SetRealTimePreview(preferences.RealTimePreview);
+        // Le bandeau « Mode développeur actif » est dans tous les onglets : l'état du mode se lit dès que la liaison est établie.
+        SettingsTab.Community.Watch();
         _link.Changed += Refresh;
         _link.FrameReceived += ShowFrame;
         Session.Changed += RefreshBanner;
@@ -90,6 +92,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (show)
             FirstRun.Restart();
         IsFirstRunVisible = show;
+        UpdateConsumptionVisibility();
+
+        // L'assistant vient de se fermer : le refus d'un .avmod reçu pendant qu'il était là se montre maintenant.
+        if (!show && _packageProblemDuringFirstRun is { } problem)
+        {
+            _packageProblemDuringFirstRun = null;
+            ShowPackageProblem(problem);
+        }
+    }
+
+    // Le refus d'un .avmod reçu pendant l'assistant de premier lancement (les onglets n'y sont pas) : montré à sa fermeture, pas perdu.
+    private string? _packageProblemDuringFirstRun;
+
+    private void ShowPackageProblem(string problem)
+    {
+        SelectedTab = SettingsTab;
+        SettingsTab.Community.ShowPackageProblem(problem);
     }
 
     /// <summary>Les préférences de la fenêtre (aperçu en rendu réel, première ouverture), écrites dans <c>settings-app.json</c> quand elles changent.</summary>
@@ -113,7 +132,52 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             shortcuts.CancelCapture();
     }
 
-    partial void OnSelectedTabChanged(TabViewModel value) => RefreshBanner();
+    partial void OnSelectedTabChanged(TabViewModel value)
+    {
+        RefreshBanner();
+        // Les modules complémentaires se relisent quand l'onglet Paramètres s'ouvre (jusque-là, une seule lecture par connexion, faite par
+        // Watch pour le bandeau du mode développeur : ni consommation ni minuteur).
+        if (value is SettingsTabViewModel)
+            SettingsTab.Community.Activate();
+        UpdateConsumptionVisibility();
+    }
+
+    // La consommation des modules ne se mesure que si l'onglet Paramètres est vraiment sous les yeux : ni l'assistant ni un panneau
+    // « service arrêté » ne le recouvre. (La fenêtre réduite est vue par SetPreviewPaused.)
+    private void UpdateConsumptionVisibility() =>
+        SettingsTab.Community.Consumption.SetTabShown(SelectedTab is SettingsTabViewModel && ShowsTabContent);
+
+    /// <summary>
+    /// <c>Trofeo.Settings.exe &lt;chemin.avmod&gt;</c> : l'onglet Paramètres s'ouvre et la boîte d'installation s'affiche dès que le service est
+    /// joint. Le fichier est inspecté, rien ne s'installe sans le clic sur « Installer ».
+    /// </summary>
+    public void OpenPackage(string path)
+    {
+        if (!IsFirstRunVisible)
+            SelectedTab = SettingsTab;
+        SettingsTab.Community.OpenPackageWhenConnected(path);
+    }
+
+    /// <summary>
+    /// La ligne de commande du premier lancement, ou les chemins qu'un second lancement lui passe : le fichier <c>.avmod</c> s'ouvre
+    /// (<see cref="OpenPackage"/>) s'il est un fichier local existant ; sinon la section des modules dit pourquoi il ne s'ouvre pas
+    /// (partage réseau, fichier introuvable). Sans argument <c>.avmod</c>, rien ne se passe. Rien ne s'installe sans le clic sur « Installer ».
+    /// </summary>
+    public void OpenPackageArguments(IEnumerable<string>? args)
+    {
+        var resolution = PackageArgument.Resolve(args);
+        if (resolution.Path is { } path)
+        {
+            OpenPackage(path);
+        }
+        else if (resolution.Problem is { } problem)
+        {
+            if (IsFirstRunVisible)
+                _packageProblemDuringFirstRun = problem;
+            else
+                ShowPackageProblem(problem);
+        }
+    }
 
     /// <summary>
     /// La ligne <c>Amber</c> sous la bande, dans tous les onglets : le message de la dernière modification (refus du
@@ -169,7 +233,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private int _previewRotation;
 
     /// <summary>Fenêtre réduite : plus d'images à décoder ni à demander au service ; reprise à la restauration.</summary>
-    public void SetPreviewPaused(bool paused) => _link.SetPreviewPaused(paused);
+    public void SetPreviewPaused(bool paused)
+    {
+        _link.SetPreviewPaused(paused);
+        SettingsTab.Community.Consumption.SetWindowShown(!paused); // réduite ou cachée, la fenêtre ne mesure plus rien non plus
+    }
 
     [RelayCommand]
     private async Task StartServiceAsync()
@@ -202,6 +270,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             StartFailed = false;
 
         Pill.Update();
+        UpdateConsumptionVisibility();
     }
 
     private void ShowFrame(PreviewFrame frame)

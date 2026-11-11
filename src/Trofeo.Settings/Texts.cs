@@ -447,4 +447,182 @@ public static class Texts
     public static string UpdatesWaitForStable => Get();
     /// <summary>Bouton de la boîte du retour en arrière quand la case « attendre » est cochée : rien n'est installé.</summary>
     public static string UpdatesKeepBeta => Get();
+    /// <summary>Sous un champ numérique ou de port. {0} : le minimum, {1} : le maximum, {2} : la valeur proposée.</summary>
+    public static string ModulesNumberRange => Get();
+    /// <summary>Sous un champ numérique ou de port quand la saisie ne convient pas. {0} : le minimum, {1} : le maximum.</summary>
+    public static string ModulesNumberInvalid => Get();
+    /// <summary>En-tête des réglages d'un module complémentaire, et nom du point d'exclamation jaune.</summary>
+    public static string CommunityNotice => Get();
+    /// <summary>Sous le nom d'un module complémentaire. {0} : l'auteur, {1} : la version.</summary>
+    public static string CommunityAuthorVersion => Get();
+    /// <summary>{0} : les noms des permissions, séparés par des virgules.</summary>
+    public static string CommunityGranted => Get();
+    /// <summary>Un module complémentaire sans aucune permission accordée.</summary>
+    public static string CommunityNoneGranted => Get();
+    /// <summary>Nom de la permission (identique à celui du service).</summary>
+    public static string PermissionLocalNetwork => Get();
+    /// <summary>Explication de la permission (identique à celle du service).</summary>
+    public static string PermissionLocalNetworkHelp => Get();
+    /// <summary>Nom de la permission (identique à celui du service).</summary>
+    public static string PermissionInternet => Get();
+    /// <summary>Explication de la permission (identique à celle du service).</summary>
+    public static string PermissionInternetHelp => Get();
+    /// <summary>Nom de la permission (identique à celui du service).</summary>
+    public static string PermissionThisComputer => Get();
+    /// <summary>Explication de la permission (identique à celle du service).</summary>
+    public static string PermissionThisComputerHelp => Get();
+    /// <summary>Nom de la permission (identique à celui du service).</summary>
+    public static string PermissionSensors => Get();
+    /// <summary>Explication de la permission (identique à celle du service).</summary>
+    public static string PermissionSensorsHelp => Get();
+    /// <summary>Nom de la permission (identique à celui du service).</summary>
+    public static string PermissionNowPlaying => Get();
+    /// <summary>Explication de la permission (identique à celle du service).</summary>
+    public static string PermissionNowPlayingHelp => Get();
+    /// <summary>Repère à côté d'une permission que la nouvelle version demande en plus.</summary>
+    public static string PermissionNew => Get();
+    /// <summary>Avertissement de la boîte d'installation, de validation et de mise à jour d'un module complémentaire.</summary>
+    public static string DialogWarning => Get();
+    /// <summary>Titre de la boîte d'installation.</summary>
+    public static string DialogInstallTitle => Get();
+    /// <summary>Titre de la boîte de validation d'un module trouvé dans le dossier des modules.</summary>
+    public static string DialogApproveTitle => Get();
+    /// <summary>Titre de la boîte de mise à jour.</summary>
+    public static string DialogUpdateTitle => Get();
+    /// <summary>Titre de la boîte qui change les permissions d'un module.</summary>
+    public static string DialogPermissionsTitle => Get();
+    /// <summary>{0} : l'auteur du module.</summary>
+    public static string DialogAuthor => Get();
+    /// <summary>{0} : la version du module.</summary>
+    public static string DialogVersion => Get();
+    /// <summary>Mise à jour. {0} : la version installée, {1} : la nouvelle.</summary>
+    public static string DialogVersionUpdate => Get();
+    /// <summary>Au-dessus des cases des permissions.</summary>
+    public static string DialogPermissionsIntro => Get();
+    /// <summary>Quand le manifeste ne déclare aucune permission.</summary>
+    public static string DialogNoPermissions => Get();
+    /// <summary>Mise à jour qui déclare une permission de plus.</summary>
+    public static string DialogNewPermissions => Get();
+    /// <summary>Titre des notes d'une version.</summary>
+    public static string DialogNotes => Get();
+    /// <summary>Pendant que le service télécharge et vérifie la mise à jour. {0} : la version.</summary>
+    public static string DialogPreparing => Get();
+    /// <summary>Pendant qu'une demande est en route.</summary>
+    public static string DialogWorking => Get();
+    /// <summary>Bouton de la boîte d'installation.</summary>
+    public static string DialogInstall => Get();
+    /// <summary>Bouton de la boîte de validation.</summary>
+    public static string DialogApprove => Get();
+    /// <summary>Bouton de la boîte des permissions.</summary>
+    public static string DialogSave => Get();
+    /// <summary>Titre de section, dans Paramètres.</summary>
+    public static string SettingsCommunity => Get();
+    /// <summary>Sous le titre de la section.</summary>
+    public static string CommunityHelp => Get();
+    /// <summary>Bouton : choisit un fichier .avmod.</summary>
+    public static string CommunityInstallButton => Get();
+    /// <summary>Titre du sélecteur de fichier.</summary>
+    public static string CommunityPickTitle => Get();
+    /// <summary>Nom du type de fichier .avmod.</summary>
+    public static string CommunityPickType => Get();
+    /// <summary>Section sans module.</summary>
+    public static string CommunityNone => Get();
+    /// <summary>Bandeau quand la liste scellée a été trouvée altérée.</summary>
+    public static string CommunityTampered => Get();
+    /// <summary>Un .avmod ouvert depuis un partage réseau : la fenêtre ne se connecte pas à un hôte, elle demande de copier le fichier.</summary>
+    public static string PackageNetworkPath => Get();
+    /// <summary>Un .avmod ouvert qui n'existe plus (ou dont le chemin est invalide).</summary>
+    public static string PackageMissing => Get();
+    /// <summary>Un .avmod dont l'emplacement ne permet pas de dire s'il est sur ce PC (lecteur de type inconnu, nom de périphérique).</summary>
+    public static string PackageUnopenable => Get();
+    /// <summary>État d'un module complémentaire.</summary>
+    public static string CommunityStateReady => Get();
+    /// <summary>État d'un module complémentaire.</summary>
+    public static string CommunityStateNeedsApproval => Get();
+    /// <summary>État d'un module complémentaire.</summary>
+    public static string CommunityStateChanged => Get();
+    /// <summary>État d'un module complémentaire.</summary>
+    public static string CommunityStateNeedsNewerApp => Get();
+    /// <summary>État d'un module complémentaire.</summary>
+    public static string CommunityStateTooOld => Get();
+    /// <summary>État d'un module complémentaire.</summary>
+    public static string CommunityStateInvalid => Get();
+    /// <summary>État d'un module complémentaire.</summary>
+    public static string CommunityStateUnavailable => Get();
+    /// <summary>État d'un module complémentaire.</summary>
+    public static string CommunityStateSetAside => Get();
+    /// <summary>Précise l'origine d'un module chargé depuis un dossier de travail.</summary>
+    public static string CommunityDevFolder => Get();
+    /// <summary>Sur la ligne d'un module. {0} : la version proposée.</summary>
+    public static string CommunityUpdateOffer => Get();
+    /// <summary>Bouton de la ligne d'un module.</summary>
+    public static string CommunityPermissions => Get();
+    /// <summary>Bouton de la ligne d'un module à valider.</summary>
+    public static string CommunityApprove => Get();
+    /// <summary>Bouton de la ligne d'un module, et de la boîte de mise à jour.</summary>
+    public static string CommunityUpdate => Get();
+    /// <summary>Bouton de la ligne d'un module mis de côté.</summary>
+    public static string CommunityRelaunch => Get();
+    /// <summary>Bouton de la ligne d'un module, et de sa confirmation.</summary>
+    public static string CommunityUninstall => Get();
+    /// <summary>Confirmation avant de désinstaller un module.</summary>
+    public static string CommunityUninstallConfirm => Get();
+    /// <summary>Boîte d'installation : le paquet a des erreurs, dont aucune ne se lit une fois nettoyée.</summary>
+    public static string DialogInvalidPackage => Get();
+    /// <summary>Boîte de mise à jour : le service refuse sans dire pourquoi.</summary>
+    public static string DialogPreparationFailed => Get();
+    /// <summary>Titre de la zone du dossier des modules, dans Paramètres.</summary>
+    public static string CommunityFolderTitle => Get();
+    /// <summary>Sous le dossier des modules.</summary>
+    public static string CommunityFolderHelp => Get();
+    /// <summary>Bouton : choisit le dossier des modules.</summary>
+    public static string CommunityFolderChange => Get();
+    /// <summary>Titre du sélecteur de dossier.</summary>
+    public static string CommunityFolderPickTitle => Get();
+    /// <summary>Titre de la zone du mode développeur.</summary>
+    public static string DeveloperTitle => Get();
+    /// <summary>Sous l'interrupteur du mode développeur.</summary>
+    public static string DeveloperHelp => Get();
+    /// <summary>Bandeau en haut de la fenêtre tant que le mode développeur est allumé.</summary>
+    public static string DeveloperBanner => Get();
+    /// <summary>Titre de la liste des dossiers du mode développeur.</summary>
+    public static string DeveloperFolders => Get();
+    /// <summary>Liste des dossiers de travail vide.</summary>
+    public static string DeveloperNoFolders => Get();
+    /// <summary>Ligne d'un dossier de travail dont le module n'est pas dans la liste.</summary>
+    public static string DeveloperNoModule => Get();
+    /// <summary>Bouton : choisit le dossier de travail d'un module.</summary>
+    public static string DeveloperAddFolder => Get();
+    /// <summary>Titre du sélecteur de dossier.</summary>
+    public static string DeveloperPickTitle => Get();
+    /// <summary>Bouton d'une ligne : recharge le module avec les fichiers de son dossier.</summary>
+    public static string DeveloperReload => Get();
+    /// <summary>Bouton d'une ligne : retire le dossier de la liste (le dossier lui-même n'est pas touché).</summary>
+    public static string DeveloperRemove => Get();
+    /// <summary>Titre de la boîte qui ajoute un dossier de travail ou recharge son module.</summary>
+    public static string DialogDevTitle => Get();
+    /// <summary>Bouton de confirmation de la boîte d'un dossier de travail.</summary>
+    public static string DialogDevAdd => Get();
+    /// <summary>Titre de section, dans Paramètres.</summary>
+    public static string ConsumptionTitle => Get();
+    /// <summary>Sous le titre de la consommation.</summary>
+    public static string ConsumptionHelp => Get();
+    /// <summary>En-tête de colonne du tableau de consommation.</summary>
+    public static string ConsumptionModule => Get();
+    /// <summary>En-tête de colonne du tableau de consommation.</summary>
+    public static string ConsumptionCpu => Get();
+    /// <summary>En-tête de colonne du tableau de consommation.</summary>
+    public static string ConsumptionMemory => Get();
+    /// <summary>Repère orange d'un module qui consomme beaucoup depuis un moment.</summary>
+    public static string ConsumptionHigh => Get();
+    /// <summary>Processeur d'une ligne. {0} : le pourcentage, avec la virgule.</summary>
+    public static string ConsumptionCpuValue => Get();
+    /// <summary>Mémoire d'une ligne. {0} : les mégaoctets.</summary>
+    public static string ConsumptionMemoryValue => Get();
+    /// <summary>Bouton : replie le tableau de consommation (plus aucune mesure demandée).</summary>
+    public static string ConsumptionHide => Get();
+    /// <summary>Bouton : déplie le tableau de consommation.</summary>
+    public static string ConsumptionShow => Get();
+    /// <summary>Quand le service ne répond pas à la lecture de la consommation.</summary>
+    public static string ConsumptionFailed => Get();
 }

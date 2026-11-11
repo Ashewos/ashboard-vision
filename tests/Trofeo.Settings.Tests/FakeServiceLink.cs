@@ -1,3 +1,4 @@
+using AshboardVision.Sdk;
 using Trofeo.Control;
 using Trofeo.ModuleKit;
 using Trofeo.Settings.Services;
@@ -121,6 +122,173 @@ public sealed class FakeServiceLink : IServiceLink
     {
         UpdateInstalls.Add(confirmDowngrade);
         return OnInstallUpdate(confirmDowngrade);
+    }
+
+    // ---- Modules complémentaires ----
+
+    public IReadOnlyList<ModuleTypeInfo>? Types { get; set; }
+
+    /// <summary>Change les types connus et prévient les abonnés.</summary>
+    public void SetTypes(IReadOnlyList<ModuleTypeInfo>? types)
+    {
+        Types = types;
+        Changed?.Invoke();
+    }
+
+    /// <summary>Ce que le service dit des modules complémentaires.</summary>
+    public CommunityOverview Community { get; set; } = new([], @"C:\Modules", false, [], false);
+
+    /// <summary>Ce que le service voit dans un paquet.</summary>
+    public PackageInfo Package { get; set; } = new(null, null, null, null, null, [], ["Archive illisible."], null, null);
+
+    /// <summary>Ce que le service répond à une demande qui change les modules.</summary>
+    public ActionResult ModuleResult { get; set; } = new(true, "");
+
+    public List<ModuleConsumption> Consumption { get; } = [];
+
+    /// <summary>Les demandes sur les modules complémentaires, dans l'ordre : « nom argument… ».</summary>
+    public List<string> ModuleCalls { get; } = [];
+
+    private static string Join(IReadOnlyList<ModulePermission> granted) => string.Join(",", granted);
+
+    /// <summary>Si posé, toute demande qui change les modules lève cette erreur (la liaison est coupée, le délai est passé…).</summary>
+    public ControlException? ModuleFailure { get; set; }
+
+    /// <summary>Si posé, toute demande qui change les modules attend cette tâche (une installation qui dure).</summary>
+    public Task? ModuleGate { get; set; }
+
+    private async Task<ActionResult> Gated(string call)
+    {
+        ModuleCalls.Add(call);
+        await ModuleGate!;
+        return ModuleFailure is null ? ModuleResult : throw ModuleFailure;
+    }
+
+    private Task<ActionResult> Module(string call)
+    {
+        if (ModuleGate is not null)
+            return Gated(call);
+        ModuleCalls.Add(call);
+        return ModuleFailure is null ? Task.FromResult(ModuleResult) : Task.FromException<ActionResult>(ModuleFailure);
+    }
+
+    /// <summary>Si posé, la lecture des modules lève cette erreur.</summary>
+    public ControlException? CommunityFailure { get; set; }
+
+    public Task<CommunityOverview> GetCommunityAsync()
+    {
+        ModuleCalls.Add("community");
+        if (CommunityFailure is not null)
+            return Task.FromException<CommunityOverview>(CommunityFailure);
+        return Task.FromResult(Community);
+    }
+
+    /// <summary>Si posé, rend l'inspection à la place de <see cref="Package"/> (un test la fait attendre).</summary>
+    public Func<string, Task<PackageInfo>>? OnInspect { get; set; }
+
+    public Task<PackageInfo> InspectPackageAsync(string path)
+    {
+        ModuleCalls.Add($"inspect {path}");
+        if (OnInspect is not null)
+            return OnInspect(path);
+        return InspectFailure is null ? Task.FromResult(Package) : Task.FromException<PackageInfo>(InspectFailure);
+    }
+
+    public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted) => Module($"install {path} {Join(granted)}");
+
+    public Task<ActionResult> ApproveModuleAsync(string id, IReadOnlyList<ModulePermission> granted) => Module($"approve {id} {Join(granted)}");
+
+    public Task<ActionResult> SetModulePermissionsAsync(string id, IReadOnlyList<ModulePermission> granted) =>
+        Module($"permissions {id} {Join(granted)}");
+
+    public Task<ActionResult> UninstallModuleAsync(string id) => Module($"uninstall {id}");
+
+    /// <summary>Si posé, <see cref="InspectPackageAsync"/> lève cette erreur (le service ne peut pas lire le fichier).</summary>
+    public ControlException? InspectFailure { get; set; }
+
+    public Task<ActionResult> RelaunchModuleAsync(string id) => Module($"relaunch {id}");
+
+    // Comme le service : une demande acceptée change ce que la lecture suivante rend.
+    private async Task<ActionResult> Changing(string call, Func<CommunityOverview, CommunityOverview> change)
+    {
+        var result = await Module(call);
+        if (result.Ok)
+            Community = change(Community);
+        return result;
+    }
+
+    public Task<ActionResult> SetModulesRootAsync(string path) => Changing($"root {path}", c => c with { ModulesRoot = path });
+
+    public Task<ActionResult> SetDeveloperModeAsync(bool on) => Changing($"dev {on}", c => c with
+    {
+        DeveloperMode = on,
+        Modules = [.. c.Modules.Where(m => on || !m.FromDevFolder)], // éteint, les modules des dossiers de travail disparaissent
+    });
+
+    public Task<ActionResult> AddDevFolderAsync(string path, IReadOnlyList<ModulePermission> granted) =>
+        Changing($"addDev {path} {Join(granted)}", c => c with { DevFolders = [.. c.DevFolders.Where(f => f != path), path] });
+
+    public Task<ActionResult> RemoveDevFolderAsync(string path) =>
+        Changing($"removeDev {path}", c => c with { DevFolders = [.. c.DevFolders.Where(f => f != path)] });
+
+    /// <summary>Ce que le service lit dans un dossier de travail.</summary>
+    public PackageInfo DevFolder { get; set; } = new("alex.dev", "Démo", "Alex", "0.1.0", "Un module en cours d'écriture.",
+        [ModulePermission.Internet, ModulePermission.Sensors], [], null, null);
+
+    /// <summary>Si posé, rend l'examen d'un dossier à la place de <see cref="DevFolder"/> (un test le fait attendre, ou lever).</summary>
+    public Func<string, Task<PackageInfo>>? OnInspectDevFolder { get; set; }
+
+    public Task<PackageInfo> InspectDevFolderAsync(string path)
+    {
+        ModuleCalls.Add($"inspectDev {path}");
+        return OnInspectDevFolder is null ? Task.FromResult(DevFolder) : OnInspectDevFolder(path);
+    }
+
+    public Task<ActionResult> ReloadDevModuleAsync(string id) => Module($"reloadDev {id}");
+
+    public Task CheckModuleUpdatesAsync()
+    {
+        ModuleCalls.Add("checkModuleUpdates");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Ce que la préparation d'une mise à jour rend.</summary>
+    public ModuleUpdatePreparation Preparation { get; set; } = new(true, null, "1.3.0", "Notes.", [ModulePermission.Internet], []);
+
+    /// <summary>Si posé, rend la préparation à la place de <see cref="Preparation"/> (un test la fait attendre, ou lever).</summary>
+    public Func<string, Task<ModuleUpdatePreparation>>? OnPrepare { get; set; }
+
+    public Task<ModuleUpdatePreparation> PrepareModuleUpdateAsync(string id)
+    {
+        ModuleCalls.Add($"prepare {id}");
+        return OnPrepare is null ? Task.FromResult(Preparation) : OnPrepare(id);
+    }
+
+    /// <summary>Si posé, l'abandon d'une mise à jour lève cette erreur (le service n'est plus là).</summary>
+    public ControlException? CancelFailure { get; set; }
+
+    public Task CancelModuleUpdateAsync(string id)
+    {
+        ModuleCalls.Add($"cancel {id}");
+        return CancelFailure is null ? Task.CompletedTask : Task.FromException(CancelFailure);
+    }
+
+    public Task<ActionResult> InstallModuleUpdateAsync(string id, IReadOnlyList<ModulePermission> granted) => Module($"update {id} {Join(granted)}");
+
+    /// <summary>Si posé, la lecture de la consommation lève cette erreur.</summary>
+    public ControlException? ConsumptionFailure { get; set; }
+
+    /// <summary>Si posé, rend la lecture de la consommation à la place de <see cref="Consumption"/> (un test la fait attendre).</summary>
+    public Func<Task<IReadOnlyList<ModuleConsumption>>>? OnConsumption { get; set; }
+
+    public Task<IReadOnlyList<ModuleConsumption>> GetConsumptionAsync()
+    {
+        ModuleCalls.Add("consumption");
+        if (OnConsumption is not null)
+            return OnConsumption();
+        if (ConsumptionFailure is not null)
+            return Task.FromException<IReadOnlyList<ModuleConsumption>>(ConsumptionFailure);
+        return Task.FromResult<IReadOnlyList<ModuleConsumption>>([.. Consumption]);
     }
 
     public Task<bool> StartServiceAsync()

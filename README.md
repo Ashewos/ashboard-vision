@@ -59,6 +59,22 @@ Le détail des réglages se trouve dans [l'utilisation avancée](docs/utilisatio
 
 Les captures sont en thème Classique : chaque module prend les couleurs du thème que tu choisis.
 
+## Modules complémentaires
+
+Les six modules ci-dessus sont dans le logiciel. Tu peux en ajouter d'autres, **créés par la communauté** : un module complémentaire est un fichier `.avmod` que tu installes d'un double-clic, ou depuis **Paramètres, section Modules complémentaires, « Installer un module… »**.
+
+- Chaque module tourne dans **son propre processus, enfermé par Windows**. S'il plante, l'écran et les autres modules continuent.
+- Il n'a **que les permissions que tu lui accordes**, une par une : réseau local, Internet, un service de ce PC, capteurs, musique en cours.
+- Un **point d'exclamation jaune** le signale partout dans la fenêtre de réglage. Sur l'écran, rien ne le distingue d'un module d'origine.
+- Le logiciel vérifie à chaque lancement qu'un module n'a pas changé depuis que tu l'as validé. Les mises à jour te sont **proposées, jamais installées en silence**.
+- Sans module complémentaire, rien ne tourne en plus : le logiciel reste aussi discret qu'avant.
+
+> **Avertissement.** Un module complémentaire n'est pas fait par Ashboard Vision et **peut contenir du code malveillant**. L'enfermement limite les dégâts, mais ne les exclut pas : un module autorisé à aller sur Internet peut y envoyer les données qu'on lui confie. Installe seulement un module dont tu connais et fais confiance à l'auteur.
+
+Le dépôt contient trois modules d'exemple, dans [`examples`](examples) : Dépôt GitHub, Démo et Serveur Minecraft.
+
+**Tu veux en écrire un ?** Le SDK permet de créer un module en C# : un modèle de projet, des aides de test et un banc d'essai. L'installateur le propose à la page des options (« Outils pour créer des modules (SDK) »). Tout est expliqué, en français, dans [la documentation du SDK](docs/sdk/README.md).
+
 ## Installation
 
 1. **Télécharge** `Ashboard-Vision-Setup-<version>.exe` dans la [dernière version](https://github.com/Ashewos/ashboard-vision/releases/latest), sous « Assets ».

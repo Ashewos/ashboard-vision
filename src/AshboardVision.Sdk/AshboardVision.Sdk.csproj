@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Le SDK des modules de la communauté : la classe de base, les services que le logiciel offre à un module, les permissions.
+       Numéroté à part du logiciel (voir la conception, 5.6) : AssemblyVersion reste 1.0.0.0 pour toute la ligne 1.x, de sorte
+       qu'un module compilé contre la 1.0 se lie à l'assemblage de l'hôte quelle que soit sa version mineure. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <!-- Le paquet NuGet local « AshboardVision.Sdk » (jamais poussé sur nuget.org : il est joint aux versions GitHub et posé par
+       l'installateur, voir la conception, 5.6). Son numéro (1.0.0) est celui du SDK, indépendant de <Version> de Directory.Build.props
+       (le logiciel) : il ne change que quand le contrat change. La licence est GPL-3.0-or-later (décision R28 : un module qui s'appuie
+       sur le SDK doit probablement être sous GPL aussi). -->
+  <PropertyGroup>
+    <PackageId>AshboardVision.Sdk</PackageId>
+    <Authors>Ashewos</Authors>
+    <Description>Le SDK des modules de la communauté d'Ashboard Vision : la classe de base CommunityModule, les services que le logiciel offre à un module, les permissions, le schéma des réglages et le thème.</Description>
+    <PackageTags>ashboard-vision;thermalright;trofeo-vision;module;sdk</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Ashewos/ashboard-vision</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- La documentation XML (en français) accompagne les DLL pour l'aide de l'éditeur ; l'avertissement « membre sans commentaire » reste une erreur
+         (TreatWarningsAsErrors) : toute API publique du contrat est documentée. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Validation du paquet (compatibilité entre cibles, et avec la version précédente). Après la première publication de la 1.0.0, poser ici
+         <PackageValidationBaselineVersion>1.0.0</PackageValidationBaselineVersion> : chaque 1.x sera alors comparée à la 1.0.0 et la construction
+         échouera si l'API publique recule (le test PublicApi_MatchesSnapshot garde la même règle sans attendre). Impossible avant : la base
+         doit être un paquet déjà publié (il n'y a pas de flux NuGet de référence ici, le fichier de la 1.0.0 viendra des versions GitHub). -->
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <!-- ModuleKit est embarqué dans le paquet (voir la cible plus bas), pas déclaré comme dépendance : un paquet « Trofeo.ModuleKit » n'existe pas. -->
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeModuleKitInPackage</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <!-- ModuleKit est privé pour le paquet : il n'est PAS déclaré comme dépendance dans le .nuspec (il n'existe aucun paquet Trofeo.ModuleKit),
+         seulement embarqué par la cible IncludeModuleKitInPackage. Conséquence : la référence ne se transmet pas aux projets qui référencent
+         ce projet ; ceux qui utilisent des types de ModuleKit (les modules d'essai, par exemple) le référencent eux-mêmes. -->
+    <ProjectReference Include="..\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" PrivateAssets="all" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Met Trofeo.ModuleKit.dll et sa documentation XML à côté d'AshboardVision.Sdk.dll dans lib/<cible>/ du paquet. Le schéma des réglages, le thème,
+       ModuleDrawing et les contextes de dessin y sont publics : ce sont des types du contrat. On prend les copies que la construction a déposées dans
+       le dossier de sortie du SDK ($(OutDir)) : les éléments @(ReferencePath) ne sont pas visibles d'une cible appelée par « pack » (CallTarget). -->
+  <Target Name="IncludeModuleKitInPackage">
+    <ItemGroup>
+      <BuildOutputInPackage Include="$(OutDir)Trofeo.ModuleKit.dll;$(OutDir)Trofeo.ModuleKit.xml" />
+    </ItemGroup>
+  </Target>
+
+  <!-- La construction des services d'un module et le lien d'une instance avec son hôte restent internes (API publique minimale). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Trofeo.ModuleHost" />
+    <InternalsVisibleTo Include="AshboardVision.Sdk.Testing" />
+  </ItemGroup>
+
+</Project>

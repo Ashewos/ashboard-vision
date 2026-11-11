@@ -73,6 +73,8 @@ public sealed class ModuleForm : ObservableObject
         SecretField secret => new SecretFieldViewModel(secret, _context),
         LookupField lookup => new LookupFieldViewModel(lookup, _context),
         ActionField action => new ActionFieldViewModel(action, _context, CommitPendingAsync),
+        NumberField number => new NumberFieldViewModel(number, number.Min, number.Max, number.Default, _context),
+        PortField port => new NumberFieldViewModel(port, NumberFieldViewModel.PortMinimum, NumberFieldViewModel.PortMaximum, port.Default, _context),
         _ => throw new NotSupportedException($"Champ de réglage inconnu : {field.GetType().Name}."),
     };
 }
