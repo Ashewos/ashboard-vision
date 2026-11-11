@@ -229,7 +229,8 @@ static class Program
             + $"{(theme.LegibilityGuard ? "" : ", garde de lisibilité coupée")}.");
 
         // La boucle devient propriétaire du fond et le libère après elle.
-        using var loop = new DisplayLoop(layout, registry, screen, scheduler, TimeProvider.System, theme, config.Background);
+        var viewStore = new DisplayedViewStore(Path.Combine(AppPaths.SettingsDir, "vue-affichee.json"), TimeProvider.System);
+        using var loop = new DisplayLoop(layout, registry, screen, scheduler, TimeProvider.System, theme, config.Background, viewStore);
         using var cts = new CancellationTokenSource();
         loop.Start(cts.Token);
 
@@ -506,7 +507,7 @@ static class Program
         }
 
         var layout = store.Load();
-        Trace.TraceInformation($"Disposition chargée : {layout.Views[0].Placements.Count} module(s), rotation {layout.Rotation}°.");
+        Trace.TraceInformation($"Disposition chargée : {layout.AllPlacements.Count()} module(s) en {layout.Views.Count} vue(s), rotation {layout.Rotation}°.");
         return layout;
     }
 

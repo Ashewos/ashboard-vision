@@ -64,8 +64,7 @@ public sealed class FrameComposer : IDisposable
 
             foreach (var placement in placements)
             {
-                var rect = ToRect(GridGeometry.ModuleRect(
-                    placement.Column, placement.Row, placement.Columns, placement.Rows, theme.Grid));
+                var rect = ModulePlace.Rect(placement, theme);
                 PaintPanel(canvas, rect, theme, background, now);
 
                 if (!modules.TryGetValue(placement.InstanceId, out var module))
@@ -77,9 +76,7 @@ public sealed class FrameComposer : IDisposable
                 try
                 {
                     PanelPainter.ClipToPanel(canvas, rect, theme); // même forme que le panneau
-                    var ctx = new ModuleRenderContext(
-                        rect, new GridSize(placement.Columns, placement.Rows), theme.Theme, placement.TextSize.Factor(), now);
-                    module.Render(canvas, ctx);
+                    module.Render(canvas, ModulePlace.Context(placement, theme, now));
                 }
                 catch (Exception ex)
                 {
@@ -108,8 +105,6 @@ public sealed class FrameComposer : IDisposable
         _legacyBackground?.Dispose();
         _legacyBackground = null;
     }
-
-    private static SKRect ToRect(SKRectI r) => SKRect.Create(r.Left, r.Top, r.Width, r.Height);
 
     // L'image courante du fond n'est jamais gardée : elle n'est valable que pour cette image de l'écran.
     private static void DrawBackground(SKCanvas canvas, IBackground background)

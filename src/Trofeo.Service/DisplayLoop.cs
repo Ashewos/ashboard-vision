@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Text.Json;
+using SkiaSharp;
 using Trofeo.Control;
 using Trofeo.Core.Layout;
 using Trofeo.Core.Rendering;
@@ -35,31 +36,72 @@ public sealed class DisplayLoop : IDisposable
 
     /// <summary>
     /// Les modules en place et la disposition qui va avec, remplacés d'un bloc : <see cref="FindCommandTarget"/> et
-    /// <see cref="Status"/> les lisent depuis un autre fil, sans jamais voir un état à moitié changé. Jamais modifié après coup.
+    /// <see cref="Status"/> les lisent depuis un autre fil, sans jamais voir un état à moitié changé. Jamais modifié après coup :
+    /// changer de vue en fait un nouveau (<see cref="WithView"/>). Toutes les cases de toutes les vues ont leur module ; seules
+    /// celles de la vue affichée sont dessinées.
     /// </summary>
-    private sealed class Live(
-        DashboardLayout layout, FrozenDictionary<Guid, IModule> modules, KeyValuePair<Guid, IModule>[] entries,
-        IModule[] list, Dictionary<Guid, ModulePlacement> placed)
+    private sealed class Live
     {
         public static Live Empty { get; } = new(
-            DashboardLayout.SingleView(0, []), FrozenDictionary<Guid, IModule>.Empty, [], [], []);
+            DashboardLayout.SingleView(0, []), FrozenDictionary<Guid, IModule>.Empty, [], [], [], Guid.Empty);
 
-        public DashboardLayout Layout { get; } = layout;
-        public FrozenDictionary<Guid, IModule> Modules { get; } = modules;
+        private Live(
+            DashboardLayout layout, FrozenDictionary<Guid, IModule> modules, KeyValuePair<Guid, IModule>[] entries,
+            IModule[] list, Dictionary<Guid, ModulePlacement> placed, Guid viewId)
+        {
+            Layout = layout;
+            Modules = modules;
+            Entries = entries;
+            List = list;
+            Placed = placed;
+            var view = layout.Views.FirstOrDefault(v => v.Id == viewId) ?? layout.Views[0];
+            ViewId = view.Id;
+            Placements = view.Placements;
 
-        /// <summary>Les modules dans l'ordre de la disposition.</summary>
-        public KeyValuePair<Guid, IModule>[] Entries { get; } = entries;
+            // Les modules de la vue affichée : ceux dont l'emplacement accepté est bien l'une de ses cases (un identifiant en
+            // double dans une autre vue ne prête pas son module).
+            var displayed = new List<IModule>();
+            var seen = new HashSet<Guid>();
+            foreach (var placement in view.Placements)
+            {
+                if (placed.TryGetValue(placement.InstanceId, out var accepted) && ReferenceEquals(accepted, placement)
+                    && modules.TryGetValue(placement.InstanceId, out var module) && seen.Add(placement.InstanceId))
+                {
+                    displayed.Add(module);
+                }
+            }
 
-        public IModule[] List { get; } = list;
+            Displayed = [.. displayed];
+            DisplayedSet = new HashSet<IModule>(displayed, ReferenceEqualityComparer.Instance);
+        }
+
+        public DashboardLayout Layout { get; }
+        public FrozenDictionary<Guid, IModule> Modules { get; }
+
+        /// <summary>Les modules de toutes les vues, dans l'ordre de la disposition.</summary>
+        public KeyValuePair<Guid, IModule>[] Entries { get; }
+
+        public IModule[] List { get; }
 
         /// <summary>L'emplacement dont chaque module est issu : de quoi décider s'il reste en place au changement suivant.</summary>
-        public Dictionary<Guid, ModulePlacement> Placed { get; } = placed;
+        public Dictionary<Guid, ModulePlacement> Placed { get; }
 
-        public static Live Of(DashboardLayout layout, Dictionary<Guid, IModule> modules, Dictionary<Guid, ModulePlacement> placed)
+        /// <summary>La vue affichée.</summary>
+        public Guid ViewId { get; }
+
+        /// <summary>Les cases de la vue affichée : ce que le compositeur dessine.</summary>
+        public IReadOnlyList<ModulePlacement> Placements { get; }
+
+        /// <summary>Les modules de la vue affichée, dans l'ordre de ses cases.</summary>
+        public IModule[] Displayed { get; }
+
+        public HashSet<IModule> DisplayedSet { get; }
+
+        public static Live Of(DashboardLayout layout, Dictionary<Guid, IModule> modules, Dictionary<Guid, ModulePlacement> placed, Guid viewId)
         {
             var entries = new List<KeyValuePair<Guid, IModule>>(modules.Count);
             var seen = new HashSet<Guid>();
-            foreach (var placement in layout.Views[0].Placements)
+            foreach (var placement in layout.AllPlacements)
             {
                 if (modules.TryGetValue(placement.InstanceId, out var module) && seen.Add(placement.InstanceId))
                 {
@@ -68,9 +110,15 @@ public sealed class DisplayLoop : IDisposable
             }
 
             var array = entries.ToArray();
-            return new Live(layout, modules.ToFrozenDictionary(), array, [.. array.Select(e => e.Value)], placed);
+            return new Live(layout, modules.ToFrozenDictionary(), array, [.. array.Select(e => e.Value)], placed, viewId);
         }
+
+        /// <summary>Le même état, avec une autre vue affichée.</summary>
+        public Live WithView(Guid viewId) => new(Layout, Modules, Entries, List, Placed, viewId);
     }
+
+    /// <summary>Ce qu'un module cachable a appris pour la dernière fois : de quoi ne le prévenir que quand quelque chose change.</summary>
+    private readonly record struct Announcement(bool Visible, SKRect Bounds, GridSize Size, float TextScale, Theme Theme);
 
     /// <summary>Un abonné à l'aperçu. Les champs d'état ne se touchent que depuis le fil du <see cref="Tick"/>.</summary>
     private sealed class PreviewSubscriber(DisplayLoop owner, TimeSpan interval, Action<PreviewFrame> onFrame) : IDisposable
@@ -96,6 +144,8 @@ public sealed class DisplayLoop : IDisposable
     private readonly TimeProvider _time;
     private readonly RateLimitedErrorLog _renderErrors;
     private volatile Live _live = Live.Empty;
+    private readonly DisplayedViewStore? _viewStore;
+    private readonly Dictionary<IModule, Announcement> _announced = new(ReferenceEqualityComparer.Instance); // sous _lifecycleGate
     private FrameComposer _composer;
     private ThemeDefinition _theme;
     private IBackground _background;
@@ -144,15 +194,24 @@ public sealed class DisplayLoop : IDisposable
     /// <param name="background">
     /// Le fond de l'écran ; la boucle en devient propriétaire et le libère à son arrêt. Absent : fond uni de la couleur du thème.
     /// </param>
+    /// <param name="viewStore">
+    /// Où la vue affichée est gardée entre deux démarrages : lue ici, écrite à chaque changement de vue, vidée à l'arrêt.
+    /// Absent : la boucle démarre sur la première vue et ne retient rien.
+    /// </param>
     public DisplayLoop(
         DashboardLayout layout, ModuleRegistry registry, ScreenDevice screen, FrameScheduler scheduler, TimeProvider time,
-        ThemeDefinition? theme = null, IBackground? background = null)
+        ThemeDefinition? theme = null, IBackground? background = null, DisplayedViewStore? viewStore = null)
     {
         _registry = registry;
+        _viewStore = viewStore;
         _screen = screen;
         _scheduler = scheduler;
         _time = time;
-        _onInvalidated = (_, _) => _scheduler.MarkDirty();
+        _onInvalidated = (sender, _) =>
+        {
+            // Une case cachée qui s'invalide ne réveille pas l'écran : sa vue sera de toute façon redessinée quand on l'affichera.
+            if (sender is not IModule module || _live.DisplayedSet.Contains(module)) _scheduler.MarkDirty();
+        };
         _onStatusChanged = OnStatusChanged;
         _renderErrors = new RateLimitedErrorLog(time);
         _composer = new FrameComposer(_renderErrors);
@@ -161,7 +220,10 @@ public sealed class DisplayLoop : IDisposable
         _backgroundStart = time.GetTimestamp(); // la lecture d'un fond animé part du démarrage de la boucle
 
         // Une disposition mal formée ne doit jamais empêcher le service de démarrer : les refus sont journalisés.
-        _live = Reconcile(layout, Live.Empty, [], out _);
+        var stored = viewStore?.Load();
+        var firstView = stored is { } storedId && layout.Views.Any(v => v.Id == storedId) ? storedId : layout.Views[0].Id;
+        _live = Reconcile(layout, Live.Empty, firstView, [], out _);
+        Announce(_live);
         if (layout.MaxFps is { } maxFps) _scheduler.SetMaxFps(maxFps);
         _configuredFps = FpsOf(_scheduler.MinInterval);
         _scheduler.MarkDirty(); // la première image part dès que l'écran est prêt
@@ -172,21 +234,24 @@ public sealed class DisplayLoop : IDisposable
 
     /// <summary>
     /// Le module qui reçoit une commande de raccourci : l'instance demandée si elle accepte les commandes, sinon le
-    /// premier module qui les accepte, dans l'ordre de la disposition (colonne, puis rangée). <c>null</c> s'il n'y en a aucun.
+    /// premier module qui les accepte, dans l'ordre de la vue affichée (colonne, puis rangée) ; les cases des vues cachées ne
+    /// comptent pas. <c>null</c> s'il n'y en a aucun.
     /// Appelable depuis le thread de l'interface, y compris pendant un changement de disposition : chaque appel lit
     /// un état cohérent (modules et disposition ensemble). L'appelant doit cesser d'appeler avant de libérer la boucle.
     /// </summary>
     public ICommandableModule? FindCommandTarget(Guid? instanceId)
     {
         var live = _live;
-        if (instanceId is { } id && live.Modules.TryGetValue(id, out var requested) && requested is ICommandableModule target)
+        if (instanceId is { } id && live.Modules.TryGetValue(id, out var requested) && requested is ICommandableModule target
+            && live.DisplayedSet.Contains(requested))
         {
             return target;
         }
 
-        foreach (var placement in live.Layout.Views[0].Placements.OrderBy(p => p.Column).ThenBy(p => p.Row))
+        foreach (var placement in live.Placements.OrderBy(p => p.Column).ThenBy(p => p.Row))
         {
-            if (live.Modules.TryGetValue(placement.InstanceId, out var module) && module is ICommandableModule commandable)
+            if (live.Modules.TryGetValue(placement.InstanceId, out var module) && module is ICommandableModule commandable
+                && live.DisplayedSet.Contains(module))
             {
                 return commandable;
             }
@@ -264,7 +329,7 @@ public sealed class DisplayLoop : IDisposable
             }
         }
 
-        _scheduler.MarkDirty();
+        if (sender is not IModule changed || _live.DisplayedSet.Contains(changed)) _scheduler.MarkDirty();
     }
 
     /// <summary>Nombre d'images envoyées et validées par l'écran depuis le démarrage.</summary>
@@ -313,6 +378,109 @@ public sealed class DisplayLoop : IDisposable
     {
         Volatile.Write(ref _reconnectRequested, 1);
         _scheduler.Wake();
+    }
+
+    // ---- Vues ----
+
+    /// <summary>Levé après chaque changement de vue affichée (raccourci, rechargement qui supprime la vue affichée, <see cref="ShowView"/>), jamais au démarrage. Peut l'être depuis le fil de l'interface ou celui de la boucle : un abonné ne doit pas bloquer.</summary>
+    public event Action<Guid>? ViewChanged;
+
+    /// <summary>La vue affichée. Lisible depuis n'importe quel thread.</summary>
+    public Guid CurrentViewId => _live.ViewId;
+
+    /// <summary>Le sens du dernier changement de vue (−1 : vers la précédente, +1 : vers la suivante, 0 : sans sens) ; sert au glissement.</summary>
+    public int LastViewDirection { get; private set; }
+
+    /// <summary>
+    /// Affiche la vue <paramref name="viewId"/> tout de suite (une seule recomposition). Faux si cette vue n'existe pas ; vrai
+    /// (sans rien faire) si elle est déjà affichée. <paramref name="direction"/> (−1, 0 ou +1) dit dans quel sens on y va, pour
+    /// le glissement. Appelable depuis n'importe quel thread.
+    /// </summary>
+    public bool ShowView(Guid viewId, int direction)
+    {
+        lock (_lifecycleGate)
+        {
+            if (_disposed) return false;
+
+            var old = _live;
+            if (!old.Layout.Views.Any(v => v.Id == viewId)) return false;
+            if (old.ViewId == viewId) return true;
+
+            LastViewDirection = Math.Clamp(direction, -1, 1);
+            _live = old.WithView(viewId);
+            Announce(_live);
+            _scheduler.MarkDirty();
+        }
+
+        OnViewChanged(viewId);
+        return true;
+    }
+
+    /// <summary>
+    /// Affiche la vue d'à côté, en boucle (après la dernière, la première). <paramref name="step"/> : +1 la suivante, −1 la précédente.
+    /// Faux s'il n'y a pas d'autre vue où aller.
+    /// </summary>
+    public bool ShowAdjacentView(int step)
+    {
+        var live = _live;
+        var views = live.Layout.Views;
+        if (step == 0 || views.Count < 2) return false;
+
+        var current = views.ToList().FindIndex(v => v.Id == live.ViewId);
+        var target = (((current + step) % views.Count) + views.Count) % views.Count;
+        return ShowView(views[target].Id, Math.Sign(step));
+    }
+
+    /// <summary>Affiche la vue de rang <paramref name="index"/> (à partir de 0). Faux s'il n'y a pas de vue de ce rang.</summary>
+    public bool ShowViewAt(int index)
+    {
+        var live = _live;
+        var views = live.Layout.Views;
+        if (index < 0 || index >= views.Count) return false;
+
+        var current = views.ToList().FindIndex(v => v.Id == live.ViewId);
+        return ShowView(views[index].Id, Math.Sign(index - current));
+    }
+
+    /// <summary>Retient la vue affichée et prévient les abonnés ; un abonné qui échoue est journalisé, sans effet sur la boucle.</summary>
+    private void OnViewChanged(Guid viewId)
+    {
+        _viewStore?.Save(viewId);
+        try
+        {
+            ViewChanged?.Invoke(viewId);
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceError($"Un abonné à ViewChanged a échoué : {ex}");
+        }
+    }
+
+    /// <summary>
+    /// Dit à chaque module cachable si sa case est visible, avec sa place, quand cela a changé depuis la dernière annonce (création,
+    /// changement de vue, case déplacée ou thème changé). À appeler sous <c>_lifecycleGate</c>, une fois la nouvelle <see cref="Live"/> publiée.
+    /// </summary>
+    private void Announce(Live live)
+    {
+        var now = _time.GetLocalNow();
+        foreach (var (id, module) in live.Entries)
+        {
+            if (module is not IHideableModule hideable || !live.Placed.TryGetValue(id, out var placement)) continue;
+
+            var place = ModulePlace.Context(placement, _theme, now);
+            var announcement = new Announcement(live.DisplayedSet.Contains(module), place.Bounds, place.Size, place.TextScale, place.Theme);
+            if (_announced.TryGetValue(module, out var last) && last == announcement) continue;
+
+            _announced[module] = announcement;
+            try
+            {
+                hideable.SetVisible(announcement.Visible, place);
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Échec de l'annonce de visibilité du module « {module.Descriptor.TypeId} » : {ex}");
+            }
+        }
     }
 
     // ---- Changement de disposition à chaud ----
@@ -438,6 +606,7 @@ public sealed class DisplayLoop : IDisposable
     private IReadOnlyList<string> ApplyNow(LoopConfig config)
     {
         var warnings = new List<string>();
+        Guid? viewChanged;
         lock (_lifecycleGate)
         {
             var layout = config.Layout;
@@ -446,7 +615,9 @@ public sealed class DisplayLoop : IDisposable
             // Le fond et le thème d'abord : le compositeur est recréé s'ils changent, l'ancien fond est libéré après lui.
             ReplaceTheme(config.Theme, config.Background);
 
-            _live = Reconcile(layout, old, warnings, out var created);
+            _live = Reconcile(layout, old, ViewAfterReload(old, layout), warnings, out var created);
+            viewChanged = _live.ViewId != old.ViewId ? _live.ViewId : null;
+            Announce(_live);
             if (_started)
             {
                 foreach (var module in created) StartModule(module);
@@ -457,7 +628,20 @@ public sealed class DisplayLoop : IDisposable
             _scheduler.MarkDirty();
         }
 
+        if (viewChanged is { } shown) OnViewChanged(shown);
         return warnings;
+    }
+
+    /// <summary>
+    /// La vue affichée après un rechargement : la même si elle existe encore ; sinon la vue qui a pris sa place (la suivante, ou la
+    /// précédente si c'était la dernière) ; à défaut la première.
+    /// </summary>
+    private static Guid ViewAfterReload(Live old, DashboardLayout layout)
+    {
+        if (layout.Views.Any(v => v.Id == old.ViewId)) return old.ViewId;
+
+        var index = old.Layout.Views.ToList().FindIndex(v => v.Id == old.ViewId);
+        return index < 0 ? layout.Views[0].Id : layout.Views[Math.Min(index, layout.Views.Count - 1)].Id;
     }
 
     private void ReplaceTheme(ThemeDefinition theme, IBackground background)
@@ -487,16 +671,16 @@ public sealed class DisplayLoop : IDisposable
     /// crée les nouveaux (<paramref name="created"/> : à démarrer par l'appelant, une fois le résultat publié). Les refus sont
     /// journalisés et ajoutés à <paramref name="warnings"/>.
     /// </summary>
-    private Live Reconcile(DashboardLayout layout, Live old, List<string> warnings, out List<IModule> created)
+    private Live Reconcile(DashboardLayout layout, Live old, Guid viewId, List<string> warnings, out List<IModule> created)
     {
-        // 1. Ce qu'on garde, ce qu'on crée.
+        // 1. Ce qu'on garde, ce qu'on crée : les cases de toutes les vues (seule la vue affichée est dessinée).
         var plan = new List<(ModulePlacement Placement, IModule? Keep, bool Duplicate)>();
         var seen = new HashSet<Guid>();
-        foreach (var placement in layout.Views[0].Placements)
+        foreach (var (view, placement) in layout.Views.SelectMany(v => v.Placements.Select(p => (v, p))))
         {
             try
             {
-                var error = LayoutValidator.Check(layout.Views[0].Placements, placement, _registry.Descriptors);
+                var error = LayoutValidator.Check(view.Placements, placement, _registry.Descriptors);
                 if (error == PlacementError.UnknownType)
                 {
                     Refuse(warnings, $"Module ignoré : type inconnu « {placement.TypeId} ».", $"({placement.InstanceId})");
@@ -581,7 +765,7 @@ public sealed class DisplayLoop : IDisposable
             }
         }
 
-        return Live.Of(layout, modules, placed);
+        return Live.Of(layout, modules, placed, viewId);
     }
 
     private static void Refuse(List<string> warnings, string warning, string? detail = null)
@@ -614,6 +798,7 @@ public sealed class DisplayLoop : IDisposable
         module.Invalidated -= _onInvalidated;
         module.StatusChanged -= _onStatusChanged;
         _instanceIds.TryRemove(module, out _);
+        _announced.Remove(module);
         DisposeModule(module);
     }
 
@@ -646,13 +831,14 @@ public sealed class DisplayLoop : IDisposable
         lock (_lifecycleGate)
         {
             var old = _live;
+            var view = old.Layout.Views.FirstOrDefault(v => v.Placements.Any(p => p.InstanceId == instanceId));
             var placement = old.Placed.TryGetValue(instanceId, out var accepted)
                 ? accepted
-                : old.Layout.Views[0].Placements.FirstOrDefault(p => p.InstanceId == instanceId);
+                : view?.Placements.FirstOrDefault(p => p.InstanceId == instanceId);
             if (placement is null) return false;
 
             if (!old.Placed.ContainsKey(instanceId)
-                && LayoutValidator.Check(old.Layout.Views[0].Placements, placement, _registry.Descriptors) != PlacementError.None)
+                && (view is null || LayoutValidator.Check(view.Placements, placement, _registry.Descriptors) != PlacementError.None))
             {
                 return false;
             }
@@ -672,7 +858,8 @@ public sealed class DisplayLoop : IDisposable
                 placed[instanceId] = placement;
             }
 
-            _live = Live.Of(old.Layout, modules, placed);
+            _live = Live.Of(old.Layout, modules, placed, old.ViewId);
+            Announce(_live);
             if (fresh is not null && _started) StartModule(fresh);
             _scheduler.MarkDirty();
             return fresh is not null;
@@ -864,6 +1051,8 @@ public sealed class DisplayLoop : IDisposable
             }
         }
 
+        _viewStore?.Flush();
+
         // Le compositeur garde une copie floutée du fond : on le libère avant le fond.
         _composer.Dispose();
         _background.Dispose();
@@ -997,7 +1186,7 @@ public sealed class DisplayLoop : IDisposable
             var renderStart = _time.GetTimestamp();
             try
             {
-                using var bitmap = _composer.Compose(live.Layout.Views[0].Placements, live.Modules, _theme, _background, _time.GetLocalNow());
+                using var bitmap = _composer.Compose(live.Placements, live.Modules, _theme, _background, _time.GetLocalNow());
                 jpeg = JpegEncoder.Encode(bitmap, live.Layout.Rotation);
             }
             catch (Exception ex)
@@ -1101,7 +1290,7 @@ public sealed class DisplayLoop : IDisposable
 
     private bool AnyAnimating()
     {
-        foreach (var module in _live.List)
+        foreach (var module in _live.Displayed)
         {
             if (module.IsAnimating) return true;
         }

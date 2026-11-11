@@ -217,7 +217,7 @@ public sealed class ServiceControlHandler(
     public async Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct)
     {
         var layout = loop.Layout;
-        var placed = layout.Views[0].Placements.FirstOrDefault(p => p.InstanceId == instanceId);
+        var placed = layout.AllPlacements.FirstOrDefault(p => p.InstanceId == instanceId);
         var placement = placed ?? layout.Shelf?.FirstOrDefault(p => p.InstanceId == instanceId);
         if (placement is null) return new ActionResult(false, "Module introuvable dans la disposition.");
 
