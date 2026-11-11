@@ -206,8 +206,13 @@ public class ServiceLinkTests
         /// <summary>Les vues demandées à l'aperçu, dans l'ordre (<c>null</c> : la vue affichée).</summary>
         public readonly ConcurrentQueue<Guid?> SubscribedViews = new();
 
+        /// <summary>Si posé, le service refuse toute vue précise (elle n'existe plus) : seule la vue affichée est acceptée.</summary>
+        public volatile bool RefuseViews;
+
         public IDisposable SubscribePreview(int maxFps, Guid? viewId, Action<PreviewFrame> onFrame)
         {
+            if (RefuseViews && viewId is not null)
+                throw new InvalidOperationException("Vue inconnue.");
             Subscriptions.Enqueue(maxFps);
             SubscribedViews.Enqueue(viewId);
             return new Nothing();
@@ -526,6 +531,48 @@ public class ServiceLinkTests
         link.SetRealTimePreview(true); // le débit change, la vue reste
         await WaitUntilAsync(() => handler.Subscriptions.Last() == 12, "aperçu à 12 i/s");
         Assert.Equal(second, handler.SubscribedViews.Last());
+    }
+
+    [Fact]
+    public async Task Link_FastSuccessiveViewChanges_EndOnTheLastView()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler();
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => handler.SubscribedViews.Count >= 1, "abonnement");
+
+        var views = Enumerable.Range(0, 40).Select(_ => Guid.NewGuid()).ToList();
+        foreach (var view in views)
+        {
+            link.SetPreviewView(view);
+            link.SetRealTimePreview(view.GetHashCode() % 2 == 0);
+        }
+
+        link.SetRealTimePreview(true);
+        await WaitUntilAsync(() => handler.SubscribedViews.Last() == views[^1] && handler.Subscriptions.Last() == 12, "dernière vue et dernier débit");
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+        Assert.Equal(views[^1], handler.SubscribedViews.Last()); // rien n'est arrivé après, dans le désordre
+        Assert.Equal(12, handler.Subscriptions.Last());
+        Assert.Equal(views[^1], link.PreviewViewId);
+    }
+
+    [Fact]
+    public async Task Link_ViewRefusedByTheService_FallsBackToTheDisplayedView_AndSaysSo()
+    {
+        var pipe = NewPipeName();
+        var handler = new Handler { RefuseViews = true };
+        using var server = new ControlServer(pipe, handler);
+        server.Start();
+        await using var link = NewLink(pipe);
+        await WaitUntilAsync(() => handler.SubscribedViews.Count >= 1, "abonnement");
+
+        link.SetPreviewView(Guid.NewGuid());
+
+        await WaitUntilAsync(() => handler.SubscribedViews.Count >= 2, "repli sur la vue affichée");
+        Assert.Null(handler.SubscribedViews.Last());
+        await WaitUntilAsync(() => link.PreviewViewId is null, "la liaison ne demande plus la vue refusée");
     }
 
     [Fact]

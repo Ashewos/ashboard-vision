@@ -31,8 +31,17 @@ public sealed partial class ViewTabItem(Guid id, string name, LayoutTabViewModel
 
     public string OnScreenText => Texts.LayoutViewOnScreen;
 
+    /// <summary>Le menu de l'onglet ne sert que service relié (sans lui, rien ne s'enregistre).</summary>
+    public bool CanEdit => owner.CanEdit;
+
     /// <summary>« Supprimer » n'est pas proposé pour la dernière vue.</summary>
-    public bool CanDelete => owner.CanDeleteView;
+    public bool CanDelete => owner.CanEdit && owner.CanDeleteView;
+
+    internal void RefreshAvailability()
+    {
+        OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanDelete));
+    }
 
     /// <summary>Le texte d'une vue, sans ce qui peut tromper l'œil ; vide : le nom de la première vue, pour qu'un onglet ne soit jamais muet.</summary>
     public static string Clean(string? name) => UntrustedText.Line(name) is { Length: > 0 } cleaned ? cleaned : LayoutView.FirstViewName;

@@ -29,6 +29,8 @@ public sealed class ServiceLink : IServiceLink
     private bool _realTime;
     private bool _paused;
     private Guid? _previewViewId;
+    private readonly SemaphoreSlim _subscribeGate = new(1, 1);
+    private long _subscribeSeq;
     private long _shownGeneration;
     private PreviewFrame? _pendingFrame;
     private int _failures;
@@ -86,6 +88,11 @@ public sealed class ServiceLink : IServiceLink
         Resubscribe();
     }
 
+    public Guid? PreviewViewId
+    {
+        get { lock (_gate) return _previewViewId; }
+    }
+
     public void SetPreviewView(Guid? viewId)
     {
         lock (_gate)
@@ -104,17 +111,47 @@ public sealed class ServiceLink : IServiceLink
     private void Resubscribe()
     {
         ControlClient? client;
-        int fps;
-        Guid? viewId;
         lock (_gate)
-        {
             client = _client;
-            fps = WantedFps();
-            viewId = _previewViewId;
-        }
 
         if (client is not null)
-            _ = SubscribeQuietlyAsync(client, fps, viewId);
+            _ = SubscribeLatestAsync(client, Interlocked.Increment(ref _subscribeSeq));
+    }
+
+    /// <summary>
+    /// Les demandes d'abonnement partent une à une, la dernière gagne : une demande qui en trouve une plus récente derrière elle ne part
+    /// pas, et celle qui part lit au dernier moment le débit et la vue voulus. Sans cela, deux changements rapides pouvaient arriver
+    /// dans le désordre au service et laisser l'aperçu sur la mauvaise vue.
+    /// </summary>
+    private async Task SubscribeLatestAsync(ControlClient client, long sequence)
+    {
+        try
+        {
+            await _subscribeGate.WaitAsync(_cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return; // la liaison se ferme
+        }
+
+        try
+        {
+            if (sequence != Volatile.Read(ref _subscribeSeq))
+                return; // une demande plus récente attend son tour
+            int fps;
+            Guid? viewId;
+            lock (_gate)
+            {
+                fps = WantedFps();
+                viewId = _previewViewId;
+            }
+
+            await SubscribeQuietlyAsync(client, fps, viewId).ConfigureAwait(false);
+        }
+        finally
+        {
+            _subscribeGate.Release();
+        }
     }
 
     public Task<Reloaded> ReloadAsync() => RequestAsync((client, ct) => client.ReloadAsync(ct));
@@ -354,16 +391,28 @@ public sealed class ServiceLink : IServiceLink
         client.FrameReceived += ReceiveFrame;
         client.ViewShown += ReceiveViewShown;
 
-        int fps;
-        Guid? previewView;
         lock (_gate)
-        {
             _client = client;
-            fps = WantedFps();
-            previewView = _previewViewId;
+
+        // Comme les changements de la fenêtre, la première demande passe par la file : elle lit au dernier moment ce qui est voulu.
+        await _subscribeGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            int fps;
+            Guid? previewView;
+            lock (_gate)
+            {
+                fps = WantedFps();
+                previewView = _previewViewId;
+            }
+
+            await SubscribeAsync(client, fps, previewView, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _subscribeGate.Release();
         }
 
-        await SubscribeAsync(client, fps, previewView, ct).ConfigureAwait(false);
         var shownGeneration = Volatile.Read(ref _shownGeneration);
         var status = await client.GetStatusAsync(ct).ConfigureAwait(false);
         var generation = Volatile.Read(ref _updatesGeneration);
@@ -434,7 +483,7 @@ public sealed class ServiceLink : IServiceLink
         catch (ControlException) { return null; }
     }
 
-    private static async Task SubscribeQuietlyAsync(ControlClient client, int fps, Guid? viewId)
+    private async Task SubscribeQuietlyAsync(ControlClient client, int fps, Guid? viewId)
     {
         try { await SubscribeAsync(client, fps, viewId, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) when (ex is ControlException or TimeoutException or OperationCanceledException)
@@ -447,7 +496,7 @@ public sealed class ServiceLink : IServiceLink
     /// Abonne l'aperçu à la vue voulue. Une vue que le service ne connaît pas (retirée entre-temps) lui fait refuser la demande,
     /// et il se désabonne alors de l'ancienne : on retombe sur la vue affichée plutôt que de laisser la bande figée.
     /// </summary>
-    private static async Task SubscribeAsync(ControlClient client, int fps, Guid? viewId, CancellationToken ct)
+    private async Task SubscribeAsync(ControlClient client, int fps, Guid? viewId, CancellationToken ct)
     {
         try
         {
@@ -456,6 +505,12 @@ public sealed class ServiceLink : IServiceLink
         catch (ControlException) when (viewId is not null)
         {
             await client.SubscribePreviewAsync(fps, null, ct).ConfigureAwait(false);
+            // L'aperçu est bien sur la vue affichée : ce que la liaison dit demander doit le dire aussi (la fenêtre s'en sert pour redemander).
+            lock (_gate)
+            {
+                if (_previewViewId == viewId)
+                    _previewViewId = null;
+            }
         }
     }
 

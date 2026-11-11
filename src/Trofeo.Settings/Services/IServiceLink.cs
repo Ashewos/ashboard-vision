@@ -61,6 +61,9 @@ public interface IServiceLink : IAsyncDisposable
     /// </summary>
     void SetPreviewView(Guid? viewId);
 
+    /// <summary>La vue que l'aperçu demande en ce moment (<c>null</c> : la vue affichée). Retombe sur <c>null</c> si le service refuse la vue demandée.</summary>
+    Guid? PreviewViewId { get; }
+
     /// <summary>Affiche une vue sur l'écran. Faux si le service ne la connaît pas.</summary>
     Task<bool> ShowViewAsync(Guid viewId);
 

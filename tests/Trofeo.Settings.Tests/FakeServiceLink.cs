@@ -67,12 +67,15 @@ public sealed class FakeServiceLink : IServiceLink
     /// <summary>Comme le service : une vue affichée est ensuite annoncée à tous (<see cref="PushViewShown"/>).</summary>
     public bool ShowViewAnnounces { get; set; } = true;
 
+    /// <summary>La réponse à une demande d'affichage : faux, le service ne connaît pas la vue.</summary>
+    public bool ShowViewResult { get; set; } = true;
+
     public Task<bool> ShowViewAsync(Guid viewId)
     {
         ShowRequests.Add(viewId);
-        if (ShowViewAnnounces)
+        if (ShowViewAnnounces && ShowViewResult)
             PushViewShown(viewId);
-        return Task.FromResult(true);
+        return Task.FromResult(ShowViewResult);
     }
 
     public void SetPreviewPaused(bool paused) => Paused = paused;

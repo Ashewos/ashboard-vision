@@ -197,6 +197,120 @@ public sealed class LayoutViewsTabTests : IDisposable
         Assert.Equal([ViewA, ViewB, ViewC], _link.PreviewViews);
     }
 
+    [Fact]
+    public async Task ReClickingTheSelectedTab_WithFollowOn_PutsTheScreenBackOnIt()
+    {
+        _link.ShownViewId = ViewB;
+        var tab = Open(ThreeViews());
+        Assert.Equal(ViewB, tab.SelectedViewId);
+        _link.PushViewShown(ViewC); // un raccourci clavier emmène l'écran ailleurs
+        Assert.Empty(_link.ShowRequests);
+
+        await tab.SelectViewAsync(tab.ViewTabs[1]);
+
+        Assert.Equal([ViewB], _link.ShowRequests);
+        Assert.True(tab.ViewTabs[1].IsOnScreen);
+
+        await tab.SelectViewAsync(tab.ViewTabs[1]); // déjà sur l'écran : rien à demander
+        Assert.Single(_link.ShowRequests);
+    }
+
+    [Fact]
+    public async Task ReClickingTheSelectedTab_WithFollowOff_DoesNothing()
+    {
+        _link.ShownViewId = ViewB;
+        var tab = Open(ThreeViews(), followView: false);
+        _link.PushViewShown(ViewC);
+
+        await tab.SelectViewAsync(tab.ViewTabs[1]);
+
+        Assert.Empty(_link.ShowRequests);
+    }
+
+    [Fact]
+    public async Task ShowView_UnknownToTheService_ReloadsItThenAsksAgain()
+    {
+        _link.ShownViewId = ViewA;
+        _link.ShowViewResult = false;
+        var tab = Open(ThreeViews());
+
+        await tab.SelectViewAsync(tab.ViewTabs[1]);
+
+        Assert.Equal([ViewB, ViewB], _link.ShowRequests); // refusée, la disposition est rechargée, la demande refaite une fois
+        Assert.Equal(1, _link.ReloadCount);
+        Assert.Equal(ViewB, tab.SelectedViewId);
+    }
+
+    // ---- L'aperçu hors de l'onglet Disposition ----
+
+    [Fact]
+    public async Task Preview_OutsideDisposition_ShowsTheViewOnScreen_AndComesBackOnTheChosenView()
+    {
+        _link.ShownViewId = ViewA;
+        _store.Save(ThreeViews());
+        _document = new LayoutDocument(_store, _link);
+        _document.Load();
+        using var model = new MainViewModel(_link, _document, new EditorPreferences(FirstRunDone: true, FollowView: false));
+        await model.LayoutTab.SelectViewAsync(model.LayoutTab.ViewTabs[1]);
+        Assert.Equal(ViewB, _link.PreviewViewId);
+
+        model.SelectedTab = model.AppearanceTab; // la bande redevient « L'écran en direct » : la vue cachée est relâchée
+        Assert.Null(_link.PreviewViewId);
+
+        model.SelectedTab = model.LayoutTab;
+        Assert.Equal(ViewB, _link.PreviewViewId);
+
+        model.SelectedTab = model.ShortcutsTab;
+        Assert.Null(_link.PreviewViewId);
+        Assert.Equal(ViewB, model.LayoutTab.SelectedViewId); // le choix, lui, est gardé
+    }
+
+    [Fact]
+    public void Preview_InactiveTab_ChoosesTheScreenView_EvenWhenAnotherViewIsChosen()
+    {
+        _link.ShownViewId = ViewA;
+        var tab = Open(ThreeViews(), followView: false);
+        tab.IsActive = false;
+        Assert.Null(_link.PreviewViewId);
+
+        _ = tab.SelectViewAsync(tab.ViewTabs[2]);
+        Assert.Null(_link.PreviewViewId);   // choisie, mais l'onglet n'est pas regardé
+
+        tab.IsActive = true;
+        Assert.Equal(ViewC, _link.PreviewViewId);
+    }
+
+    // ---- Sans service relié ----
+
+    [Fact]
+    public async Task DeleteView_WithoutService_DoesNotAskForAConfirmationThatWouldDoNothing()
+    {
+        var tab = Open(ThreeViews());
+        Assert.True(tab.ViewTabs[1].CanDelete);
+
+        _link.Set(LinkState.Connecting); // la liaison est coupée : les types ne sont plus connus
+        Assert.False(tab.CanEdit);
+        Assert.False(tab.ViewTabs[1].CanDelete);
+        Assert.False(tab.ViewTabs[1].CanEdit);
+
+        await tab.DeleteViewAsync(tab.ViewTabs[1]);
+
+        Assert.False(tab.IsConfirmingViewDelete);
+        Assert.Equal(3, _document.Current.Views.Count);
+    }
+
+    [Fact]
+    public async Task DeleteConfirmation_IsDroppedWhenTheServiceGoesAway()
+    {
+        var tab = Open(ThreeViews());
+        await tab.DeleteViewAsync(tab.ViewTabs[1]);
+        Assert.True(tab.IsConfirmingViewDelete);
+
+        _link.Set(LinkState.Connecting);
+
+        Assert.False(tab.IsConfirmingViewDelete);
+    }
+
     // ---- Le point vert ----
 
     [Fact]
@@ -565,7 +679,7 @@ public sealed class LayoutViewsTabTests : IDisposable
         _link.ShownViewId = ViewA;
         var tab = Open(ThreeViews(), followView: false);
         await tab.SelectViewAsync(tab.ViewTabs[1]);
-        var view = new LayoutTabView { DataContext = tab };
+        var view = new StackPanel { Children = { new ViewTabsBar { DataContext = tab }, new LayoutTabView { DataContext = tab } } }; // la rangée des vues est au-dessus de la bande, hors de l'onglet
         _window = new Window { Width = 1400, Height = 900, Content = view };
         _window.Show();
         Dispatcher.UIThread.RunJobs();
@@ -600,7 +714,7 @@ public sealed class LayoutViewsTabTests : IDisposable
     {
         _link.ShownViewId = ViewA;
         var tab = Open(ThreeViews());
-        var view = new LayoutTabView { DataContext = tab };
+        var view = new StackPanel { Children = { new ViewTabsBar { DataContext = tab }, new LayoutTabView { DataContext = tab } } }; // la rangée des vues est au-dessus de la bande, hors de l'onglet
         _window = new Window { Width = 1400, Height = 900, Content = view };
         _window.Show();
         Dispatcher.UIThread.RunJobs();
@@ -639,7 +753,7 @@ public sealed class LayoutViewsTabTests : IDisposable
     public async Task Window_DeleteConfirmation_ShowsTheQuestionAndItsButtons()
     {
         var tab = Open(ThreeViews());
-        var view = new LayoutTabView { DataContext = tab };
+        var view = new StackPanel { Children = { new ViewTabsBar { DataContext = tab }, new LayoutTabView { DataContext = tab } } }; // la rangée des vues est au-dessus de la bande, hors de l'onglet
         _window = new Window { Width = 1400, Height = 900, Content = view };
         _window.Show();
         Dispatcher.UIThread.RunJobs();

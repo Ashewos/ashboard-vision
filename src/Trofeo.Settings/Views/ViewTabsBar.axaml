@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:t="clr-namespace:Trofeo.Settings"
+             xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
+             x:Class="Trofeo.Settings.Views.ViewTabsBar"
+             x:DataType="vm:LayoutTabViewModel">
+
+  <!-- Au-dessus de la bande, dans l'onglet Disposition (la bande en est l'éditeur) : les vues, puis la confirmation d'une suppression. -->
+  <Grid RowDefinitions="Auto,Auto">
+    <!-- Les vues : des onglets au-dessus de l'éditeur, le point vert sur celle qui est sur l'écran, « + Nouvelle vue » à la fin ; à droite, l'écran suit-il la vue choisie. -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto">
+      <ListBox Grid.Column="0" Name="ViewTabList" Classes="viewtabs" ItemsSource="{Binding ViewTabs}" SelectedItem="{Binding SelectedView}"
+               AutomationProperties.Name="{x:Static t:Texts.LayoutViewsName}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:ViewTabItem">
+            <Grid ColumnDefinitions="Auto,Auto,Auto" PointerPressed="OnViewTabPressed">
+              <Ellipse Grid.Column="0" Classes="dot online" Margin="0,0,8,0" VerticalAlignment="Center" IsVisible="{Binding IsOnScreen}"
+                       AutomationProperties.Name="{Binding OnScreenText}" ToolTip.Tip="{Binding OnScreenText}" />
+              <TextBlock Grid.Column="1" Classes="tabname" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="180"
+                         IsVisible="{Binding !IsRenaming}" />
+              <TextBox Grid.Column="1" Name="RenameBox" MinWidth="130" MaxLength="{x:Static vm:LayoutTabViewModel.NameMaxLength}" VerticalAlignment="Center"
+                       Padding="6,3" Text="{Binding EditName}" IsVisible="{Binding IsRenaming}" KeyDown="OnRenameKeyDown" LostFocus="OnRenameLostFocus"
+                       AutomationProperties.Name="{x:Static t:Texts.LayoutViewRename}" />
+              <Button Grid.Column="2" Name="TabMenu" Classes="tabmenu" Margin="6,0,0,0" IsVisible="{Binding IsSelected}"
+                      AutomationProperties.Name="{x:Static t:Texts.LayoutViewMenu}">
+                <Path Data="M 0,0 L 4.5,4.5 L 9,0" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round"
+                      VerticalAlignment="Center" />
+                <Button.Flyout>
+                  <Flyout Placement="BottomEdgeAlignedLeft">
+                    <StackPanel MinWidth="160">
+                      <Button Classes="menu" Content="{x:Static t:Texts.LayoutViewRename}" Command="{Binding RenameCommand}" IsEnabled="{Binding CanEdit}" Click="OnViewMenuItemClicked" />
+                      <Button Classes="menu" Content="{x:Static t:Texts.LayoutViewDuplicate}" Command="{Binding DuplicateCommand}" IsEnabled="{Binding CanEdit}" Click="OnViewMenuItemClicked" />
+                      <Button Classes="menu" Content="{x:Static t:Texts.LayoutViewDelete}" Command="{Binding DeleteCommand}" IsEnabled="{Binding CanDelete}"
+                              Click="OnViewMenuItemClicked" />
+                    </StackPanel>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <Button Grid.Column="1" Name="NewViewButton" Classes="newview" Margin="8,0,0,0" Content="{x:Static t:Texts.LayoutNewView}"
+              Command="{Binding AddViewCommand}" IsEnabled="{Binding CanEdit}" />
+      <CheckBox Grid.Column="3" Name="FollowViewCheck" Margin="16,0,0,0" VerticalAlignment="Center" Content="{x:Static t:Texts.LayoutFollowView}"
+                IsChecked="{Binding FollowView}" />
+    </Grid>
+
+    <!-- Supprimer une vue qui a des modules demande d'abord confirmation. -->
+    <Border Grid.Row="1" Name="ViewDeleteNote" Classes="note" Margin="0,12,0,0" IsVisible="{Binding IsConfirmingViewDelete}">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Grid.Column="0" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding ViewDeleteQuestion}" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="16,0,0,0">
+          <Button Name="ConfirmViewDelete" Classes="small danger" Content="{x:Static t:Texts.LayoutViewDelete}" Click="OnConfirmViewDelete" />
+          <Button Name="KeepView" Classes="small" Content="{x:Static t:Texts.LayoutForgetKeep}" Click="OnKeepView" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

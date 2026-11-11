@@ -39,6 +39,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _selectedTab = Tabs[0];
 
         _link.SetRealTimePreview(preferences.RealTimePreview);
+        LayoutTab.IsActive = IsGridVisible;
         // Le bandeau « Mode développeur actif » est dans tous les onglets : l'état du mode se lit dès que la liaison est établie.
         SettingsTab.Community.Watch();
         _link.Changed += Refresh;
@@ -219,6 +220,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>Le damier se pose sur la bande dans l'onglet Disposition, tant que le service tourne et que l'assistant n'est pas là.</summary>
     public bool IsGridVisible => SelectedTab is LayoutTabViewModel && !HidesContent && !IsFirstRunVisible;
+
+    // La bande est l'éditeur de la vue choisie tant que l'onglet Disposition est regardé ; ailleurs, elle montre la vue qui est sur l'écran.
+    protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.PropertyName == nameof(IsGridVisible))
+            LayoutTab.IsActive = IsGridVisible;
+    }
 
     /// <summary>Le démarrage a échoué : Trofeo.Display.exe est introuvable.</summary>
     [ObservableProperty]
