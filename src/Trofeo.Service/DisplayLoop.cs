@@ -175,6 +175,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     private readonly object _notifyGate = new();
     private Guid _notifiedView;             // sous _notifyGate : la dernière vue retenue et annoncée
     private readonly Dictionary<IModule, Announcement> _announced = new(ReferenceEqualityComparer.Instance); // sous _lifecycleGate
+    private bool _announcedScreenReady;     // l'état de l'écran vu à la dernière annonce ; fil du Tick seulement
     private FrameComposer _composer;
     private ThemeDefinition _theme;
     private IBackground _background;
@@ -534,17 +535,23 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     /// <summary>
     /// Dit à chaque module cachable si sa case est visible, avec sa place, quand cela a changé depuis la dernière annonce (création,
     /// changement de vue, case déplacée ou thème changé). À appeler sous <c>_lifecycleGate</c>, une fois la nouvelle <see cref="Live"/> publiée.
+    /// <para>
+    /// Les cases de la vue affichée ne sont visibles que si quelqu'un peut les voir : l'écran est prêt, ou un abonné à l'aperçu
+    /// suit cette vue (<see cref="IsDisplayedViewWatched"/>), c'est-à-dire quand la boucle la rend vraiment. Sans cela, l'hôte d'un module
+    /// complémentaire ouvrirait son instance et dessinerait pour rien, écran débranché et fenêtre fermée.
+    /// </para>
     /// </summary>
     private void Announce(Live live)
     {
         var now = _time.GetLocalNow();
         var previewed = PreviewedModules(live);
+        var displayedWatched = IsDisplayedViewWatched(live.ViewId);
         foreach (var (id, module) in live.Entries)
         {
             if (module is not IHideableModule hideable || !live.Placed.TryGetValue(id, out var placement)) continue;
 
             var place = ModulePlace.Context(placement, _theme, now);
-            var visible = live.DisplayedSet.Contains(module) || previewed?.Contains(module) == true;
+            var visible = (displayedWatched && live.DisplayedSet.Contains(module)) || previewed?.Contains(module) == true;
             var announcement = new Announcement(visible, place.Bounds, place.Size, place.TextScale, place.Theme);
             if (_announced.TryGetValue(module, out var last) && last == announcement) continue;
 
@@ -585,14 +592,30 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         return modules;
     }
 
-    /// <summary>Redit aux modules cachables s'ils sont visibles, quand l'aperçu d'une vue vient de commencer ou de finir.</summary>
-    private void ReannounceForPreview()
+    /// <summary>
+    /// Redit aux modules cachables s'ils sont visibles, quand quelque chose qui décide de leur visibilité vient de changer en dehors
+    /// d'un changement de vue ou de disposition : un aperçu qui commence ou finit, l'écran qui devient prêt ou est perdu.
+    /// </summary>
+    private void ReannounceVisibility()
     {
         lock (_lifecycleGate)
         {
             if (_disposed) return;
             Announce(_live);
         }
+    }
+
+    /// <summary>
+    /// Redit les visibilités quand l'écran vient de devenir prêt ou d'être perdu depuis le dernier appel. Depuis le fil du <see cref="Tick"/>
+    /// seulement ; ne coûte qu'une comparaison tant que rien ne change.
+    /// </summary>
+    private void SyncScreenVisibility()
+    {
+        var ready = _screen.State == ScreenState.Ready;
+        if (ready == _announcedScreenReady) return;
+
+        _announcedScreenReady = ready;
+        ReannounceVisibility();
     }
 
     // ---- Changement de disposition à chaud ----
@@ -991,7 +1014,8 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     /// <para>
     /// Une vue demandée qui n'est pas affichée est composée à part, seulement tant qu'un abonné la demande et au rythme de cet
     /// abonné : jamais envoyée à l'écran, sans effet sur son rythme ni sur le calcul de l'animation de la vue affichée. Ses cases
-    /// de module complémentaire sont visibles pour leur hôte pendant ce temps, puis cachées de nouveau. Une vue qui n'existe pas
+    /// de module complémentaire sont visibles pour leur hôte pendant ce temps, puis cachées de nouveau ; il en va de même de celles de la
+    /// vue affichée quand l'écran n'est pas prêt (sans abonné, elles restent cachées). Une vue qui n'existe pas
     /// (ou plus) ne donne aucune image.
     /// </para>
     /// <para>
@@ -1010,7 +1034,8 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
             _subscribers = [.. _subscribers, subscriber];
         }
 
-        if (viewId is not null) ReannounceForPreview();
+        // Quelqu'un regarde peut-être la vue affichée (ou une autre) : les cases de module complémentaire peuvent devoir s'ouvrir.
+        ReannounceVisibility();
 
         // Une image fraîche pour le nouvel abonné ; elle réveille aussi la boucle sans écran. Pour une autre vue que la vue
         // affichée, l'écran n'a rien à redessiner : on réveille seulement la boucle.
@@ -1037,25 +1062,29 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         }
 
         // La dernière personne qui regardait une vue la quitte : ses cases de module complémentaire se cachent de nouveau.
-        if (subscriber.ViewId is not null) ReannounceForPreview();
+        ReannounceVisibility();
 
         _scheduler.Wake();
     }
 
     /// <summary>Vrai s'il y a au moins un abonné qui voit la vue affichée : seuls ceux-là font rendre la vue affichée sans écran.</summary>
-    private bool HasSubscribers
-    {
-        get
-        {
-            var shown = _live.ViewId;
-            foreach (var subscriber in _subscribers)
-            {
-                if (subscriber.Follows(shown)) return true;
-            }
+    private bool HasSubscribers => HasSubscribersOf(_live.ViewId);
 
-            return false;
+    private bool HasSubscribersOf(Guid shown)
+    {
+        foreach (var subscriber in _subscribers)
+        {
+            if (subscriber.Follows(shown)) return true;
         }
+
+        return false;
     }
+
+    /// <summary>
+    /// Vrai si la vue affichée est regardée : l'écran est prêt, ou un abonné la suit. C'est exactement quand le <see cref="Tick"/> la
+    /// rend ; sinon ses cases de module complémentaire restent cachées pour leur hôte.
+    /// </summary>
+    private bool IsDisplayedViewWatched(Guid shown) => _screen.State == ScreenState.Ready || HasSubscribersOf(shown);
 
     private static double FpsOf(TimeSpan interval) => (double)TimeSpan.TicksPerSecond / Math.Max(1, interval.Ticks);
 
@@ -1162,12 +1191,14 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
             if (!_screen.IsPresent()) _screen.MarkLost(ScreenDevice.AbsentReason);
         }
 
+        SyncScreenVisibility(); // écran perdu depuis le dernier tour : les cases de la vue affichée se cachent si personne ne regarde
         if (_screen.State != ScreenState.Ready && !TryReconnect() && !HasSubscribers)
         {
             RenderHiddenPreviews();
             return NextDelay();
         }
 
+        SyncScreenVisibility(); // écran tout juste connecté : les cases de la vue affichée s'ouvrent avant le premier dessin
         ApplyFpsCap();
         AdvanceBackground();
         RenderAndSend();

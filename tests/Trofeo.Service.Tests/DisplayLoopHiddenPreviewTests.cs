@@ -1,6 +1,7 @@
 using SkiaSharp;
 using Trofeo.Control;
 using Trofeo.Core.Layout;
+using Trofeo.Device;
 using Trofeo.ModuleKit;
 using static Trofeo.Display.Tests.LoopRig;
 
@@ -195,10 +196,104 @@ public sealed class DisplayLoopHiddenPreviewTests : IDisposable
 
         var subscription = rig.Loop.SubscribePreview(4, V2, _ => { });
         Assert.Equal([false, true], hidden.Visibility);
-        Assert.Equal([true], _factory.Created[P1].Visibility); // la vue affichée n'a rien reçu de nouveau
+        Assert.Equal([false], _factory.Created[P1].Visibility); // la vue affichée n'a rien reçu de nouveau (ni écran, ni témoin)
 
         subscription.Dispose();
         Assert.Equal([false, true, false], hidden.Visibility);
+    }
+
+    // ---- Les cases de la vue affichée : visibles seulement si quelqu'un peut les voir (écran prêt ou aperçu) ----
+
+    [Fact]
+    public void DisplayedView_NoScreenNoViewer_CommunityCasesStayHidden()
+    {
+        var rig = Rig(screen: false);
+        var shown = _factory.Created[P1];
+
+        Run(rig, 3000);
+
+        Assert.Equal([false], shown.Visibility); // pas d'écran, personne ne regarde : l'hôte n'a pas à dessiner
+        Assert.Equal([false], _factory.Created[P2].Visibility);
+        Assert.Equal(0, shown.Renders);
+    }
+
+    [Fact]
+    public void DisplayedView_NoScreen_ShowingAnotherViewKeepsTheCasesHidden()
+    {
+        var rig = Rig(screen: false);
+
+        Assert.True(rig.Loop.ShowView(V2, +1));
+
+        Assert.Equal([false], _factory.Created[P1].Visibility);
+        Assert.Equal([false], _factory.Created[P2].Visibility); // affichée, mais ni écran ni témoin
+    }
+
+    [Fact]
+    public void DisplayedView_ScreenBecomesReady_CommunityCasesBecomeVisible()
+    {
+        var rig = Rig();
+        var shown = _factory.Created[P1];
+        Assert.Equal([false], shown.Visibility); // l'écran n'est pas encore connecté
+
+        rig.Loop.Tick(); // connexion de l'écran
+        Assert.Equal(ScreenState.Ready, rig.Screen.State);
+        Assert.Equal([false, true], shown.Visibility);
+
+        Run(rig, 2000);
+        Assert.Equal([false, true], shown.Visibility); // rien ne bouge tant que l'écran reste là
+        Assert.Equal([false], _factory.Created[P2].Visibility);
+
+        rig.Screen.MarkLost("test");
+        rig.Loop.Tick();
+        Assert.Equal([false, true, false], shown.Visibility); // écran perdu et personne ne regarde : l'hôte se tait
+    }
+
+    [Fact]
+    public void DisplayedView_PreviewSubscribed_CommunityCasesBecomeVisible_AndHiddenAgainOnUnsubscribe()
+    {
+        var rig = Rig(screen: false);
+        var shown = _factory.Created[P1];
+
+        var subscription = rig.Loop.SubscribePreview(4, null, _ => { }); // la fenêtre suit la vue affichée
+        Assert.Equal([false, true], shown.Visibility);
+
+        subscription.Dispose();
+        Assert.Equal([false, true, false], shown.Visibility);
+
+        var pinned = rig.Loop.SubscribePreview(4, V1, _ => { }); // ... ou la demande par son numéro
+        Assert.Equal([false, true, false, true], shown.Visibility);
+
+        pinned.Dispose();
+        Assert.Equal([false, true, false, true, false], shown.Visibility);
+    }
+
+    [Fact]
+    public void DisplayedView_HiddenViewPreviewOnly_DoesNotWakeTheDisplayedCases()
+    {
+        var rig = Rig(screen: false);
+
+        var subscription = rig.Loop.SubscribePreview(4, V2, _ => { });
+        using var _ = subscription;
+
+        Assert.Equal([false], _factory.Created[P1].Visibility);
+        Assert.Equal([false, true], _factory.Created[P2].Visibility); // seule la vue regardée s'ouvre
+    }
+
+    [Fact]
+    public void DisplayedView_ScreenReady_SwitchingViewsAndReloadingNeverFlickers()
+    {
+        var rig = Rig();
+        rig.Loop.Tick();
+        var first = _factory.Created[P1];
+        var second = _factory.Created[P2];
+
+        Assert.True(rig.Loop.ShowView(V2, +1));
+        Run(rig, 500);
+        Assert.True(rig.Loop.ShowView(V1, -1));
+        Run(rig, 500);
+
+        Assert.Equal([false, true, false, true], first.Visibility);
+        Assert.Equal([false, true, false], second.Visibility);
     }
 
     [Fact]
@@ -220,6 +315,7 @@ public sealed class DisplayLoopHiddenPreviewTests : IDisposable
     public void CommunityCases_OfAViewThatBecomesDisplayed_StayVisible()
     {
         var rig = Rig();
+        rig.Loop.Tick(); // l'écran est prêt : la vue affichée est visible
         var hidden = _factory.Created[P2];
         var subscription = rig.Loop.SubscribePreview(4, V2, _ => { });
 
@@ -238,12 +334,13 @@ public sealed class DisplayLoopHiddenPreviewTests : IDisposable
         var rig = Rig();
         var shown = _factory.Created[P1];
         var subscription = rig.Loop.SubscribePreview(4, V1, _ => { }); // la fenêtre regarde la vue qui est affichée
+        Assert.Equal([false, true], shown.Visibility);
 
         Assert.True(rig.Loop.ShowView(V2, +1)); // le clavier la quitte
-        Assert.Equal([true], shown.Visibility);
+        Assert.Equal([false, true], shown.Visibility);
 
         subscription.Dispose();
-        Assert.Equal([true, false], shown.Visibility);
+        Assert.Equal([false, true, false], shown.Visibility);
     }
 
     [Fact]

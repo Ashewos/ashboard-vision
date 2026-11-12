@@ -410,7 +410,12 @@ public sealed class DisplayLoopViewsTests : IDisposable
         var expected = GridGeometry.ModuleRect(2, 1, 6, 3, grid);
         Assert.Equal(SKRect.Create(expected.Left, expected.Top, expected.Width, expected.Height), place.Bounds);
         Assert.Equal(Themes.ClassiqueDefinition.Theme, place.Theme);
-        Assert.True(Assert.Single(shown.Announcements).Visible);
+        Assert.False(Assert.Single(shown.Announcements).Visible); // l'écran n'est pas encore là : personne ne regarde
+
+        // L'écran se connecte : la vue affichée devient visible.
+        rig.AddHealthyScreen();
+        rig.Loop.Tick();
+        Assert.True(shown.Announcements.Last().Visible);
 
         // Au changement de vue : l'une se cache, l'autre apparaît.
         rig.Loop.ShowView(V2, +1);
@@ -432,7 +437,9 @@ public sealed class DisplayLoopViewsTests : IDisposable
         TickAfter(rig, TimeSpan.FromSeconds(1));
         await task;
 
-        Assert.All(_factory.Created.Values, probe => Assert.Single(probe.Announcements));
+        // La vue affichée a été annoncée cachée à la création, visible à la connexion de l'écran, et pas redite au rechargement.
+        Assert.Equal([false, true], _factory.Created[P1].Announcements.Select(a => a.Visible));
+        Assert.All(_factory.Created.Values.Where(p => p != _factory.Created[P1]), probe => Assert.Single(probe.Announcements));
     }
 
     private sealed class PlainFactory : IModuleFactory
