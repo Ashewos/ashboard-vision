@@ -219,6 +219,21 @@ public sealed class SampleModule : CommunityModule
         return new ActionResult(actionKey != "echec", $"action {actionKey} avec {mode}");
     }
 
+    public override async Task OnShortcutAsync(string shortcutId, CancellationToken ct)
+    {
+        // Le mode et l'identifiant dans le journal : prouvent que l'appel arrive sur l'instance de la case (ses réglages), pas sur une instance à part.
+        Services.Log.Info($"shortcut:{shortcutId}:{_mode}");
+        if (shortcutId == "boom")
+        {
+            throw new InvalidOperationException("boom du raccourci");
+        }
+
+        if (_mode == "slowShortcut")
+        {
+            await Task.Delay(200, ct);
+        }
+    }
+
     public override ValueTask DisposeAsync()
     {
         _stopped = true;

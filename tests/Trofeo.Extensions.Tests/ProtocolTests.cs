@@ -32,6 +32,7 @@ public sealed class ProtocolTests
         { "limits", new Limits(15) },
         { "frameDone", new FrameDone(Instance, 1) },
         { "visibility", new Visibility(Instance, false) },
+        { "shortcut", new Shortcut(Instance, "toggle") },
         { "lookup", new Lookup(7, "entity", "salon") },
         { "runAction", new RunAction(8, Instance, "test", Json("""{"host":"x"}""")) },
         { "secretValue", new SecretValue(9, "s3cret") },

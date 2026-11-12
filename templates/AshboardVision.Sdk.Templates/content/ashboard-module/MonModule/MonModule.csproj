@@ -10,10 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Le SDK, en version exacte : 1.0.0 est celle que vise "sdk": "1.0" dans manifest.json. Une version flottante (1.0.*) obligerait chaque
-         restauration à interroger les sources de paquets (donc à échouer hors ligne) ; pour viser une version plus récente du SDK, change ce
-         numéro ET le champ "sdk" du manifeste ensemble (voir le README). -->
-    <PackageReference Include="AshboardVision.Sdk" Version="1.0.0" />
+    <!-- Le SDK, en version exacte : 1.1.0 est la version du paquet ; "sdk" dans manifest.json dit la plus ancienne version du SDK dont ton module a besoin (1.0 tant
+         qu'il n'utilise rien de la 1.1, comme les raccourcis). Une version flottante (1.1.*) obligerait chaque restauration à interroger les
+         sources de paquets (donc à échouer hors ligne) ; pour viser une version plus récente du SDK, change ce numéro, et le champ "sdk" du
+         manifeste si tu utilises ce qu'elle apporte (voir le README). -->
+    <PackageReference Include="AshboardVision.Sdk" Version="1.1.0" />
   </ItemGroup>
 
   <ItemGroup>

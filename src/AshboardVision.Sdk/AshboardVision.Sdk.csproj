@@ -2,14 +2,15 @@
 
   <!-- Le SDK des modules de la communauté : la classe de base, les services que le logiciel offre à un module, les permissions.
        Numéroté à part du logiciel (voir la conception, 5.6) : AssemblyVersion reste 1.0.0.0 pour toute la ligne 1.x, de sorte
-       qu'un module compilé contre la 1.0 se lie à l'assemblage de l'hôte quelle que soit sa version mineure. -->
+       qu'un module compilé contre la 1.0 se lie à l'assemblage de l'hôte quelle que soit sa version mineure.
+       1.1.0 (plan 8) : OnShortcutAsync, les raccourcis déclarés par les modules. -->
   <PropertyGroup>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
 
   <!-- Le paquet NuGet local « AshboardVision.Sdk » (jamais poussé sur nuget.org : il est joint aux versions GitHub et posé par
-       l'installateur, voir la conception, 5.6). Son numéro (1.0.0) est celui du SDK, indépendant de <Version> de Directory.Build.props
+       l'installateur, voir la conception, 5.6). Son numéro (1.1.0) est celui du SDK, indépendant de <Version> de Directory.Build.props
        (le logiciel) : il ne change que quand le contrat change. La licence est GPL-3.0-or-later (décision R28 : un module qui s'appuie
        sur le SDK doit probablement être sous GPL aussi). -->
   <PropertyGroup>

@@ -67,6 +67,18 @@ public abstract class CommunityModule : IAsyncDisposable
     public virtual Task<ActionResult> RunActionAsync(string actionKey, CancellationToken ct) =>
         Task.FromResult(new ActionResult(false, "Action inconnue."));
 
+    /// <summary>
+    /// Un raccourci que le module a déclaré dans son manifeste (<c>shortcuts</c>) vient d'être déclenché par l'utilisateur ; <paramref name="shortcutId"/>
+    /// est son <c>id</c>. Le module ne voit jamais le clavier : le logiciel l'appelle seulement quand le raccourci est utilisé et que la case est dans la vue
+    /// affichée. Appelée sur l'instance de la case (pas sur une instance à part), après <see cref="StartAsync"/>, hors du fil de dessin et jamais deux fois en même temps
+    /// pour une instance, dans l'ordre des appuis. Si le module est lent, les appuis en trop (une dizaine en attente) sont ignorés plutôt que mis en file sans fin ;
+    /// reste donc rapide, ou lance le travail long à part. Une exception est écrite dans le journal du module sans mettre la case en erreur. Un
+    /// <paramref name="shortcutId"/> que le module ne connaît pas doit être ignoré. Ajoutée au SDK 1.1.
+    /// </summary>
+    /// <param name="shortcutId">L'identifiant du raccourci, tel que le manifeste le déclare.</param>
+    /// <param name="ct">Annulé quand la case est refermée.</param>
+    public virtual Task OnShortcutAsync(string shortcutId, CancellationToken ct) => Task.CompletedTask;
+
     /// <summary>Libère l'instance (minuteries, connexions). Appelée à la fermeture de la case, après le dernier dessin.</summary>
     public virtual ValueTask DisposeAsync() => ValueTask.CompletedTask;
 

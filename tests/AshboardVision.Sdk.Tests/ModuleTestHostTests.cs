@@ -296,6 +296,39 @@ public sealed class ModuleTestHostTests : IDisposable
     }
 
     [Fact]
+    public async Task TestHost_TriggerShortcut_CallsTheModule()
+    {
+        await using var host = new ModuleTestHost<ProbeModule>(WriteManifest());
+        await host.StartAsync();
+
+        await host.TriggerShortcutAsync("basculer");
+        await host.TriggerShortcutAsync("suivant");
+
+        Assert.Equal(["basculer", "suivant"], Probe.Shortcuts);
+    }
+
+    [Fact]
+    public async Task TestHost_TriggerShortcut_BeforeStartOrWithoutId_Throws()
+    {
+        await using var host = new ModuleTestHost<ProbeModule>(WriteManifest());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => host.TriggerShortcutAsync("basculer"));
+        await host.StartAsync();
+        await Assert.ThrowsAsync<ArgumentException>(() => host.TriggerShortcutAsync(""));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => host.TriggerShortcutAsync(null!));
+    }
+
+    [Fact]
+    public async Task TestHost_TriggerShortcut_ModuleException_ReachesTheTest()
+    {
+        await using var host = new ModuleTestHost<ProbeModule>(WriteManifest());
+        await host.StartAsync();
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => host.TriggerShortcutAsync("boom"));
+        Assert.Equal("boom du raccourci", thrown.Message);
+    }
+
+    [Fact]
     public async Task Dispose_DisposesTheModuleAndItsDataDirectory()
     {
         var host = new ModuleTestHost<ProbeModule>(WriteManifest());
@@ -416,6 +449,19 @@ internal sealed class ProbeModule : CommunityModule
     public bool Started { get; private set; }
 
     public int DisposeCount { get; private set; }
+
+    public List<string> Shortcuts { get; } = [];
+
+    public override Task OnShortcutAsync(string shortcutId, CancellationToken ct)
+    {
+        if (shortcutId == "boom")
+        {
+            throw new InvalidOperationException("boom du raccourci");
+        }
+
+        Shortcuts.Add(shortcutId);
+        return Task.CompletedTask;
+    }
 
     public ModuleServices Given => Services;
 

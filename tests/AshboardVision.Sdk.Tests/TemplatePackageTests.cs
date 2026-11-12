@@ -36,7 +36,7 @@ public sealed class TemplatePackageTests(PackedTemplates packed) : IClassFixture
 
         // L'arborescence du modèle est gardée (pas aplatie), les dossiers cachés partent aussi, et il n'y a ni lib/ ni DLL.
         Assert.Equal(ExpectedEntries.Order(StringComparer.Ordinal), entries);
-        Assert.Equal("AshboardVision.Sdk.Templates.1.0.0.nupkg", Path.GetFileName(packed.PackagePath));
+        Assert.Equal("AshboardVision.Sdk.Templates.1.1.0.nupkg", Path.GetFileName(packed.PackagePath));
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public sealed class TemplatePackageTests(PackedTemplates packed) : IClassFixture
         string Text(string name) => metadata.Elements().Single(e => e.Name.LocalName == name).Value;
 
         Assert.Equal("AshboardVision.Sdk.Templates", Text("id"));
-        Assert.Equal("1.0.0", Text("version"));
+        Assert.Equal("1.1.0", Text("version"));
         Assert.Equal("Ashewos", Text("authors"));
         Assert.Equal("README.md", Text("readme"));
         Assert.Equal("GPL-3.0-or-later", Text("license"));

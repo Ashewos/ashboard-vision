@@ -2,13 +2,13 @@
 
   <!-- Le banc d'essai des modules de la communauté : la commande « ashboard-module » (check et pack). Un outil .NET (dotnet tool), dans le
        paquet local « AshboardVision.Sdk.Tool » (jamais poussé sur nuget.org : il est joint aux versions GitHub et posé par l'installateur,
-       comme le SDK ; voir la conception, 5.6). Même ligne de numéros que le SDK : 1.0.0, AssemblyVersion 1.0.0.0 pour toute la ligne 1.x. -->
+       comme le SDK ; voir la conception, 5.6). Même ligne de numéros que le SDK : 1.1.0, AssemblyVersion 1.0.0.0 pour toute la ligne 1.x. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>ashboard-module</AssemblyName>
     <RootNamespace>AshboardVision.Sdk.Tool</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <SatelliteResourceLanguages>en;fr</SatelliteResourceLanguages>
   </PropertyGroup>
