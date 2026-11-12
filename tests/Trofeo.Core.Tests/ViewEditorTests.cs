@@ -136,6 +136,18 @@ public sealed class ViewEditorTests
     }
 
     [Fact]
+    public void DuplicateView_EmojiStraddlingTheCut_IsNotSplit()
+    {
+        // 21 lettres puis un emoji (2 caractères) en positions 22 et 23 : la coupe tombe au milieu de la paire.
+        var layout = new DashboardLayout(180, [new LayoutView(A, new string('x', 21) + "\U0001F600" + "yyyyyy", [])]);
+
+        var copy = ViewEditor.DuplicateView(layout, A, B, Guid.NewGuid).Layout.Views[1];
+
+        Assert.Equal(new string('x', 21) + " (copie)", copy.Name);
+        Assert.DoesNotContain(copy.Name, c => char.IsSurrogate(c));
+    }
+
+    [Fact]
     public void DuplicateView_TenthView_IsRefused()
     {
         var layout = NineViews();

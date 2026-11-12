@@ -69,7 +69,7 @@ public static class ShortcutKeys
     public static bool Same(string a, string b) =>
         TryParse(a, out var modsA, out var keyA) && TryParse(b, out var modsB, out var keyB)
             ? modsA == modsB && keyA == keyB
-            : string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+            : string.Equals(a?.Trim(), b?.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private static uint Modifier(string word) => word.ToUpperInvariant() switch
     {

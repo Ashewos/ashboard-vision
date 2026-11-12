@@ -143,6 +143,26 @@ public sealed class ShortcutMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Legacy_DuplicateKeyFile_WithAKeylessBindingAndTheOldTabBinding_IsStillRead()
+    {
+        // Propriété en double : lecture par le chemin d'avant, où une liaison sans « Keys » garde des touches nulles.
+        var json = $$"""
+            {"Rotation":0,"Rotation":180,"Placements":[{{OneCase}}],
+             "Shortcuts":[{"Command":"NextTab"},{"Keys":"Ctrl+Alt+Left","Command":"PreviousTab","Index":0,"Target":null}]}
+            """;
+
+        var store = new LayoutStore(FilePath);
+        File.WriteAllText(FilePath, json);
+        var layout = store.Load();
+
+        Assert.Equal(180, layout.Rotation);
+        Assert.Single(layout.Views);
+        Assert.Single(layout.Views[0].Placements);
+        Assert.NotNull(At(layout, "Ctrl+Alt+Up"));
+        Assert.Equal(ShortcutCommand.PreviousTab, At(layout, "Ctrl+Alt+Up")!.Command);
+    }
+
+    [Fact]
     public void Legacy_EmptyShortcuts_StayEmpty()
     {
         Assert.Empty(Load(LegacyFile("")).Shortcuts!);

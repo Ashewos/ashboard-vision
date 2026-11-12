@@ -50,7 +50,7 @@ public static class ViewEditor
         const string suffix = " (copie)";
         var name = original.Name.Length + suffix.Length <= LayoutView.MaxNameLength
             ? original.Name + suffix
-            : original.Name[..(LayoutView.MaxNameLength - suffix.Length)].TrimEnd() + suffix;
+            : Cut(original.Name, LayoutView.MaxNameLength - suffix.Length) + suffix;
         var copy = new LayoutView(
             newViewId, name, [.. original.Placements.Select(p => p with { InstanceId = newInstanceId() })]);
 
@@ -100,9 +100,16 @@ public static class ViewEditor
         var trimmed = name.Trim();
         if (trimmed.Length <= LayoutView.MaxNameLength) return trimmed;
 
-        // Ne pas couper une paire de substitution (emoji...) en deux.
-        var length = char.IsHighSurrogate(trimmed[LayoutView.MaxNameLength - 1]) ? LayoutView.MaxNameLength - 1 : LayoutView.MaxNameLength;
-        return trimmed[..length].TrimEnd();
+        return Cut(trimmed, LayoutView.MaxNameLength);
+    }
+
+    /// <summary>Coupe à <paramref name="length"/> caractères au plus, sans couper une paire de substitution (emoji...) en deux.</summary>
+    private static string Cut(string text, int length)
+    {
+        if (text.Length <= length) return text;
+
+        var end = char.IsHighSurrogate(text[length - 1]) ? length - 1 : length;
+        return text[..end].TrimEnd();
     }
 
     private static int IndexOf(DashboardLayout layout, Guid viewId)
