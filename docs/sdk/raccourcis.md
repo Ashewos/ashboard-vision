@@ -33,7 +33,7 @@ Le module « Dépôt GitHub » en déclare un aussi, **sans touche** :
 | Champ | Obligatoire | Ce que c'est |
 |---|---|---|
 | `id` | oui | L'identifiant que ton module reçoit : lettres, chiffres, points, tirets et soulignements, sans commencer par un point ou un tiret. **Au-delà de 40 caractères, le manifeste est refusé.** Il est comparé tel quel, majuscules comprises. Deux raccourcis ne partagent pas le même. |
-| `name` | oui | Le nom que l'utilisateur lit (dans la fenêtre d'installation et dans l'onglet Raccourcis). **Au-delà de 40 caractères, le logiciel le coupe**. Écris-le comme un verbe : « Rafraîchir ». |
+| `name` | oui | Le nom que l'utilisateur lit (dans la fenêtre d'installation et dans l'onglet Raccourcis). **Au-delà de 40 caractères, le logiciel le coupe** ; au-delà de 160, le manifeste est refusé. Écris-le comme un verbe : « Rafraîchir ». |
 | `keys` | non | La touche que tu proposes par défaut, par exemple `Ctrl+Alt+Shift+R`. Au moins un modificateur (`Ctrl`, `Alt`, `Shift`, `Win`) puis une seule touche : une lettre, un chiffre, une flèche (`Left`, `Right`, `Up`, `Down`) ou `F1` à `F24`. |
 
 Règles du manifeste :
@@ -80,7 +80,7 @@ Ce que le logiciel garantit, et ce qu'il ne garantit pas :
 - **Si le module n'a aucune case dans la vue affichée**, rien n'est envoyé. Si l'hôte de ton module est en train de redémarrer ou mis de côté, l'appui est abandonné : il n'y a pas de file d'attente qui rejouerait tes raccourcis plus tard.
 - **Si l'utilisateur a deux cases de ton module dans la vue affichée**, elles reçoivent toutes les deux l'appui, sauf s'il a lié le raccourci à une case précise.
 
-Ton module peut aussi limiter lui-même ce qu'il fait d'un appui. Le module « Dépôt GitHub » compte les requêtes qu'il envoie vraiment, minuterie et raccourci ensemble, et se limite à 50 par heure glissante, sous les 60 que GitHub accorde sans jeton : un « Rafraîchir » qui ferait dépasser ce budget est ignoré. Il ignore aussi un appui qui suit le précédent de moins d'une minute, sauf quand la dernière tentative a échoué sans que GitHub réponde (réseau coupé) : l'utilisateur qui réessaie ne doit pas attendre.
+Ton module peut aussi limiter lui-même ce qu'il fait d'un appui. Le module « Dépôt GitHub » compte les requêtes qu'il envoie vraiment, minuterie et raccourci ensemble, et vise à rester sous les 60 par heure que GitHub accorde sans jeton : un « Rafraîchir » qui ferait dépasser un budget de 50 par heure glissante est ignoré. Les rafraîchissements de la minuterie, eux, ne sont jamais bloqués : un utilisateur qui appuie sans cesse sur « Rafraîchir » avec un dépôt qui a beaucoup de versions peut donc dépasser brièvement les 60 requêtes (GitHub répond alors 403 pendant un moment). Il ignore aussi un appui qui suit le précédent de moins d'une minute, sauf quand la dernière tentative a échoué sans que GitHub réponde (réseau coupé) : l'utilisateur qui réessaie ne doit pas attendre.
 
 *`examples/GitHubRepo/GitHubRepo/GitHubRepoModule.cs`.*
 
