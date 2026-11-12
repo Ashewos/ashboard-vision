@@ -59,6 +59,20 @@ public sealed partial class ServiceControlHandlerTests
     }
 
     [Fact]
+    public async Task TestShortcutKeys_HugeString_IsRefusedAsUnreadable_WithoutBeingSplit()
+    {
+        using var rig = new Rig();
+        var huge = "Ctrl+" + new string('+', 8 * 1024 * 1024) + "R"; // 8 Mo : jamais découpé en milliers de morceaux
+
+        var state = await rig.Handler.TestShortcutKeysAsync(huge, CancellationToken.None);
+
+        Assert.Equal(ShortcutKeyState.Unreadable, state);
+        Assert.Empty(rig.Hotkeys.Registrar.Registered);
+        // Une combinaison légitime la plus longue reste lisible.
+        Assert.Equal(ShortcutKeyState.Free, await rig.Handler.TestShortcutKeysAsync("Ctrl+Alt+Shift+Win+F24", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task TestShortcutKeys_KeyAlreadyRegisteredByTheService_IsFree()
     {
         using var rig = new Rig();

@@ -282,7 +282,8 @@ public sealed class ModuleUpdates : IDisposable
 
             var installed = entry.Manifest?.Permissions ?? entry.Approval?.Granted ?? [];
             var preparation = new ModuleUpdatePreparation(
-                true, null, held.Update.Version, held.Update.Notes, [.. manifest.Permissions], [.. manifest.Permissions.Where(p => !installed.Contains(p))]);
+                true, null, held.Update.Version, held.Update.Notes, [.. manifest.Permissions], [.. manifest.Permissions.Where(p => !installed.Contains(p))],
+                [.. manifest.Shortcuts.Select(s => new ModuleShortcutInfo(s.Id, s.Name, s.Keys))]);
             lock (_gate)
             {
                 token.ThrowIfCancellationRequested();

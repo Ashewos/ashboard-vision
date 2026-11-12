@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:t="clr-namespace:Trofeo.Settings"
              xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
+             xmlns:controls="clr-namespace:Trofeo.Settings.Controls"
              x:Class="Trofeo.Settings.Views.ShortcutsTabView"
              x:DataType="vm:ShortcutsTabViewModel">
 
@@ -25,15 +26,26 @@
                 <StackPanel Spacing="6">
                   <Grid ColumnDefinitions="230,16,210,16,250,*">
 
-                    <!-- L'action en mots ; pour un raccourci qu'on ajoute, à choisir. -->
-                    <TextBlock Grid.Column="0" Classes="name" Text="{Binding ActionText}" IsVisible="{Binding !IsDraft}"
-                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <!-- L'action en mots ; pour un raccourci qu'on ajoute, à choisir. Celle d'un module complémentaire porte le point d'exclamation jaune et le nom du module. -->
+                    <StackPanel Grid.Column="0" IsVisible="{Binding !IsDraft}" VerticalAlignment="Center">
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Name="ActionName" Classes="name" Text="{Binding ActionText}" MaxWidth="190" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" />
+                        <controls:CommunityBadge Name="CommunityMark" Size="16" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                 IsVisible="{Binding IsCommunity}" />
+                      </StackPanel>
+                      <TextBlock Name="ModuleName" Classes="muted" Text="{Binding ModuleText}" IsVisible="{Binding HasModuleText}"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
                     <ComboBox Grid.Column="0" Name="ActionBox" IsVisible="{Binding IsDraft}" HorizontalAlignment="Stretch"
                               AutomationProperties.Name="{x:Static t:Texts.ShortcutAction}"
                               ItemsSource="{Binding ActionChoices}" SelectedItem="{Binding SelectedAction}">
                       <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:ShortcutActionChoice">
-                          <TextBlock Text="{Binding Text}" />
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding Text}" />
+                            <TextBlock Classes="muted" Text="{Binding Group}" IsVisible="{Binding HasGroup}" />
+                          </StackPanel>
                         </DataTemplate>
                       </ComboBox.ItemTemplate>
                     </ComboBox>

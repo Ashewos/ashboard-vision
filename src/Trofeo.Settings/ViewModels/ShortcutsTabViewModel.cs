@@ -15,10 +15,14 @@ public sealed record ShortcutTarget(Guid? Id, string Name);
 
 /// <summary>
 /// Une action qu'un raccourci peut envoyer : « Onglet précédent », « Onglet suivant », « Aller à l'onglet n », « Vue précédente »,
-/// « Vue suivante », « Vue n° n » ou (plus tard) un raccourci d'un module complémentaire, qui porte alors son module et son identifiant.
+/// « Vue suivante », « Vue n° n » ou un raccourci d'un module complémentaire, qui porte alors son module et son identifiant
+/// (<paramref name="Group"/> : le nom du module, pour regrouper les actions d'un même module).
 /// </summary>
-public sealed record ShortcutActionChoice(ShortcutCommand Command, int Index, string Text, string? ModuleId = null, string? ShortcutId = null)
+public sealed record ShortcutActionChoice(
+    ShortcutCommand Command, int Index, string Text, string? ModuleId = null, string? ShortcutId = null, string? Group = null)
 {
+    public bool HasGroup => !string.IsNullOrEmpty(Group);
+
     /// <summary>Cette action est celle que <paramref name="binding"/> envoie.</summary>
     public bool Matches(ShortcutBinding binding) =>
         Command == binding.Command && Index == binding.Index && ModuleId == binding.ModuleId && ShortcutId == binding.ShortcutId;
@@ -44,11 +48,21 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
     private Guid? _draftTarget;
     private (int Index, string Text)? _refusal;
 
+    // Les modules complémentaires que le service connaît, avec les raccourcis que leurs manifestes déclarent : ils donnent leur nom
+    // aux liaisons des modules et leurs actions à la liste des choix. Lus quand l'onglet s'ouvre, puis chaque fois que les modules changent ;
+    // tant que l'onglet n'a pas été ouvert, la fenêtre n'a rien demandé de plus au service.
+    private IReadOnlyList<CommunityModuleInfo> _community = [];
+    private bool _active;
+    private IReadOnlyList<ModuleTypeInfo>? _seenTypes;
+    private bool _wasConnected;
+    private int _communityReads;
+    private readonly IReadOnlyList<ShortcutActionChoice> _builtInChoices;
+
     public ShortcutsTabViewModel(IServiceLink link, EditSession session) : base(Texts.TabShortcuts)
     {
         _link = link;
         _session = session;
-        ActionChoices =
+        _builtInChoices =
         [
             new(ShortcutCommand.PreviousTab, 0, Texts.ShortcutPrevious),
             new(ShortcutCommand.NextTab, 0, Texts.ShortcutNext),
@@ -57,23 +71,93 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
             new(ShortcutCommand.NextView, 0, Texts.ShortcutNextView),
             .. Enumerable.Range(0, 9).Select(n => new ShortcutActionChoice(ShortcutCommand.SelectView, n, string.Format(Texts.ShortcutSelectView, n + 1))),
         ];
+        ActionChoices = _builtInChoices;
         DefaultChoice = ActionChoices[1]; // « Onglet suivant »
-        _link.Changed += Refresh;
+        _wasConnected = link.State == LinkState.Connected;
+        _seenTypes = link.KnownTypes();
+        _link.Changed += OnLinkChanged;
         _session.Changed += Refresh;
         Refresh();
     }
 
+    /// <summary>L'onglet s'ouvre : les modules complémentaires sont lus maintenant (leurs raccourcis donnent leurs noms et leurs actions), puis relus quand ils changent.</summary>
+    public Task ActivateAsync()
+    {
+        _active = true;
+        return _link.State == LinkState.Connected ? ReadCommunityAsync() : Task.CompletedTask;
+    }
+
     public void Dispose()
     {
-        _link.Changed -= Refresh;
+        _link.Changed -= OnLinkChanged;
         _session.Changed -= Refresh;
     }
+
+    /// <summary>La liaison a changé : si l'onglet a été ouvert, les modules complémentaires se relisent à la connexion et quand leurs types changent ; puis les lignes se rafraîchissent.</summary>
+    private void OnLinkChanged()
+    {
+        var connected = _link.State == LinkState.Connected;
+        var types = _link.KnownTypes();
+        var read = _active && connected && (!_wasConnected || !ReferenceEquals(types, _seenTypes));
+        _wasConnected = connected;
+        _seenTypes = types;
+        if (read)
+            _ = ReadCommunityAsync();
+        Refresh();
+    }
+
+    /// <summary>Relit les modules complémentaires. Une réponse plus ancienne que la dernière demande est écartée ; un service qui ne répond pas ne change rien.</summary>
+    private async Task ReadCommunityAsync()
+    {
+        var version = ++_communityReads;
+        CommunityOverview overview;
+        try
+        {
+            overview = await _link.GetCommunityAsync().ConfigureAwait(true);
+        }
+        catch (ControlException)
+        {
+            return;
+        }
+
+        if (version != _communityReads)
+            return;
+        _community = overview.Modules;
+        var choices = CommunityChoices();
+        if (!choices.SequenceEqual(ActionChoices.Skip(_builtInChoices.Count)))
+        {
+            ActionChoices = [.. _builtInChoices, .. choices];
+            OnPropertyChanged(nameof(ActionChoices));
+        }
+
+        Refresh();
+    }
+
+    /// <summary>
+    /// Les actions des modules complémentaires, groupées par module : celles des modules validés (en marche ou mis de côté), dans l'ordre
+    /// où le service les donne. Un module n'en déclare que dix au plus (le manifeste le refuse au-delà).
+    /// </summary>
+    private List<ShortcutActionChoice> CommunityChoices() =>
+    [
+        .. _community
+            .Where(m => m.State is LinkCommunityState.Ready or LinkCommunityState.SetAside)
+            .SelectMany(m =>
+            {
+                var group = ShortcutLabels.ModuleName(_community, m.Id);
+                return (m.Shortcuts ?? []).Take(10).Select(declared =>
+                {
+                    var name = UntrustedText.Line(declared.Name);
+                    return new ShortcutActionChoice(
+                        ShortcutCommand.Community, 0, name.Length > 0 ? name : UntrustedText.Line(declared.Id), m.Id, declared.Id, group);
+                });
+            }),
+    ];
 
     /// <summary>Les lignes : les raccourcis dans l'ordre du fichier, puis le brouillon d'un raccourci qu'on ajoute.</summary>
     public ObservableCollection<ShortcutRowViewModel> Rows { get; } = [];
 
-    /// <summary>Les actions qu'on peut choisir pour un nouveau raccourci.</summary>
-    public IReadOnlyList<ShortcutActionChoice> ActionChoices { get; }
+    /// <summary>Les actions qu'on peut choisir pour un nouveau raccourci : celles du logiciel, puis celles des modules complémentaires, groupées par module.</summary>
+    public IReadOnlyList<ShortcutActionChoice> ActionChoices { get; private set; }
 
     /// <summary>L'action d'un nouveau raccourci avant qu'on en choisisse une autre.</summary>
     internal ShortcutActionChoice DefaultChoice { get; }
@@ -101,23 +185,26 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
         if (_captureIndex is not null && !bindings.SequenceEqual(_snapshot))
             EndCapture(); // la liste a changé pendant la capture : la ligne visée n'est peut-être plus la même
 
-        var targets = Targets();
+        var targets = Targets(moduleId: null);
         var failures = Failures();
+        var refused = _link.Status?.RefusedShortcutKeys ?? [];
         var rows = new List<ShortcutRowViewModel>();
         for (var i = 0; i < bindings.Count; i++)
         {
             var binding = bindings[i];
+            var failure = refused.Any(keys => Same(keys, binding.Keys))
+                ? Texts.ShortcutKeyTakenElsewhere // Windows a refusé les touches : une autre application les tient
+                : failures.GetValueOrDefault(binding.Keys.Trim().ToUpperInvariant());
             rows.Add(new ShortcutRowViewModel(
-                this, binding, isDraft: false, isCapturing: _captureIndex == i, WithGone(targets, binding.Target),
-                _refusal is { } r && r.Index == i ? r.Text : null,
-                failures.GetValueOrDefault(binding.Keys.Trim().ToUpperInvariant())));
+                this, binding, isDraft: false, isCapturing: _captureIndex == i, WithGone(TargetsFor(binding, targets), binding.Target),
+                _refusal is { } r && r.Index == i ? r.Text : null, failure));
         }
 
         if (_draftAction is { } draft)
         {
             var binding = new ShortcutBinding("", draft.Command, draft.Index, TakesTarget(draft.Command) ? _draftTarget : null, draft.ModuleId, draft.ShortcutId);
             rows.Add(new ShortcutRowViewModel(
-                this, binding, isDraft: true, isCapturing: _captureIndex == bindings.Count, WithGone(targets, _draftTarget),
+                this, binding, isDraft: true, isCapturing: _captureIndex == bindings.Count, WithGone(TargetsFor(binding, targets), _draftTarget),
                 _refusal is { } r && r.Index == bindings.Count ? r.Text : null, null));
         }
 
@@ -138,9 +225,10 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
     /// Deux libellés identiques se distinguent par un numéro (« Claude Code (2) »). Une case d'une vue cachée reste proposée :
     /// le raccourci ne marchera que lorsque sa vue sera affichée.
     /// </summary>
-    private List<ShortcutTarget> Targets()
+    private List<ShortcutTarget> Targets(string? moduleId)
     {
-        var targets = new List<ShortcutTarget> { new(null, Texts.ShortcutTargetFirst) };
+        // Le raccourci d'un module complémentaire vise les cases de ce module ; sans case visée, toutes celles de la vue affichée le reçoivent.
+        var targets = new List<ShortcutTarget> { new(null, moduleId is null ? Texts.ShortcutTargetFirst : Texts.ShortcutTargetAllCases) };
         var counts = new Dictionary<string, int>();
         var layout = _session.Document.Current;
         foreach (var view in layout.Views)
@@ -148,9 +236,14 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
             var viewName = UntrustedText.Line(view.Name);
             foreach (var placement in view.Placements)
             {
-                if (!_types.TryGetValue(placement.TypeId, out var type) || !type.AcceptsCommands)
+                if (moduleId is null
+                    ? !_types.TryGetValue(placement.TypeId, out var acceptor) || !acceptor.AcceptsCommands
+                    : !string.Equals(placement.TypeId, moduleId, StringComparison.Ordinal))
                     continue;
-                var label = UntrustedText.Line(placement.Name) is { Length: > 0 } caseName ? caseName : type.Label();
+                var typeLabel = _types.TryGetValue(placement.TypeId, out var type)
+                    ? type.Label()
+                    : ShortcutLabels.ModuleName(_community, placement.TypeId) ?? UntrustedText.Line(placement.TypeId); // un module mis de côté n'a plus de type
+                var label = UntrustedText.Line(placement.Name) is { Length: > 0 } caseName ? caseName : typeLabel;
                 if (layout.Views.Count > 1 && viewName.Length > 0)
                     label = string.Format(Texts.ShortcutTargetInView, label, viewName);
                 var rank = counts[label] = counts.GetValueOrDefault(label) + 1;
@@ -160,6 +253,10 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
 
         return targets;
     }
+
+    /// <summary>Les modules que ce raccourci peut viser : les cases de son module pour une action de module complémentaire, sinon <paramref name="defaults"/>.</summary>
+    private List<ShortcutTarget> TargetsFor(ShortcutBinding binding, List<ShortcutTarget> defaults) =>
+        binding.Command == ShortcutCommand.Community ? Targets(binding.ModuleId ?? "") : defaults;
 
     /// <summary>Un raccourci qui vise un module qui n'est plus sur l'écran le dit au lieu de paraître viser « le premier ».</summary>
     private static IReadOnlyList<ShortcutTarget> WithGone(List<ShortcutTarget> targets, Guid? target) =>
@@ -188,17 +285,12 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
         return failures;
     }
 
-    internal string ActionText(ShortcutBinding binding) => binding.Command switch
-    {
-        ShortcutCommand.PreviousTab => Texts.ShortcutPrevious,
-        ShortcutCommand.NextTab => Texts.ShortcutNext,
-        ShortcutCommand.SelectTab => string.Format(Texts.ShortcutSelect, binding.Index + 1),
-        ShortcutCommand.PreviousView => Texts.ShortcutPreviousView,
-        ShortcutCommand.NextView => Texts.ShortcutNextView,
-        ShortcutCommand.SelectView => string.Format(Texts.ShortcutSelectView, binding.Index + 1),
-        ShortcutCommand.Community => UntrustedText.Line(binding.ShortcutId), // le texte de l'action d'un module complémentaire arrive avec son choix
-        _ => UntrustedText.Line(binding.Command.ToString()),
-    };
+    /// <summary>L'action en mots ; pour un module complémentaire, le nom que son manifeste donne au raccourci.</summary>
+    internal string ActionText(ShortcutBinding binding) => ShortcutLabels.ActionText(binding, _community);
+
+    /// <summary>Le nom du module complémentaire d'une liaison, pour la ligne ; <c>null</c> : le raccourci n'est pas celui d'un module, ou le module n'est pas connu.</summary>
+    internal string? ModuleText(ShortcutBinding binding) =>
+        binding.Command == ShortcutCommand.Community ? ShortcutLabels.ModuleName(_community, binding.ModuleId) : null;
 
     // ---- Capture ----
 
@@ -404,9 +496,10 @@ public sealed partial class ShortcutsTabViewModel : TabViewModel, IDisposable
     {
         if (_draftAction is null || _draftAction == action)
             return;
+        var otherModule = _draftAction.ModuleId != action.ModuleId;
         _draftAction = action;
-        if (!TakesTarget(action.Command))
-            _draftTarget = null; // une action de vue ne vise aucun module
+        if (!TakesTarget(action.Command) || otherModule)
+            _draftTarget = null; // une action de vue ne vise aucun module ; la case choisie n'est pas celle d'un autre module
         Refresh();
     }
 

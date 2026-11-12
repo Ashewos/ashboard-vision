@@ -455,6 +455,50 @@ internal static class Program
 
         Render(folder, scratch, "raccourcis-vide.png", 1440, 900, jpeg, Connected, (_, model) => Open(model),
             layout: Base with { Shortcuts = [] });
+
+        // Les raccourcis de modules complémentaires : point jaune, nom du raccourci et du module, cases visées. L'un vise une case précise,
+        // un autre est celui d'un module mis de côté, un troisième a été refusé par Windows.
+        var minecraftCase = new Guid("a11ce000-0000-4000-8000-000000000001");
+        var minecraftShortcuts = new[]
+        {
+            new ModuleShortcutInfo("refresh", "Rafraîchir", "Ctrl+Alt+Shift+R"),
+            new ModuleShortcutInfo("mute", "Couper le son", "Ctrl+Alt+Shift+M"),
+        };
+        var modulesLayout = (twoAgents with
+        {
+            Shelf = [],
+            Shortcuts =
+            [
+                .. Trofeo.Core.Shortcuts.ShortcutDefaults.All.Take(4), // les raccourcis d'onglets et de vues, puis ceux des modules
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+R", Trofeo.Core.Shortcuts.ShortcutCommand.Community, 0, minecraftCase, "alex.minecraft", "refresh"),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+M", Trofeo.Core.Shortcuts.ShortcutCommand.Community, 0, null, "alex.minecraft", "mute"),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+P", Trofeo.Core.Shortcuts.ShortcutCommand.Community, 0, null, "bob.meteo", "forecast"),
+            ],
+        }).WithPlacements(twoAgents.Views[0].Id,
+        [
+            twoAgents.Views[0].Placements[0] with { Column = 0, Columns = 5 },
+            twoAgents.Views[0].Placements[1] with { Column = 5, Columns = 5 },
+            new Trofeo.Core.Layout.ModulePlacement(minecraftCase, "alex.minecraft", 10, 0, 6, 4, Trofeo.ModuleKit.TextSize.Normal,
+                System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone(), "Survie"),
+        ]);
+        void WithModules(FakeServiceLink link)
+        {
+            link.Set(LinkState.Connected, welcome, status with { RefusedShortcutKeys = ["Ctrl+Alt+Shift+M"] });
+            link.Community = new CommunityOverview(
+            [
+                CommunityFixture.Module("alex.minecraft", name: "Serveur Minecraft", shortcuts: minecraftShortcuts),
+                CommunityFixture.Module("bob.meteo", LinkCommunityState.SetAside, "2.3.1", name: "Météo détaillée", author: "Bob",
+                    shortcuts: [new ModuleShortcutInfo("forecast", "Voir la prévision", null)]),
+            ], @"C:\Modules", false, [], false);
+        }
+
+        Render(folder, scratch, "raccourcis-modules.png", 1440, 1240, jpeg, WithModules, (_, model) => Open(model), layout: modulesLayout);
+        Render(folder, scratch, "raccourcis-modules-ajout.png", 1440, 1240, jpeg, WithModules, (_, model) =>
+        {
+            Open(model);
+            model.ShortcutsTab.AddShortcut();
+            model.ShortcutsTab.Rows[^1].SelectedAction = model.ShortcutsTab.ActionChoices.First(c => c.ShortcutId == "refresh");
+        }, layout: modulesLayout);
     }
 
     /// <summary>L'onglet Paramètres : capteurs à installer, capteurs actifs, installation refusée, démarrage introuvable, import refusé.</summary>
@@ -820,6 +864,25 @@ internal static class Program
         // La boîte d'installation : l'avertissement, les trois permissions déclarées, décochées.
         Render(folder, scratch, "dialogue-installation.png", 1440, 900, jpeg, Connected, (_, model) =>
             Run(model.SettingsTab.Community.OpenPackageAsync(path)));
+
+        // Un module qui propose des raccourcis : une touche libre arrive cochée ; celle que le logiciel donne déjà et celle d'un autre
+        // logiciel arrivent décochées, avec ce qui les tient. Une action sans touche par défaut n'est pas montrée.
+        Render(folder, scratch, "install-raccourcis.png", 1440, 1240, jpeg,
+            link =>
+            {
+                Connected(link);
+                link.Package = CommunityFixture.Package(
+                    id: "alex.minecraft", name: "Serveur Minecraft", declared: [],
+                    shortcuts:
+                    [
+                        new ModuleShortcutInfo("refresh", "Rafraîchir", "Ctrl+Alt+Shift+R"),
+                        new ModuleShortcutInfo("next", "Serveur suivant", "Ctrl+Alt+Down"),
+                        new ModuleShortcutInfo("mute", "Couper le son", "Ctrl+Alt+Shift+M"),
+                        new ModuleShortcutInfo("open", "Ouvrir la page", null),
+                    ]);
+                link.KeyStates["Ctrl+Alt+Shift+M"] = Trofeo.Control.ShortcutKeyState.TakenByAnotherProgram;
+            },
+            (_, model) => Run(model.SettingsTab.Community.OpenPackageAsync(path)));
 
         Render(folder, scratch, "dialogue-installation-1200x760.png", 1200, 760, jpeg, Connected, (_, model) =>
         {

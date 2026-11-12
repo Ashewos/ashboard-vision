@@ -37,6 +37,27 @@ public sealed class ShortcutKeysTests
         Assert.Equal((0u, 0u), (mods, vk));
     }
 
+    [Theory]
+    [InlineData("Ctrl+Alt+Shift+R\n", "Ctrl+Alt+Shift+R")]
+    [InlineData(" alt + ctrl + r ", "Ctrl+Alt+R")]
+    [InlineData("Win+Shift+ctrl+a", "Ctrl+Shift+Win+A")]
+    [InlineData("ctrl+ctrl+f5", "Ctrl+F5")]
+    [InlineData("Ctrl+Alt+right", "Ctrl+Alt+Right")]
+    [InlineData("Ctrl+Alt+UP", "Ctrl+Alt+Up")]
+    [InlineData("ctrl+alt+f24", "Ctrl+Alt+F24")]
+    [InlineData("Alt+1", "Alt+1")]
+    public void Normalize_GivesTheCanonicalForm(string keys, string expected)
+    {
+        Assert.Equal(expected, ShortcutKeys.Normalize(keys));
+        Assert.True(ShortcutKeys.Same(keys, expected));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Right")]
+    [InlineData("Ctrl+Alt+Foo")]
+    public void Normalize_Unreadable_IsNull(string keys) => Assert.Null(ShortcutKeys.Normalize(keys));
+
     [Fact]
     public void Defaults_ThirteenBindings()
     {

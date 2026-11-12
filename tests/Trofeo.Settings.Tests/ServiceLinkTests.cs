@@ -413,6 +413,7 @@ public class ServiceLinkTests
         Assert.Equal("alex.dev", (await link.InspectDevFolderAsync("C:")).Id); // examiner un dossier ne change rien : pas de relecture des types
         await link.CheckModuleUpdatesAsync();
         Assert.Equal("service", Assert.Single(await link.GetConsumptionAsync()).Id);
+        Assert.Equal(ShortcutKeyState.Free, await link.TestShortcutKeysAsync("Ctrl+Alt+Shift+R")); // une question, pas un changement : pas de relecture
         // Préparer une mise à jour (télécharger, lire) et l'abandonner ne changent encore aucun module : rien à relire.
         var preparation = await link.PrepareModuleUpdateAsync("alex.demo");
         await link.CancelModuleUpdateAsync("alex.demo");
@@ -431,6 +432,7 @@ public class ServiceLinkTests
         await Assert.ThrowsAsync<ControlException>(() => link.InstallPackageAsync("a", []));
         await Assert.ThrowsAsync<ControlException>(() => link.GetCommunityAsync());
         await Assert.ThrowsAsync<ControlException>(() => link.GetConsumptionAsync());
+        await Assert.ThrowsAsync<ControlException>(() => link.TestShortcutKeysAsync("Ctrl+Alt+Shift+R"));
         await Assert.ThrowsAsync<ControlException>(() => link.PrepareModuleUpdateAsync("alex.demo"));
         await Assert.ThrowsAsync<ControlException>(() => link.CancelModuleUpdateAsync("alex.demo"));
     }

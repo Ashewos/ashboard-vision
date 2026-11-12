@@ -66,6 +66,20 @@ public class ManifestShortcutsTests
     }
 
     [Fact]
+    public void Keys_AreStoredInTheirCanonicalForm()
+    {
+        var result = ReadWith("""
+            [
+              { "id": "a", "name": "A", "keys": "Ctrl+Alt+Shift+R\n" },
+              { "id": "b", "name": "B", "keys": " alt + ctrl + shift + t " }
+            ]
+            """);
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(["Ctrl+Alt+Shift+R", "Ctrl+Alt+Shift+T"], result.Manifest!.Shortcuts.Select(s => s.Keys));
+    }
+
+    [Fact]
     public void TenShortcuts_AreAccepted_AndElevenAreRefused()
     {
         static JsonArray Many(int count)

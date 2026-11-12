@@ -537,6 +537,16 @@ public static class Texts
     public static string DialogNoPermissions => Get();
     /// <summary>Mise à jour qui déclare une permission de plus.</summary>
     public static string DialogNewPermissions => Get();
+    /// <summary>Titre de la section des raccourcis que le module propose, dans la boîte d'installation ou de mise à jour.</summary>
+    public static string DialogShortcutsTitle => Get();
+    /// <summary>Sous le titre des raccourcis proposés par un module.</summary>
+    public static string DialogShortcutsHint => Get();
+    /// <summary>Une touche proposée est déjà celle d'une autre action du logiciel. {0} : cette action.</summary>
+    public static string ShortcutKeyTakenBy => Get();
+    /// <summary>Windows refuse la touche : une autre application la tient.</summary>
+    public static string ShortcutKeyTakenElsewhere => Get();
+    /// <summary>Module visé par le raccourci d'un module complémentaire : toutes ses cases de la vue affichée.</summary>
+    public static string ShortcutTargetAllCases => Get();
     /// <summary>Titre des notes d'une version.</summary>
     public static string DialogNotes => Get();
     /// <summary>Pendant que le service télécharge et vérifie la mise à jour. {0} : la version.</summary>

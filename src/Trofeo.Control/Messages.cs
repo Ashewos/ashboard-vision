@@ -75,6 +75,12 @@ public enum LinkUpdateChannel { Stable, Beta }
 public sealed record UpdateInfo(
     LinkUpdateState State, string? Version, bool IsDowngrade, int? Percent, string? Message, LinkUpdateChannel Channel, bool WaitForNextStable);
 
+/// <summary>
+/// Un raccourci qu'un module complémentaire déclare dans son manifeste : son identifiant, son nom lisible (une donnée non fiable, que
+/// la fenêtre nettoie) et les touches qu'il propose par défaut (<c>null</c> : aucune), écrites comme dans la disposition.
+/// </summary>
+public sealed record ModuleShortcutInfo(string Id, string Name, string? Keys);
+
 /// <summary>Où en est un module complémentaire, tel que la fenêtre de réglage le connaît (miroir de l'état du service).</summary>
 public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, TooOld, Invalid, Unavailable, SetAside }
 
@@ -84,22 +90,25 @@ public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, T
 /// mise à jour trouvée sur GitHub (<c>null</c> : aucune). Les permissions qu'elle apporte ne se connaissent qu'après sa préparation
 /// (<see cref="ModuleUpdatePreparation"/>), qui télécharge le paquet. <paramref name="DevFolderPath"/> est le dossier de travail d'un module
 /// du mode développeur (le même texte que dans <see cref="CommunityOverview.DevFolders"/>) ; <c>null</c> pour un module installé.
+/// <paramref name="Shortcuts"/> sont les raccourcis que son manifeste déclare (<c>null</c> : le service ne les a pas dits).
 /// </summary>
 public sealed record CommunityModuleInfo(
     string Id, string Name, string Author, string Description, string? Version, LinkCommunityState State, string? Message,
     IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted, bool FromDevFolder,
-    string? UpdateVersion, string? UpdateNotes, string? DevFolderPath = null);
+    string? UpdateVersion, string? UpdateNotes, string? DevFolderPath = null, IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null);
 
 /// <summary>
 /// Ce que le service a lu dans le paquet d'une mise à jour qu'il vient de télécharger et de vérifier (clic sur « Mettre à jour »). Si
 /// <paramref name="Ok"/> est faux, <paramref name="Message"/> dit pourquoi (en français, à montrer tel quel) et le reste est vide. Sinon
 /// le fichier est gardé par le service : l'installation (<see cref="IControlHandler.InstallModuleUpdateAsync"/>) installe celui-là, sans
 /// rien retélécharger, et <see cref="IControlHandler.CancelModuleUpdate"/> l'abandonne. <paramref name="Declared"/> est tout ce que la
-/// nouvelle version déclare, <paramref name="NewPermissions"/> ce qu'elle déclare en plus de la version installée.
+/// nouvelle version déclare, <paramref name="NewPermissions"/> ce qu'elle déclare en plus de la version installée et
+/// <paramref name="Shortcuts"/> les raccourcis que son manifeste déclare (<c>null</c> : non dits).
 /// </summary>
 public sealed record ModuleUpdatePreparation(
     bool Ok, string? Message, string? Version, string? Notes,
-    IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> NewPermissions);
+    IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> NewPermissions,
+    IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null);
 
 /// <summary>
 /// Les modules complémentaires et leurs réglages généraux : le dossier des modules, le mode développeur et ses dossiers, et
@@ -111,11 +120,12 @@ public sealed record CommunityOverview(
 /// <summary>
 /// Ce que le service a vu dans un paquet <c>.avmod</c> avant d'y écrire quoi que ce soit. <paramref name="Errors"/> dit, en français,
 /// ce qui empêche l'installation (vide : elle est possible) ; <paramref name="Conflict"/> signale un identifiant déjà pris par un autre
-/// dépôt ; <paramref name="InstalledVersion"/> est la version déjà installée de ce module (une mise à jour, donc).
+/// dépôt ; <paramref name="InstalledVersion"/> est la version déjà installée de ce module (une mise à jour, donc) ;
+/// <paramref name="Shortcuts"/> les raccourcis que son manifeste déclare (<c>null</c> : non dits).
 /// </summary>
 public sealed record PackageInfo(
     string? Id, string? Name, string? Author, string? Version, string? Description, IReadOnlyList<ModulePermission> Declared,
-    IReadOnlyList<string> Errors, string? Conflict, string? InstalledVersion);
+    IReadOnlyList<string> Errors, string? Conflict, string? InstalledVersion, IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null);
 
 /// <summary>
 /// Ce que consomme un module : le service lui-même, un module d'origine ou un module complémentaire (<paramref name="IsCommunity"/>).

@@ -15,6 +15,12 @@ public static class ShortcutKeyProbe
     /// <summary>Évite que le maintien de la touche n'envoie la commande en rafale ; sans effet sur l'essai, mais c'est la forme des vrais enregistrements.</summary>
     private const uint ModNoRepeat = 0x4000;
 
+    /// <summary>
+    /// La longueur au-delà de laquelle des touches ne sont plus lues : la plus longue combinaison permise (« Ctrl+Alt+Shift+Win+F24 ») tient
+    /// en 22 caractères. La requête vient du canal de contrôle : un texte énorme est refusé avant d'être découpé.
+    /// </summary>
+    public const int MaxKeysLength = 100;
+
     /// <param name="registrar">La fenêtre des raccourcis.</param>
     /// <param name="keys">Les touches à essayer.</param>
     /// <param name="ownKeys">
@@ -25,6 +31,7 @@ public static class ShortcutKeyProbe
     {
         ArgumentNullException.ThrowIfNull(registrar);
         ArgumentNullException.ThrowIfNull(ownKeys);
+        if (keys is null || keys.Length > MaxKeysLength) return ShortcutKeyState.Unreadable;
         if (!ShortcutKeys.TryParse(keys, out var modifiers, out var virtualKey)) return ShortcutKeyState.Unreadable;
         if (ownKeys.Any(own => ShortcutKeys.Same(own, keys))) return ShortcutKeyState.Free;
 

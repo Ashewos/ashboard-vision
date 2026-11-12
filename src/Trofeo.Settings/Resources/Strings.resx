@@ -1033,6 +1033,26 @@
     <value>Cette version demande de nouvelles permissions. Elles ne sont pas cochées : coche celles que tu acceptes.</value>
     <comment>Mise à jour qui déclare une permission de plus.</comment>
   </data>
+  <data name="DialogShortcutsTitle" xml:space="preserve">
+    <value>Raccourcis proposés</value>
+    <comment>Titre de la section des raccourcis que le module propose, dans la boîte d'installation ou de mise à jour.</comment>
+  </data>
+  <data name="DialogShortcutsHint" xml:space="preserve">
+    <value>Ce ne sont pas des permissions : tu peux les changer ou les retirer dans l'onglet Raccourcis.</value>
+    <comment>Sous le titre des raccourcis proposés par un module.</comment>
+  </data>
+  <data name="ShortcutKeyTakenBy" xml:space="preserve">
+    <value>Touche déjà prise par « {0} ».</value>
+    <comment>Une touche proposée est déjà celle d'une autre action du logiciel. {0} : cette action.</comment>
+  </data>
+  <data name="ShortcutKeyTakenElsewhere" xml:space="preserve">
+    <value>Touche déjà prise par un autre logiciel.</value>
+    <comment>Windows refuse la touche : une autre application la tient.</comment>
+  </data>
+  <data name="ShortcutTargetAllCases" xml:space="preserve">
+    <value>Toutes les cases du module</value>
+    <comment>Module visé par le raccourci d'un module complémentaire : toutes ses cases de la vue affichée.</comment>
+  </data>
   <data name="DialogNotes" xml:space="preserve">
     <value>Nouveautés</value>
     <comment>Titre des notes d'une version.</comment>

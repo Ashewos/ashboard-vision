@@ -197,6 +197,26 @@ public sealed partial class ServiceControlHandlerTests
     }
 
     [Fact]
+    public void DeclaredShortcuts_ArePassedOn_InTheOverviewAndThePackage()
+    {
+        using var rig = new Rig();
+        var manifest = Manifest("alex.demo", "1.3.0", Both) with
+        {
+            Shortcuts = [new ModuleShortcut("refresh", "Rafraîchir", "Ctrl+Alt+Shift+R"), new ModuleShortcut("open", "Ouvrir", null)],
+        };
+        rig.Community.Entries = [Entry("alex.demo", manifest: manifest), Entry("alex.casse", CommunityState.Invalid, noManifest: true)];
+        rig.Community.Inspection = new PackageInspection(manifest, [], null, null);
+        ModuleShortcutInfo[] expected = [new("refresh", "Rafraîchir", "Ctrl+Alt+Shift+R"), new("open", "Ouvrir", null)];
+
+        var overview = rig.Handler.GetCommunity();
+        var package = rig.Handler.InspectPackage("a.avmod");
+
+        Assert.Equal(expected, overview.Modules[0].Shortcuts);
+        Assert.Empty(overview.Modules[1].Shortcuts!); // sans manifeste : aucun raccourci
+        Assert.Equal(expected, package.Shortcuts);
+    }
+
+    [Fact]
     public void InspectPackage_RefusedPackage_HasNoIdentity()
     {
         using var rig = new Rig();

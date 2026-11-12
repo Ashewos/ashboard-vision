@@ -140,6 +140,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // Watch pour le bandeau du mode développeur : ni consommation ni minuteur).
         if (value is SettingsTabViewModel)
             SettingsTab.Community.Activate();
+        else if (value is ShortcutsTabViewModel shortcuts)
+            _ = shortcuts.ActivateAsync(); // les raccourcis des modules complémentaires donnent leurs noms et leurs actions
         UpdateConsumptionVisibility();
     }
 

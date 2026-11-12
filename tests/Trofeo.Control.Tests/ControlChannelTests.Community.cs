@@ -308,6 +308,26 @@ public partial class ControlChannelTests
     }
 
     [Fact]
+    public async Task DeclaredShortcuts_RoundTrip_ForAPackageAndAnUpdatePreparation()
+    {
+        ModuleShortcutInfo[] shortcuts = [new("refresh", "Rafraîchir", "Ctrl+Alt+Shift+R"), new("open", "Ouvrir", null)];
+        var handler = new FakeHandler
+        {
+            PackageToReturn = new PackageInfo("alex.demo", "Démo", "Alex", "1.3.0", "Démo", [], [], null, null, shortcuts),
+            PreparationToReturn = new ModuleUpdatePreparation(true, null, "1.3.0", "Notes.", [], [], shortcuts),
+        };
+        var (server, client) = await StartAsync(handler);
+        using var _ = server;
+        await using var __ = client;
+
+        var package = await client.InspectPackageAsync("a.avmod", CancellationToken.None);
+        var preparation = await client.PrepareModuleUpdateAsync("alex.demo", CancellationToken.None);
+
+        Assert.Equal(shortcuts, package.Shortcuts);
+        Assert.Equal(shortcuts, preparation.Shortcuts);
+    }
+
+    [Fact]
     public async Task InspectPackage_RefusedPackage_HasNullIdentity()
     {
         var handler = new FakeHandler { PackageToReturn = new PackageInfo(null, null, null, null, null, [], ["Archive illisible."], null, null) };

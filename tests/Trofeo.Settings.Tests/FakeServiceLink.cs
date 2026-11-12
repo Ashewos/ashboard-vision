@@ -165,6 +165,23 @@ public sealed class FakeServiceLink : IServiceLink
         return OnInstallUpdate(confirmDowngrade);
     }
 
+    /// <summary>Les touches dont un test a demandé l'état au service, dans l'ordre.</summary>
+    public List<string> TestedKeys { get; } = [];
+
+    /// <summary>Ce que le service répond pour chaque combinaison (Free pour toutes les autres) ; la comparaison ignore l'écriture.</summary>
+    public Dictionary<string, ShortcutKeyState> KeyStates { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Si posé, la question sur les touches lève cette erreur (le service ne répond plus).</summary>
+    public ControlException? KeyTestFailure { get; set; }
+
+    public Task<ShortcutKeyState> TestShortcutKeysAsync(string keys)
+    {
+        TestedKeys.Add(keys);
+        if (KeyTestFailure is not null)
+            return Task.FromException<ShortcutKeyState>(KeyTestFailure);
+        return Task.FromResult(KeyStates.GetValueOrDefault(keys, ShortcutKeyState.Free));
+    }
+
     // ---- Modules complémentaires ----
 
     public IReadOnlyList<ModuleTypeInfo>? Types { get; set; }

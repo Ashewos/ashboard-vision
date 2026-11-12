@@ -17,7 +17,7 @@
 
       <TextBlock Grid.Row="0" Name="DialogTitle" Classes="heading" TextWrapping="Wrap" Text="{Binding Title}" />
 
-      <ScrollViewer Grid.Row="1" MaxHeight="470" VerticalScrollBarVisibility="Auto" AllowAutoHide="False">
+      <ScrollViewer Grid.Row="1" MaxHeight="560" VerticalScrollBarVisibility="Auto" AllowAutoHide="False">
         <StackPanel Spacing="14" Margin="0,0,16,0">
 
           <!-- L'avertissement : un point d'exclamation jaune et la phrase de l'installation. -->
@@ -80,6 +80,32 @@
                       </CheckBox>
                       <TextBlock Grid.Column="1" Classes="warning" VerticalAlignment="Top" Text="{x:Static t:Texts.PermissionNew}"
                                  IsVisible="{Binding IsNew}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <!-- Les raccourcis que le module propose : une case par touche. Une touche libre arrive cochée, une touche prise arrive décochée avec ce qui la tient. -->
+          <StackPanel Name="ProposedShortcutArea" Spacing="8" IsVisible="{Binding ShowsProposedShortcuts}">
+            <TextBlock Name="ProposedShortcutsTitle" Classes="section" TextWrapping="Wrap" Text="{Binding ProposedShortcutsTitle}" />
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding ProposedShortcutsHint}" />
+            <ItemsControl Name="ProposedShortcutList" ItemsSource="{Binding ProposedShortcuts}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ProposedShortcutItem">
+                  <Border Classes="note" Margin="0,0,0,6" Padding="12,8">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                      <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked}" IsEnabled="{Binding CanCheck}" AutomationProperties.Name="{Binding Name}">
+                        <StackPanel Spacing="2">
+                          <TextBlock Classes="name" TextWrapping="Wrap" Text="{Binding Name}" />
+                          <TextBlock Classes="warning" TextWrapping="Wrap" Text="{Binding TakenBy}" IsVisible="{Binding HasTakenBy}" />
+                        </StackPanel>
+                      </CheckBox>
+                      <!-- Les touches en pastille (Manrope : les flèches n'existent pas en Barlow). -->
+                      <Border Grid.Column="1" Classes="pill" VerticalAlignment="Top" AutomationProperties.Name="{Binding KeysText}">
+                        <TextBlock Classes="lead" Text="{Binding KeysText}" />
+                      </Border>
                     </Grid>
                   </Border>
                 </DataTemplate>

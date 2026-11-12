@@ -210,6 +210,9 @@ public sealed class ServiceLink : IServiceLink
         }
     }
 
+    public Task<ShortcutKeyState> TestShortcutKeysAsync(string keys) =>
+        RequestAsync((client, ct) => client.TestShortcutKeysAsync(keys, ct));
+
     // ---- Modules complémentaires ----
 
     public Task<CommunityOverview> GetCommunityAsync() => RequestAsync((client, ct) => client.GetCommunityAsync(ct));

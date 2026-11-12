@@ -397,7 +397,8 @@ public static partial class ManifestReader
                 continue;
             }
 
-            result.Add(new ModuleShortcut(id, name, keys));
+            // Les touches sont gardées sous leur forme canonique : un retour à la ligne ou des espaces du manifeste ne vont pas plus loin.
+            result.Add(new ModuleShortcut(id, name, keys is null ? null : ShortcutKeys.Normalize(keys)));
         }
 
         return result;

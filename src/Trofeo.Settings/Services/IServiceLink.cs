@@ -90,6 +90,13 @@ public interface IServiceLink : IAsyncDisposable
     /// </summary>
     Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade);
 
+    /// <summary>
+    /// Le service essaie d'enregistrer ces touches auprès de Windows, puis les relâche : <see cref="ShortcutKeyState.TakenByAnotherProgram"/>
+    /// si une autre application les tient. Une combinaison que le service tient lui-même rend <see cref="ShortcutKeyState.Free"/> (les
+    /// conflits entre raccourcis du logiciel sont vérifiés par la fenêtre). Liaison coupée : <see cref="ControlException"/>.
+    /// </summary>
+    Task<ShortcutKeyState> TestShortcutKeysAsync(string keys);
+
     // ---- Modules complémentaires ----
 
     /// <summary>

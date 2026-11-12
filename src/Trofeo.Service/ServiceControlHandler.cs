@@ -335,8 +335,11 @@ public sealed class ServiceControlHandler(
             manifest?.Version ?? entry.Approval?.Version, Enum.Parse<LinkCommunityState>(entry.State.ToString()), entry.Message,
             manifest?.Permissions ?? [], community.GrantedTo(entry), entry.FromDevFolder,
             UpdateVersion: update?.Version, UpdateNotes: update?.Notes,
-            DevFolderPath: entry.FromDevFolder ? entry.Directory : null);
+            DevFolderPath: entry.FromDevFolder ? entry.Directory : null, Shortcuts: ToShortcutInfos(manifest?.Shortcuts));
     }
+
+    private static List<ModuleShortcutInfo> ToShortcutInfos(IEnumerable<ModuleShortcut>? shortcuts) =>
+        [.. (shortcuts ?? []).Select(s => new ModuleShortcutInfo(s.Id, s.Name, s.Keys))];
 
     public PackageInfo InspectPackage(string path) => ToPackageInfo(community.Inspect(path));
 
@@ -348,7 +351,7 @@ public sealed class ServiceControlHandler(
         var manifest = inspection.Manifest;
         return new PackageInfo(
             manifest?.Id, manifest?.Name, manifest?.Author, manifest?.Version, manifest?.Description, manifest?.Permissions ?? [],
-            inspection.Errors, inspection.Conflict, inspection.Installed?.Version);
+            inspection.Errors, inspection.Conflict, inspection.Installed?.Version, ToShortcutInfos(manifest?.Shortcuts));
     }
 
     public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>
