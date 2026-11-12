@@ -238,6 +238,23 @@ public sealed class InstallShortcutsTests
     }
 
     [Fact]
+    public async Task Update_ChangedKeys_KeepsTheUserBinding()
+    {
+        // L'utilisateur a changé les touches de « Rafraîchir » ; la nouvelle version en propose d'autres pour le même identifiant.
+        var userBinding = new ShortcutBinding("Ctrl+Alt+Shift+Q", ShortcutCommand.Community, 0, null, "alex.demo", "refresh");
+        using var fixture = WithInstalled([userBinding], Refresh);
+        fixture.Link.Preparation = Prepared(Refresh with { Keys = "Ctrl+Alt+Shift+T" });
+
+        await fixture.Section.Modules.Single().UpdateCommand.ExecuteAsync(null);
+        var dialog = fixture.Section.Dialog!;
+        Assert.Empty(dialog.ProposedShortcuts); // pas un nouveau raccourci : rien n'est reproposé
+        await dialog.ConfirmAsync();
+
+        Assert.Equal([.. ShortcutDefaults.All, userBinding], Effective(fixture)); // ses touches à lui, intactes
+        Assert.DoesNotContain(Effective(fixture), b => b.Keys == "Ctrl+Alt+Shift+T");
+    }
+
+    [Fact]
     public async Task Update_RemovedShortcut_LosesItsBindings()
     {
         var other = Bound(new ModuleShortcutInfo("sync", "Synchroniser", "Ctrl+Alt+Shift+S"), "alex.autre");

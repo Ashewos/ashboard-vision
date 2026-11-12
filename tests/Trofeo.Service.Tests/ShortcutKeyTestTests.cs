@@ -59,16 +59,19 @@ public sealed partial class ServiceControlHandlerTests
     }
 
     [Fact]
-    public async Task TestShortcutKeys_HugeString_IsRefusedAsUnreadable_WithoutBeingSplit()
+    public async Task TestShortcutKeys_ReadableButTooLong_IsRefusedAsUnreadable_AtTheLimitItIsRead()
     {
         using var rig = new Rig();
-        var huge = "Ctrl+" + new string('+', 8 * 1024 * 1024) + "R"; // 8 Mo : jamais découpé en milliers de morceaux
+        // Lisible (les doublons de modificateurs passent par TryParse) : seul le plafond de longueur le refuse.
+        var tooLong = string.Concat(Enumerable.Repeat("Ctrl+", 25)) + "R"; // 126 caractères
+        var atTheLimit = string.Concat(Enumerable.Repeat("Ctrl+", 19)) + "Alt+R"; // exactement 100 caractères
+        Assert.True(ShortcutKeys.TryParse(tooLong, out _, out _));
+        Assert.Equal(ShortcutKeyProbe.MaxKeysLength, atTheLimit.Length);
 
-        var state = await rig.Handler.TestShortcutKeysAsync(huge, CancellationToken.None);
+        Assert.Equal(ShortcutKeyState.Unreadable, await rig.Handler.TestShortcutKeysAsync(tooLong, CancellationToken.None));
+        Assert.Empty(rig.Hotkeys.Registrar.Registered); // Windows n'a pas été sollicité
 
-        Assert.Equal(ShortcutKeyState.Unreadable, state);
-        Assert.Empty(rig.Hotkeys.Registrar.Registered);
-        // Une combinaison légitime la plus longue reste lisible.
+        Assert.Equal(ShortcutKeyState.Free, await rig.Handler.TestShortcutKeysAsync(atTheLimit, CancellationToken.None));
         Assert.Equal(ShortcutKeyState.Free, await rig.Handler.TestShortcutKeysAsync("Ctrl+Alt+Shift+Win+F24", CancellationToken.None));
     }
 
