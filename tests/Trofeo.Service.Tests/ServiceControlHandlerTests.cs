@@ -63,6 +63,16 @@ public sealed partial class ServiceControlHandlerTests
         public List<IReadOnlyList<ShortcutBinding>> Applied { get; } = [];
         public List<string> Failures { get; } = [];
 
+        public IReadOnlyList<string> RefusedKeys { get; set; } = [];
+
+        /// <summary>Le registraire que l'essai d'une touche interroge, à la place de Windows.</summary>
+        public FakeRegistrar Registrar { get; } = new();
+
+        /// <summary>Les touches que le service a lui-même enregistrées.</summary>
+        public List<string> OwnKeys { get; } = [];
+
+        public Task<ShortcutKeyState> TestAsync(string keys) => Task.FromResult(ShortcutKeyProbe.Test(Registrar, keys, OwnKeys));
+
         public Task<IReadOnlyList<string>> ApplyAsync(IReadOnlyList<ShortcutBinding> bindings)
         {
             Applied.Add(bindings);
@@ -95,7 +105,7 @@ public sealed partial class ServiceControlHandlerTests
         public Rig(
             DashboardLayout? layout = null, Func<ScreenInfo>? screen = null, Func<SensorInfo>? sensors = null,
             Func<DashboardLayout, LoopConfig?, LoopConfig>? build = null, LoopConfig? initialConfig = null, UpdateService? updates = null,
-            IReadOnlyList<CommunityEntry>? communityEntries = null)
+            IReadOnlyList<CommunityEntry>? communityEntries = null, bool withoutHotkeys = false)
         {
             Directory.CreateDirectory(_dir);
             LayoutPath = Path.Combine(_dir, "layout.json");
@@ -112,7 +122,7 @@ public sealed partial class ServiceControlHandlerTests
                 sensors ?? (() => new SensorInfo(true, false, false)),
                 new ProcessMeter(() => (TimeSpan.Zero, 1, 2), LoopRig.Time, 4),
                 build ?? ((layout, current) => LoopConfigFactory.Build(layout, new NoSystemFonts(), null, Sink.Warn, current)),
-                Hotkeys, Community, Sink, initialConfig, updates);
+                withoutHotkeys ? null : Hotkeys, Community, Sink, initialConfig, updates);
         }
 
         public string LayoutPath { get; }

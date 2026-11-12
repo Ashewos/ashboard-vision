@@ -103,6 +103,19 @@ internal sealed class FakeCommunityModules : ICommunityModules
 
     public Task<ActionResult> ReloadDevModuleAsync(string id) => Task.FromResult(Record($"reloadDevModule {id}"));
 
+    /// <summary>Les raccourcis transmis, dans l'ordre (module, raccourci, cases).</summary>
+    public List<(string ModuleId, string ShortcutId, Guid[] Instances)> SentShortcuts { get; } = [];
+
+    /// <summary>Ce que <see cref="SendShortcut"/> rend.</summary>
+    public bool ShortcutResult { get; set; } = true;
+
+    public bool SendShortcut(string moduleId, string shortcutId, IReadOnlyCollection<Guid> instances)
+    {
+        lock (_gate)
+            SentShortcuts.Add((moduleId, shortcutId, [.. instances]));
+        return ShortcutResult;
+    }
+
     public void SetDisplayOptions(int maxFps, AppearanceSettings appearance)
     {
         lock (_gate)

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Trofeo.Control;
 using Trofeo.Core.Shortcuts;
 
 namespace Trofeo.Display;
@@ -12,6 +13,46 @@ namespace Trofeo.Display;
 internal sealed class UiHotkeyHost(SynchronizationContext ui, HotkeyRouter router) : IHotkeyHost
 {
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
+
+    private const string Unavailable = "Les raccourcis ne sont pas disponibles pour l'instant.";
+
+    public IReadOnlyList<string> RefusedKeys => router.RefusedKeys;
+
+    /// <summary>
+    /// Essaie ces touches sur le fil de l'interface (là où vit la fenêtre des raccourcis : <c>RegisterHotKey</c> est attaché à son fil).
+    /// Lève <see cref="InvalidOperationException"/> si le service s'arrête, si la boucle d'interface est terminée ou si elle ne répond pas.
+    /// </summary>
+    public async Task<ShortcutKeyState> TestAsync(string keys)
+    {
+        var done = new TaskCompletionSource<ShortcutKeyState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            ui.Post(_ =>
+            {
+                try
+                {
+                    done.TrySetResult(router.TestKeys(keys));
+                }
+                catch (Exception ex)
+                {
+                    done.TrySetException(ex);
+                }
+            }, null);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new InvalidOperationException(Unavailable); // la boucle d'interface est terminée
+        }
+
+        try
+        {
+            return await done.Task.WaitAsync(Timeout).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is TimeoutException or ObjectDisposedException)
+        {
+            throw new InvalidOperationException(Unavailable);
+        }
+    }
 
     public async Task<IReadOnlyList<string>> ApplyAsync(IReadOnlyList<ShortcutBinding> bindings)
     {

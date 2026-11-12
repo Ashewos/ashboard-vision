@@ -22,7 +22,8 @@ public partial class ControlChannelTests
         new ProcessInfo(1_000_000, 2_000_000, 3.5),
         new FrameInfo(42, 1.25, 0.5),
         new SensorInfo(true, false, true),
-        CurrentViewId);
+        CurrentViewId,
+        ["Ctrl+Alt+Right"]);
 
     private static Welcome SampleWelcome() => new("1.2.3", ControlPipe.ProtocolVersion,
     [
@@ -77,6 +78,15 @@ public partial class ControlChannelTests
         {
             lock (ShownViews) ShownViews.Add(viewId);
             return Task.FromResult(OnShowView(viewId));
+        }
+
+        public Func<string, ShortcutKeyState> OnTestKeys { get; set; } = _ => ShortcutKeyState.Free;
+        public List<string> TestedKeys { get; } = [];
+
+        public Task<ShortcutKeyState> TestShortcutKeysAsync(string keys, CancellationToken ct)
+        {
+            lock (TestedKeys) TestedKeys.Add(keys);
+            return Task.FromResult(OnTestKeys(keys));
         }
 
         public Welcome Hello() => WelcomeToReturn;

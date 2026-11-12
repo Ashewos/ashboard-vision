@@ -1143,6 +1143,26 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         }
     }
 
+    // --- Raccourcis ------------------------------------------------------------------------------------------------------------------
+
+    /// <inheritdoc />
+    public bool SendShortcut(string moduleId, string shortcutId, IReadOnlyCollection<Guid> instances)
+    {
+        ArgumentNullException.ThrowIfNull(moduleId);
+        ModuleHostSupervisor supervisor;
+        lock (_gate)
+        {
+            if (!_running.TryGetValue(moduleId, out var run))
+            {
+                return false;
+            }
+
+            supervisor = run.Supervisor;
+        }
+
+        return supervisor.SendShortcut(shortcutId, instances);
+    }
+
     // --- Consommation, mises à jour -------------------------------------------------------------------------------------------------
 
     /// <inheritdoc />

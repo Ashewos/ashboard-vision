@@ -217,6 +217,11 @@ public sealed class ControlServer(string pipeName, IControlHandler handler) : ID
                     {
                         Shown = await _handler.ShowViewAsync(Required(request.ViewId, "viewId"), ct).ConfigureAwait(false),
                     };
+                case MessageTypes.TestShortcutKeys:
+                    return new Response(request.Id, request.Type)
+                    {
+                        KeyState = await _handler.TestShortcutKeysAsync(Required(request.Keys, "keys"), ct).ConfigureAwait(false),
+                    };
                 case MessageTypes.GetUpdate:
                     return new Response(request.Id, request.Type) { Update = _handler.GetUpdate() };
                 case MessageTypes.CheckUpdates:

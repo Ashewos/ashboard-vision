@@ -34,9 +34,26 @@ public sealed record FrameInfo(int FramesSent, double RenderMs, double SendMs);
 
 public sealed record SensorInfo(bool PawnIoInstalled, bool HelperInstalled, bool HelperConnected);
 
-/// <summary>L'état du service. <paramref name="CurrentViewId"/> est la vue affichée sur l'écran en ce moment.</summary>
+/// <summary>
+/// L'état du service. <paramref name="CurrentViewId"/> est la vue affichée sur l'écran en ce moment ;
+/// <paramref name="RefusedShortcutKeys"/> les touches que Windows a refusées au dernier enregistrement des raccourcis (écrites comme
+/// dans la disposition, par exemple « Ctrl+Alt+Right ») ; vide si tout est enregistré.
+/// </summary>
 public sealed record ServiceStatus(ScreenInfo Screen, bool Emulated, IReadOnlyList<ModuleState> Modules,
-    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors, Guid CurrentViewId);
+    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors, Guid CurrentViewId, IReadOnlyList<string> RefusedShortcutKeys);
+
+/// <summary>Ce que le service répond quand on lui demande si une combinaison de touches est libre (<see cref="IControlHandler.TestShortcutKeysAsync"/>).</summary>
+public enum ShortcutKeyState
+{
+    /// <summary>Windows l'accepte (ou le service l'a déjà enregistrée lui-même : les conflits internes sont vérifiés par la fenêtre).</summary>
+    Free,
+
+    /// <summary>Les touches ne se lisent pas (voir <c>ShortcutKeys.TryParse</c>).</summary>
+    Unreadable,
+
+    /// <summary>Une autre application a déjà pris cette combinaison.</summary>
+    TakenByAnotherProgram,
+}
 
 public sealed record Reloaded(bool Applied, string? Error, IReadOnlyList<string> Warnings);
 
@@ -153,6 +170,15 @@ public interface IControlHandler
     /// </summary>
     Task<bool> ShowViewAsync(Guid viewId, CancellationToken ct);
 
+    // ---- Raccourcis ----
+
+    /// <summary>
+    /// Essaie d'enregistrer <paramref name="keys"/> auprès de Windows puis la relâche aussitôt : la combinaison est-elle libre ? Une
+    /// combinaison que le service a lui-même enregistrée rend <see cref="ShortcutKeyState.Free"/>. Lève une exception si le service
+    /// n'a pas de raccourcis (la fenêtre des raccourcis est indisponible).
+    /// </summary>
+    Task<ShortcutKeyState> TestShortcutKeysAsync(string keys, CancellationToken ct);
+
     // ---- Modules complémentaires ----
 
     /// <summary>Les types de modules connus maintenant (la liste de la poignée de main change quand un module s'installe ou se valide).</summary>
@@ -240,6 +266,7 @@ internal static class MessageTypes
     public const string Preview = "preview";
     public const string ShowView = "showView";
     public const string ViewShown = "viewShown";
+    public const string TestShortcutKeys = "testShortcutKeys";
     public const string GetUpdate = "getUpdate";
     public const string CheckUpdates = "checkUpdates";
     public const string SetUpdatePreferences = "setUpdatePreferences";
@@ -283,6 +310,7 @@ internal sealed record Request(int Id, string Type)
     public string? Path { get; init; }
     public IReadOnlyList<ModulePermission>? Granted { get; init; }
     public bool? On { get; init; }
+    public string? Keys { get; init; }
 }
 
 /// <summary>Réponse JSON : <see cref="ReplyTo"/> reprend l'identifiant de la requête ; type « error » pour un échec.</summary>
@@ -295,6 +323,7 @@ internal sealed record Response(int ReplyTo, string Type)
     public bool? Restarted { get; init; }
     public bool? Shown { get; init; }
     public Guid? ViewId { get; init; }
+    public ShortcutKeyState? KeyState { get; init; }
     public IReadOnlyList<LookupResult>? Results { get; init; }
     public ActionResult? Action { get; init; }
     public UpdateInfo? Update { get; init; }

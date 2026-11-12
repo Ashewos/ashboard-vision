@@ -305,6 +305,18 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     }
 
     /// <summary>
+    /// Les cases qui reçoivent un raccourci de module complémentaire : celles du type <paramref name="moduleId"/> dans la vue affichée,
+    /// ou, si <paramref name="instanceId"/> est donné, cette case seule (vide si elle n'est pas dans la vue affichée ou n'est pas de ce
+    /// type). Une case d'une vue cachée n'en reçoit jamais. Appelable depuis le thread de l'interface, comme <see cref="FindCommandTarget"/>.
+    /// </summary>
+    public IReadOnlyCollection<Guid> FindCommunityCases(string moduleId, Guid? instanceId) =>
+    [
+        .. _live.Placements
+            .Where(p => string.Equals(p.TypeId, moduleId, StringComparison.Ordinal) && (instanceId is null || p.InstanceId == instanceId))
+            .Select(p => p.InstanceId),
+    ];
+
+    /// <summary>
     /// L'état de la boucle : mode émulé, modules (état et remarques), images envoyées et durées récentes de rendu et d'envoi.
     /// Lisible depuis n'importe quel thread ; une lecture ne copie que la liste des modules.
     /// </summary>

@@ -354,6 +354,32 @@ public sealed class DisplayLoopViewsTests : IDisposable
     }
 
     [Fact]
+    public void FindCommunityCases_ReturnsTheCasesOfTheModuleInTheCurrentViewOnly()
+    {
+        var other = new Guid("11110000-0000-0000-0000-0000000000b1");
+        var layout = new DashboardLayout(
+            180,
+            [
+                new LayoutView(V1, "Vue 1", [ViewPlace(P1), ViewPlace(other, column: 4), Place(Guid.NewGuid(), "plain", column: 8, columns: 2)]),
+                new LayoutView(V2, "Vue 2", [ViewPlace(P2)]),
+            ]);
+        var rig = new LoopRig(layout, extraFactories: [_factory, new PlainFactory()]);
+        _disposables.Add(rig);
+
+        Assert.Equal([P1, other], rig.Loop.FindCommunityCases("view", null).Order());
+        Assert.Equal([other], rig.Loop.FindCommunityCases("view", other));
+        Assert.Empty(rig.Loop.FindCommunityCases("view", P2)); // case d'une vue cachée : rien, pas de repli
+        Assert.Empty(rig.Loop.FindCommunityCases("plain", P1)); // la case visée n'est pas de ce module
+        Assert.Empty(rig.Loop.FindCommunityCases("absent", null));
+        Assert.Empty(rig.Loop.FindCommunityCases("View", null)); // comparé tel quel
+
+        rig.Loop.ShowView(V2, +1);
+
+        Assert.Equal([P2], rig.Loop.FindCommunityCases("view", null));
+        Assert.Empty(rig.Loop.FindCommunityCases("view", P1));
+    }
+
+    [Fact]
     public void FindCommandTarget_OnlyHiddenViewsCommandable_ReturnsNull()
     {
         var layout = new DashboardLayout(

@@ -98,7 +98,8 @@ public sealed class ServiceControlHandler(
             .ToList();
         return new ServiceStatus(
             screen(), status.Emulated, modules, meter.Read(),
-            new FrameInfo(status.FramesSent, status.RenderMs, status.SendMs), sensors(), loop.CurrentViewId);
+            new FrameInfo(status.FramesSent, status.RenderMs, status.SendMs), sensors(), loop.CurrentViewId,
+            hotkeys?.RefusedKeys ?? []);
     }
 
     /// <summary>L'état du lien avec l'écran tel que la fenêtre de réglage le connaît.</summary>
@@ -277,6 +278,13 @@ public sealed class ServiceControlHandler(
         var current = views.ToList().FindIndex(v => v.Id == loop.CurrentViewId);
         return Task.FromResult(loop.ShowView(viewId, Math.Sign(target - current)));
     }
+
+    // ---- Raccourcis ----
+
+    public Task<ShortcutKeyState> TestShortcutKeysAsync(string keys, CancellationToken ct) =>
+        hotkeys is null
+            ? throw new InvalidOperationException("Les raccourcis ne sont pas disponibles pour l'instant.")
+            : hotkeys.TestAsync(keys).WaitAsync(ct);
 
     // ---- Mises à jour ----
 

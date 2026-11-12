@@ -134,7 +134,7 @@ public class ServiceLinkTests
 
         public ServiceStatus GetStatus() => new(
             new ScreenInfo(LinkScreenState.Ready, null), false, [],
-            new ProcessInfo(1, 2, 0), new FrameInfo(0, 0, 0), new SensorInfo(false, false, false), CurrentView);
+            new ProcessInfo(1, 2, 0), new FrameInfo(0, 0, 0), new SensorInfo(false, false, false), CurrentView, []);
 
         public Func<CancellationToken, Task<Reloaded>> OnReload { get; set; } = _ => Task.FromResult(new Reloaded(true, null, []));
 
@@ -202,6 +202,8 @@ public class ServiceLinkTests
             ShowRequests.Enqueue(viewId);
             return Task.FromResult(true);
         }
+
+        public Task<ShortcutKeyState> TestShortcutKeysAsync(string keys, CancellationToken ct) => Task.FromResult(ShortcutKeyState.Free);
 
         /// <summary>Les vues demandées à l'aperçu, dans l'ordre (<c>null</c> : la vue affichée).</summary>
         public readonly ConcurrentQueue<Guid?> SubscribedViews = new();

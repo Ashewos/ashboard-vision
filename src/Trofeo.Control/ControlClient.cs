@@ -168,6 +168,15 @@ public sealed class ControlClient : IAsyncDisposable
         (await SendAsync(new Request(NextId(), MessageTypes.ShowView) { ViewId = viewId }, DefaultTimeout, ct).ConfigureAwait(false)).Shown
         ?? throw Incomplete();
 
+    /// <summary>
+    /// Demande au service si cette combinaison de touches est libre (il essaie de l'enregistrer auprès de Windows puis la relâche). Une
+    /// combinaison que le service utilise lui-même rend <see cref="ShortcutKeyState.Free"/>. Si le service n'a pas de raccourcis, lève
+    /// <see cref="ControlException"/>.
+    /// </summary>
+    public async Task<ShortcutKeyState> TestShortcutKeysAsync(string keys, CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.TestShortcutKeys) { Keys = keys }, DefaultTimeout, ct).ConfigureAwait(false)).KeyState
+        ?? throw Incomplete();
+
     // ---- Modules complémentaires ----
 
     /// <summary>Les types de modules connus du service maintenant (la liste de <see cref="Welcome"/> date de la connexion).</summary>
