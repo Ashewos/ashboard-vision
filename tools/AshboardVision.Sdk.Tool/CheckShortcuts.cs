@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Trofeo.Extensions;
 
 namespace AshboardVision.Sdk.Tool;
@@ -12,11 +13,8 @@ namespace AshboardVision.Sdk.Tool;
 /// par seconde et par module, le banc reste sous ce plafond.
 /// </para>
 /// </summary>
-internal static class CheckShortcuts
+internal static partial class CheckShortcuts
 {
-    /// <summary>Le texte que l'hôte écrit au journal quand <c>OnShortcutAsync</c> lève une exception.</summary>
-    private const string ExceptionMarker = "Exception dans OnShortcutAsync";
-
     /// <summary>L'écart entre deux appuis, pendant lequel on regarde si le module a levé une exception ou arrêté l'hôte.</summary>
     private static readonly TimeSpan Pause = TimeSpan.FromMilliseconds(300);
 
@@ -31,58 +29,58 @@ internal static class CheckShortcuts
             return;
         }
 
-        var delivered = new List<string>();
-        var failed = false;
-        for (var i = 0; i < manifest.Shortcuts.Count; i++)
+        // Tous les raccourcis sont livrés d'abord, espacés de 300 ms ; on rend ensuite son verdict à chacun d'après le journal : la ligne
+        // d'une exception dit de quel raccourci elle vient, donc elle ne peut pas être mise sur le compte du suivant, même si le module est lent.
+        var start = log.Total;
+        var ids = manifest.Shortcuts.Select(shortcut => shortcut.Id).ToList();
+        for (var i = 0; i < ids.Count; i++)
         {
-            var id = manifest.Shortcuts[i].Id;
-            var before = log.Total;
+            var id = ids[i];
             if (!session.SendShortcut(id, checkCase))
             {
                 report.Failure(
                     $"Raccourci « {id} » : le logiciel n'a pas pu le transmettre au module (hôte arrêté, ou case fermée).",
                     $"le raccourci « {id} » n'a pas pu être transmis au module");
-                failed = true;
-                break;
-            }
-
-            var problem = await ObserveAsync(session, log, id, before, i == manifest.Shortcuts.Count - 1 ? LastObservation : Pause, ct).ConfigureAwait(false);
-            if (problem is not null)
-            {
-                report.Failure(problem.Value.Line, problem.Value.Reason);
                 report.AddJournal(log.Lines);
-                failed = true;
-                break;
+                return;
             }
 
-            delivered.Add(id);
+            if (await HostStoppedWithinAsync(session, i == ids.Count - 1 ? LastObservation : Pause, ct).ConfigureAwait(false) is { } code)
+            {
+                report.Failure(
+                    $"Raccourci « {id} » : l'hôte du module s'arrête (code {code:X8}).",
+                    $"le module s'arrête quand le raccourci « {id} » est déclenché");
+                report.AddJournal(log.Lines);
+                return;
+            }
         }
 
-        if (!failed)
+        var thrown = ExceptionsByShortcut(log.Since(start));
+        foreach (var id in ids.Where(thrown.ContainsKey))
         {
-            report.Ok($"Raccourcis : {delivered.Count} livré{(delivered.Count > 1 ? "s" : "")} au module ({string.Join(", ", delivered)}), sans erreur.");
+            report.Failure(
+                $"Raccourci « {id} » : le module lève une exception dans OnShortcutAsync ({thrown[id]}). Rattrape-la dans le module.",
+                $"le module lève une exception quand le raccourci « {id} » est déclenché");
         }
+
+        if (thrown.Count > 0)
+        {
+            report.AddJournal(log.Lines);
+            return;
+        }
+
+        report.Ok($"Raccourcis : {ids.Count} livré{(ids.Count > 1 ? "s" : "")} au module ({string.Join(", ", ids)}), sans erreur.");
     }
 
-    /// <summary>
-    /// Regarde pendant <paramref name="duration"/> si le raccourci qu'on vient d'envoyer a fait lever une exception au module (une ligne du
-    /// journal, arrivée après que le journal comptait <paramref name="before"/> lignes) ou arrêté l'hôte. Rend la ligne et la raison de l'échec, ou <c>null</c>.
-    /// </summary>
-    private static async Task<(string Line, string Reason)?> ObserveAsync(
-        CheckSession session, CheckLog log, string id, long before, TimeSpan duration, CancellationToken ct)
+    /// <summary>Attend <paramref name="duration"/> en regardant si l'hôte s'arrête. Rend son code de sortie s'il l'a fait, <c>null</c> sinon.</summary>
+    private static async Task<int?> HostStoppedWithinAsync(CheckSession session, TimeSpan duration, CancellationToken ct)
     {
         var clock = Stopwatch.StartNew();
         while (true)
         {
             if (session.Recorder.UnexpectedExitCode is { } code)
             {
-                return ($"Raccourci « {id} » : l'hôte du module s'arrête (code {code:X8}).", $"le module s'arrête quand le raccourci « {id} » est déclenché");
-            }
-
-            if (log.Since(before).FirstOrDefault(line => line.Contains(ExceptionMarker, StringComparison.Ordinal)) is { } line)
-            {
-                return ($"Raccourci « {id} » : le module lève une exception dans OnShortcutAsync ({Detail(line)}). Rattrape-la dans le module.",
-                    $"le module lève une exception quand le raccourci « {id} » est déclenché");
+                return code;
             }
 
             if (clock.Elapsed >= duration)
@@ -94,12 +92,24 @@ internal static class CheckShortcuts
         }
     }
 
-    /// <summary>Le début de l'exception, sans la pile : « InvalidOperationException: boom du raccourci ».</summary>
-    private static string Detail(string line)
+    /// <summary>
+    /// Les exceptions de <c>OnShortcutAsync</c> que ces lignes du journal rapportent, par identifiant de raccourci (la première de chacun) :
+    /// l'hôte écrit « Exception dans OnShortcutAsync (raccourci « id ») : » puis l'exception. Le début de l'exception suffit, sans la pile.
+    /// </summary>
+    private static Dictionary<string, string> ExceptionsByShortcut(IEnumerable<string> lines)
     {
-        var start = line.IndexOf(':', line.IndexOf(ExceptionMarker, StringComparison.Ordinal));
-        var text = start < 0 ? line : line[(start + 1)..].Trim();
-        var end = text.IndexOfAny(['\r', '\n']);
-        return end < 0 ? text : text[..end];
+        var thrown = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var line in lines)
+        {
+            if (ExceptionLine().Match(line) is { Success: true } match)
+            {
+                thrown.TryAdd(match.Groups["id"].Value, match.Groups["detail"].Value.Trim());
+            }
+        }
+
+        return thrown;
     }
+
+    [GeneratedRegex(@"Exception dans OnShortcutAsync \(raccourci « (?<id>[^»]+?) »\) : (?<detail>[^\r\n]*)", RegexOptions.CultureInvariant)]
+    private static partial Regex ExceptionLine();
 }

@@ -122,20 +122,23 @@ Le schéma des exemples tient en trois idées :
 *Le module « Dépôt GitHub » : `examples/GitHubRepo/GitHubRepo/GitHubRepoModule.cs`.*
 
 ```csharp
-    private void Refresh()
+    private bool Refresh()
     {
         try
         {
             if (!_closed && _refresh.IsCompleted)
             {
-                Interlocked.Exchange(ref _lastRefreshTicks, Services.Time.GetUtcNow().UtcTicks);
+                Volatile.Write(ref _requestsInThisRefresh, 0);
                 _refresh = RefreshAsync(_stop.Token);
+                return true;
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Services.Log.Warning("Actualisation ignorée : " + ex.Message);
         }
+
+        return false;
     }
 ```
 

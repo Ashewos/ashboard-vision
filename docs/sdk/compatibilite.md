@@ -25,9 +25,10 @@ Aujourd'hui, le logiciel parle le **SDK 1.1** et n'accepte que la **version maje
 
 | Ton module demande | Le logiciel parle | Résultat |
 |---|---|---|
+| `1.0` | `1.0` | Il tourne. |
 | `1.0` | `1.1` | Il tourne : le logiciel sait tout ce que la 1.0 savait. |
-| `1.1` (il déclare des raccourcis) | `1.0` | Refusé : il demande plus que ce que ce logiciel plus ancien sait faire. |
 | `1.0` | `1.5` | Il tourne : le logiciel sait faire tout ce que la 1.0 savait. |
+| `1.1` (il déclare des raccourcis) | `1.0` | Refusé : il demande plus que ce que ce logiciel plus ancien sait faire. |
 | `1.2` | `1.5` | Il tourne. |
 | `1.3` | `1.0` | Refusé : « Ce module demande une version plus récente d'Ashboard Vision… ». L'utilisateur met le logiciel à jour. |
 | `2.0` | `1.x` | Refusé de la même façon. |

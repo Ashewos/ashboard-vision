@@ -287,7 +287,7 @@ internal sealed class InstanceRenderer : IAsyncDisposable
                 {
                     if (!ModuleGuard.CrashIfFatal(ex))
                     {
-                        _log.Error($"Exception dans OnShortcutAsync : {ex}");
+                        _log.Error($"Exception dans OnShortcutAsync (raccourci « {shortcutId} ») : {ex}");
                     }
                 }
 

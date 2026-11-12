@@ -81,6 +81,7 @@ public sealed class ShortcutDeliveryTests
 
         var error = await rig.WaitAsync<Log>(log => log.Level == "error" && log.Message.Contains("OnShortcutAsync", StringComparison.Ordinal));
         Assert.Contains("boom du raccourci", error.Message);
+        Assert.Contains("raccourci « boom »", error.Message); // le banc d'essai y lit à quel raccourci l'exception revient
         Assert.False(rig.Process.HasExited);
 
         // Le raccourci suivant est livré normalement, et la case n'est pas mise en erreur pour autant.

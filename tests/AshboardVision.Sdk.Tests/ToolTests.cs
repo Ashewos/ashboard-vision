@@ -135,6 +135,23 @@ public sealed class ToolTests(PackedTool packed) : IDisposable
     }
 
     [WindowsToolFact]
+    public void Check_ShortcutThatThrows_NotLast_IsBlamedOnIt()
+    {
+        // Le raccourci qui plante est suivi de deux autres : l'exception est rapportée au journal avec l'identifiant de « boom », pas à un voisin.
+        var module = NewModule(
+            sdk: "1.1",
+            shortcuts: """[ { "id": "first", "name": "Premier" }, { "id": "boom", "name": "Plante" }, { "id": "last", "name": "Dernier" } ]""");
+
+        var run = packed.Run("check", module.Folder, "--out", NewFolder(), "--mesure", "2");
+
+        Assert.True(run.ExitCode == 1, run.Output);
+        Assert.Contains("✖ Raccourci « boom » : le module lève une exception dans OnShortcutAsync", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Pas compatible : le module lève une exception quand le raccourci « boom » est déclenché.", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("✖ Raccourci « first »", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("✖ Raccourci « last »", run.Output, StringComparison.Ordinal);
+    }
+
+    [WindowsToolFact]
     public void Check_ModuleCrashingWithoutPermission_IsNotCompatible()
     {
         var module = NewModule(

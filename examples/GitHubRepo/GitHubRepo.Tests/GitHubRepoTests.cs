@@ -249,6 +249,19 @@ public sealed class GitHubRepoTests
         await WaitUntilAsync(() => github.Requests.Count == 4);
     }
 
+    /// <summary>Un GitHub dont chaque actualisation coûte 6 requêtes : le dépôt, puis 5 pages de versions toutes pleines.</summary>
+    private static FakeGitHubHandler SixRequestsPerRefresh() => FakeGitHubHandler.Answering(request =>
+        request.RequestUri!.AbsolutePath.EndsWith("/releases", StringComparison.Ordinal)
+            ? FakeGitHubHandler.Json(HttpStatusCode.OK, FakeGitHubHandler.ReleasePage(100, "v"))
+            : FakeGitHubHandler.Json(HttpStatusCode.OK, FakeGitHubHandler.Repository));
+
+    /// <summary>Appuie sur « Rafraîchir », puis laisse à l'actualisation lancée le temps de se ranger (le module n'en fait jamais deux à la fois).</summary>
+    private static async Task PressRefreshAsync(ModuleTestHost<TestableGitHubRepoModule> host)
+    {
+        await host.TriggerShortcutAsync("refresh");
+        await Task.Delay(100);
+    }
+
     [Fact]
     public async Task GitHubRepo_RefreshShortcut_FetchesAgain()
     {
@@ -258,28 +271,94 @@ public sealed class GitHubRepoTests
         await WaitUntilAsync(() => github.Requests.Count == 2);
         await Task.Delay(100); // la première actualisation a fini de se ranger
 
-        // Cinq minutes après la dernière actualisation (la minuterie, elle, ne part qu'à dix) : le raccourci en lance une autre.
-        host.Time.Advance(TimeSpan.FromMinutes(5));
+        // La minuterie, elle, ne part qu'à dix minutes, et le premier appui n'a pas à attendre : il actualise tout de suite.
         await host.TriggerShortcutAsync("refresh");
 
         await WaitUntilAsync(() => github.Requests.Count == 4);
     }
 
     [Fact]
-    public async Task GitHubRepo_RefreshShortcutPressedTooSoon_IsIgnored()
+    public async Task GitHubRepo_RefreshShortcut_IsAcceptedAfterOneMinuteAndIgnoredBefore()
     {
-        // GitHub ne laisse que 60 requêtes par heure sans jeton : un raccourci tenu enfoncé ou répété ne doit pas les épuiser.
         var github = FakeGitHubHandler.Working();
         await using var host = Host(github, Repo());
         await host.StartAsync();
         await WaitUntilAsync(() => github.Requests.Count == 2);
         await Task.Delay(100);
+        await PressRefreshAsync(host);
+        await WaitUntilAsync(() => github.Requests.Count == 4);
 
-        host.Time.Advance(TimeSpan.FromMinutes(4));
-        await host.TriggerShortcutAsync("refresh");
+        host.Time.Advance(TimeSpan.FromSeconds(30));
+        await PressRefreshAsync(host);
+        Assert.Equal(4, github.Requests.Count); // trop tôt : ignoré
+
+        host.Time.Advance(TimeSpan.FromSeconds(30)); // une minute depuis le dernier appui accepté
+        await PressRefreshAsync(host);
+        await WaitUntilAsync(() => github.Requests.Count == 6);
+    }
+
+    [Fact]
+    public async Task GitHubRepo_RefreshShortcut_IsAcceptedAtOnceAfterAnAttemptWithoutAnswer()
+    {
+        // Après une panne réseau, l'utilisateur qui réessaie ne doit pas buter sur la minute d'attente.
+        var github = FakeGitHubHandler.Unreachable();
+        await using var host = Host(github, Repo());
+        await host.StartAsync();
+        await WaitUntilAsync(() => github.Requests.Count == 1);
         await Task.Delay(100);
 
+        await PressRefreshAsync(host); // le premier appui
+        await WaitUntilAsync(() => github.Requests.Count == 2);
+        await PressRefreshAsync(host); // aussitôt après un échec sans réponse : accepté
+        await WaitUntilAsync(() => github.Requests.Count == 3);
+
+        // GitHub revient : cet appui est accepté (la dernière tentative a échoué), les suivants attendent la minute.
+        github.Respond = FakeGitHubHandler.Working().Respond;
+        await PressRefreshAsync(host);
+        await WaitUntilAsync(() => github.Requests.Count == 5);
+        await PressRefreshAsync(host);
+        Assert.Equal(5, github.Requests.Count);
+    }
+
+    [Fact]
+    public async Task GitHubRepo_RefreshShortcut_AfterAnAnswerFromGitHubStillWaitsAMinute()
+    {
+        // Un refus de GitHub (ici 403) est une réponse : réessayer tout de suite ne servirait qu'à dépenser des requêtes.
+        var github = FakeGitHubHandler.Failing(HttpStatusCode.Forbidden);
+        await using var host = Host(github, Repo());
+        await host.StartAsync();
+        await WaitUntilAsync(() => github.Requests.Count == 1);
+        await Task.Delay(100);
+        await PressRefreshAsync(host);
+        await WaitUntilAsync(() => github.Requests.Count == 2);
+
+        await PressRefreshAsync(host);
+
         Assert.Equal(2, github.Requests.Count);
+    }
+
+    [Fact]
+    public async Task GitHubRepo_RefreshShortcut_IsRefusedWhenTheHourBudgetIsSpent()
+    {
+        // 6 requêtes par actualisation : le départ en compte 6, puis un appui par minute en ajoute 6 à chaque fois, soit 48 en 8 actualisations.
+        // Une neuvième en ferait 54, au-delà des 50 requêtes par heure que le module s'accorde : l'appui est ignoré.
+        var github = SixRequestsPerRefresh();
+        await using var host = Host(github, Repo());
+        await host.StartAsync();
+        await WaitUntilAsync(() => github.Requests.Count == 6);
+        await Task.Delay(100);
+        for (var refresh = 2; refresh <= 8; refresh++)
+        {
+            host.Time.Advance(TimeSpan.FromMinutes(1));
+            await PressRefreshAsync(host);
+            await WaitUntilAsync(() => github.Requests.Count == refresh * 6);
+            await Task.Delay(100);
+        }
+
+        host.Time.Advance(TimeSpan.FromMinutes(1));
+        await PressRefreshAsync(host);
+
+        Assert.Equal(48, github.Requests.Count);
     }
 
     [Fact]
