@@ -8,6 +8,7 @@ namespace Demo;
 /// <summary>
 /// Un module sans réseau ni permission, qui s'anime : une rangée de cases dont une s'allume et avance de 12 pas par seconde, aux couleurs et à
 /// la forme du thème (arrondie ou carrée). Il sert à essayer <see cref="IsAnimating"/>, le plafond d'images par seconde de l'écran et la consommation.
+/// Son raccourci « Changer de couleur » (<c>colour</c> dans le manifeste) montre comment un module reçoit un raccourci clavier.
 /// <para>
 /// Le module ne choisit pas la cadence : tant que <see cref="IsAnimating"/> est vrai, le logiciel redemande une image dès qu'il le peut, dans la
 /// limite du plafond. L'animation, elle, dépend de l'heure (<see cref="ModuleRenderContext.Now"/>), pas du nombre d'images dessinées : elle
@@ -19,7 +20,16 @@ public sealed class DemoModule : CommunityModule
     private const int StepsPerSecond = 12;
     private const int Cells = 12;
 
+    // Les couleurs de la tête, après l'accent du thème (le rang 0) : un raccourci passe à la suivante, en boucle.
+    private static readonly SKColor[] HeadColours =
+    [
+        new(0xFF, 0x8A, 0x3D), new(0x4C, 0xD9, 0x64), new(0xFF, 0x5C, 0xA8), new(0x5C, 0xC8, 0xFF),
+    ];
+
     private bool _animate = true;
+
+    // Le rang de la couleur de la tête : 0 pour l'accent du thème, 1 à 4 pour HeadColours. Écrit par OnShortcutAsync, lu par Render (autre thread).
+    private volatile int _colour;
 
     /// <summary>
     /// Vrai tant que le réglage « Animer » est coché. Décoché, le module n'est plus redessiné que lorsque le logiciel en a besoin
@@ -36,6 +46,21 @@ public sealed class DemoModule : CommunityModule
             && animate.ValueKind is JsonValueKind.True or JsonValueKind.False)
         {
             _animate = animate.GetBoolean();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Le logiciel appelle cette méthode quand l'utilisateur utilise le raccourci « Changer de couleur » : la tête passe à la couleur suivante,
+    /// et le module demande une image pour que le changement se voie même si l'animation est arrêtée. Un identifiant inconnu est ignoré.
+    /// </summary>
+    public override Task OnShortcutAsync(string shortcutId, CancellationToken ct)
+    {
+        if (shortcutId == "colour")
+        {
+            _colour = (_colour + 1) % (HeadColours.Length + 1);
+            Invalidate();
         }
 
         return Task.CompletedTask;
@@ -70,13 +95,14 @@ public sealed class DemoModule : CommunityModule
         var top = track.MidY - cellHeight / 2f;
         var radius = theme.Shape == ThemeShape.Pixel ? 0f : cellWidth * 0.3f;
 
-        // La tête a la couleur d'accent du thème, suivie d'une traînée qui s'éteint ; les autres cases ont la couleur de piste.
+        // La tête a la couleur d'accent du thème (ou celle que le raccourci a choisie), suivie d'une traînée qui s'éteint ; les autres cases ont la couleur de piste.
+        var headColour = _colour == 0 ? theme.Accent : HeadColours[_colour - 1];
         byte[] trail = [255, 150, 80, 40];
         using var paint = new SKPaint { IsAntialias = true };
         for (var cell = 0; cell < Cells; cell++)
         {
             var behind = (head - cell + Cells) % Cells;
-            paint.Color = behind < trail.Length ? theme.Accent.WithAlpha(trail[behind]) : theme.Track;
+            paint.Color = behind < trail.Length ? headColour.WithAlpha(trail[behind]) : theme.Track;
             var left = track.Left + cell * (cellWidth + gap);
             canvas.DrawRoundRect(new SKRect(left, top, left + cellWidth, top + cellHeight), radius, radius, paint);
         }

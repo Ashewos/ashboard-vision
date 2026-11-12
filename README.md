@@ -29,12 +29,13 @@
 
 ## Ce que fait Ashboard Vision
 
-Ashboard Vision fait du Thermalright Trofeo Vision 9,16" (1920 × 462) un tableau de bord pour ton PC, sous Windows. Tu poses des modules sur un damier de 16 × 4 cases : l'heure et la météo, l'état du PC, le morceau en cours, le réseau, tes sessions Claude Code ou Codex. Tu choisis ceux que tu gardes, leur taille et leur place, puis le thème et le fond d'écran.
+Ashboard Vision fait du Thermalright Trofeo Vision 9,16" (1920 × 462) un tableau de bord pour ton PC, sous Windows. Tu poses des modules sur un damier de 16 × 4 cases : l'heure et la météo, l'état du PC, le morceau en cours, le réseau, tes sessions Claude Code ou Codex. Tu choisis ceux que tu gardes, leur taille et leur place, puis le thème et le fond d'écran. Tu peux aussi préparer plusieurs **vues** (neuf au plus), comme des bureaux virtuels, et passer de l'une à l'autre au clavier.
 
 - Le logiciel parle directement à l'écran, sans TRCC (le logiciel de Thermalright) et sans pilote à installer.
 - Il reprend tout seul quand tu débranches l'écran, quand le PC se met en veille ou quand un autre programme fige l'écran.
 - Une icône dans la zone de notification donne l'état de l'écran. Un double-clic ouvre les réglages : disposition, thèmes, modules, raccourcis clavier, mises à jour.
-- Des raccourcis clavier globaux changent d'onglet dans les modules Claude Code et Codex : `Ctrl+Alt+←` et `Ctrl+Alt+→`, ou `Ctrl+Alt+Maj+1` à `9` (voir [les raccourcis](docs/utilisation-avancee.md#raccourcis-clavier)).
+- Plusieurs **vues** : chacune a sa propre disposition, que tu prépares dans l'onglet Disposition de la fenêtre de réglage (un onglet par vue, et « + Nouvelle vue »). Seule la vue affichée est dessinée ; les modules des autres continuent de récupérer leurs données, donc tout est à jour quand tu y reviens. Tu peux aussi donner un nom à chaque case pour t'y retrouver quand un même module est posé plusieurs fois.
+- Des raccourcis clavier globaux, actifs même quand une autre application a le focus : `Ctrl+Alt+←` et `Ctrl+Alt+→` changent de vue, `Ctrl+Alt+↑` et `Ctrl+Alt+↓` changent d'onglet dans les modules Claude Code et Codex, et `Ctrl+Alt+Maj+1` à `9` vont directement à l'onglet 1 à 9 (voir [les raccourcis](docs/utilisation-avancee.md#raccourcis-clavier)). Tu peux les changer dans l'onglet Raccourcis.
 - Il reste discret : de l'ordre de 0,3 à 0,4 % du processeur et 40 à 50 Mo de mémoire, sans fond vidéo.
 - Trois thèmes (Classique, Liquid Glass, Pixel), la transparence des modules, la police, et un fond en couleur, en image, en GIF ou en vidéo.
 
@@ -65,6 +66,7 @@ Les six modules ci-dessus sont dans le logiciel. Tu peux en ajouter d'autres, **
 
 - Chaque module tourne dans **son propre processus, enfermé par Windows**. S'il plante, l'écran et les autres modules continuent.
 - Il n'a **que les permissions que tu lui accordes**, une par une : réseau local, Internet, un service de ce PC, capteurs, musique en cours.
+- Il peut te proposer des **raccourcis clavier** pour ses actions (par exemple « Rafraîchir »). Ils te sont montrés à l'installation, cochés quand la touche est libre et décochés quand elle est déjà prise, puis tu les retrouves dans l'onglet Raccourcis. Un module ne voit jamais ce que tu tapes : le logiciel lui dit seulement qu'un raccourci a été utilisé, et seulement quand le module est dans la vue affichée.
 - Un **point d'exclamation jaune** le signale partout dans la fenêtre de réglage. Sur l'écran, rien ne le distingue d'un module d'origine.
 - Le logiciel vérifie à chaque lancement qu'un module n'a pas changé depuis que tu l'as validé. Les mises à jour te sont **proposées, jamais installées en silence**.
 - Sans module complémentaire, rien ne tourne en plus : le logiciel reste aussi discret qu'avant.

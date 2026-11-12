@@ -112,7 +112,7 @@ dotnet test
 }
 ```
 
-Dans ce fichier, `id` et `author` prennent les valeurs que tu as données à la commande. Tous les champs sont expliqués dans [le contrat](contrat.md#le-manifeste).
+Dans ce fichier, `id` et `author` prennent les valeurs que tu as données à la commande. Tous les champs sont expliqués dans [le contrat](contrat.md#le-manifeste). Le modèle demande `"sdk": "1.0"` : n'y touche que si tu utilises ce que le SDK 1.1 ajoute (les [raccourcis](raccourcis.md)).
 
 ### Le projet
 
@@ -192,3 +192,4 @@ Le **mode développeur** charge un module depuis son dossier de travail, sans fa
 - Comprendre ce que tu viens de lancer : [le contrat](contrat.md).
 - Lire les trois exemples du dépôt : [`examples`](../../examples).
 - Ajouter des réglages : [les réglages](reglages.md).
+- Proposer des actions au clavier : [les raccourcis](raccourcis.md).

@@ -250,6 +250,53 @@ public sealed class GitHubRepoTests
     }
 
     [Fact]
+    public async Task GitHubRepo_RefreshShortcut_FetchesAgain()
+    {
+        var github = FakeGitHubHandler.Working();
+        await using var host = Host(github, Repo());
+        await host.StartAsync();
+        await WaitUntilAsync(() => github.Requests.Count == 2);
+        await Task.Delay(100); // la première actualisation a fini de se ranger
+
+        // Cinq minutes après la dernière actualisation (la minuterie, elle, ne part qu'à dix) : le raccourci en lance une autre.
+        host.Time.Advance(TimeSpan.FromMinutes(5));
+        await host.TriggerShortcutAsync("refresh");
+
+        await WaitUntilAsync(() => github.Requests.Count == 4);
+    }
+
+    [Fact]
+    public async Task GitHubRepo_RefreshShortcutPressedTooSoon_IsIgnored()
+    {
+        // GitHub ne laisse que 60 requêtes par heure sans jeton : un raccourci tenu enfoncé ou répété ne doit pas les épuiser.
+        var github = FakeGitHubHandler.Working();
+        await using var host = Host(github, Repo());
+        await host.StartAsync();
+        await WaitUntilAsync(() => github.Requests.Count == 2);
+        await Task.Delay(100);
+
+        host.Time.Advance(TimeSpan.FromMinutes(4));
+        await host.TriggerShortcutAsync("refresh");
+        await Task.Delay(100);
+
+        Assert.Equal(2, github.Requests.Count);
+    }
+
+    [Fact]
+    public async Task GitHubRepo_RefreshShortcutNotConfigured_DoesNothing()
+    {
+        var github = FakeGitHubHandler.Working();
+        await using var host = Host(github, Settings("{}"));
+        await host.StartAsync();
+
+        await host.TriggerShortcutAsync("refresh");
+        await Task.Delay(100);
+
+        Assert.Empty(github.Requests);
+        Assert.Equal(ModuleHealth.NotConfigured, host.Health);
+    }
+
+    [Fact]
     public async Task GitHub_MoreThanOnePageOfReleases_ReadsEveryPage()
     {
         // 100 versions sur la première page : il y en a peut-être d'autres, le module demande la page suivante (2 versions), qui n'est pas pleine : fin.

@@ -9,7 +9,7 @@ Les réglages de l'utilisateur sont dans `%AppData%\ashboard-vision` : `layout.j
 La fenêtre de réglage fait tout ce qui suit. Cette section sert à ceux qui préfèrent le fichier `layout.json`, service arrêté :
 
 - **Météo** : dans les réglages du module Heure, `"location":{"name":"Lyon","latitude":45.76,"longitude":4.84}`, avec les coordonnées données par `--city`.
-- **Codex à la place de Claude Code** : dans `Placements`, supprime l'objet dont `TypeId` vaut `"claudecode"` et ajoute celui-ci (sépare-le des autres objets par une virgule ; `InstanceId` est un GUID quelconque, par exemple celui que donne `[guid]::NewGuid()` dans PowerShell). Sans cette suppression, les deux modules se chevauchent et le service retombe sur la disposition par défaut, en gardant une copie `layout.json.bad`.
+- **Codex à la place de Claude Code** : dans `Placements` de la vue concernée (la liste `Views`), supprime l'objet dont `TypeId` vaut `"claudecode"` et ajoute celui-ci (sépare-le des autres objets par une virgule ; `InstanceId` est un GUID quelconque, par exemple celui que donne `[guid]::NewGuid()` dans PowerShell). Sans cette suppression, les deux modules se chevauchent et le service retombe sur la disposition par défaut, en gardant une copie `layout.json.bad`.
 
   ```json
   {
@@ -61,10 +61,13 @@ La fenêtre de réglage fait tout ce qui suit. Cette section sert à ceux qui pr
 
 ## Raccourcis clavier
 
-Des raccourcis globaux, actifs même quand une autre application a le focus, changent l'onglet affiché dans les modules Claude Code et Codex :
+Des raccourcis globaux, actifs même quand une autre application a le focus, changent la vue de l'écran et l'onglet affiché dans les modules Claude Code et Codex :
 
-- `Ctrl+Alt+←` et `Ctrl+Alt+→` : l'onglet précédent ou suivant ;
+- `Ctrl+Alt+←` et `Ctrl+Alt+→` : la vue précédente ou suivante (en boucle : après la dernière vue, la première) ;
+- `Ctrl+Alt+↑` et `Ctrl+Alt+↓` : l'onglet précédent ou suivant d'un module ;
 - `Ctrl+Alt+Maj+1` à `Ctrl+Alt+Maj+9` : aller directement à l'onglet 1 à 9.
+
+Un raccourci n'agit que sur la vue affichée. L'onglet Raccourcis propose aussi « Vue précédente », « Vue suivante » et « Vue n° 1 » à « Vue n° 9 » (ces neuf dernières sans touche au départ), et les actions que les modules complémentaires déclarent. Les raccourcis des versions d'avant les vues (`Ctrl+Alt+←` et `→` pour les onglets) passent sur `↑` et `↓` à la mise à jour, sauf ceux que tu avais changés toi-même.
 
 Maj est là exprès : sur un clavier AZERTY, `Ctrl+Alt+chiffre` est `AltGr+chiffre` et empêcherait de taper `~`, `#`, `{`, `[`, `|`, `` ` ``, `\` et `^`. Une combinaison déjà prise par une autre application est simplement laissée de côté, et notée dans le journal (`logs\display.log`). Tu peux changer les raccourcis, ou revenir à ceux-ci, dans l'onglet Raccourcis de la fenêtre de réglage.
 

@@ -93,6 +93,48 @@ public sealed class ToolTests(PackedTool packed) : IDisposable
     }
 
     [WindowsToolFact]
+    public void Check_DeliversEachDeclaredShortcut()
+    {
+        var module = NewModule(
+            sdk: "1.1",
+            shortcuts: """[ { "id": "refresh", "name": "Rafraîchir", "keys": "Ctrl+Alt+Shift+R" }, { "id": "colour", "name": "Changer de couleur" } ]""");
+
+        var run = packed.Run("check", module.Folder, "--out", NewFolder(), "--mesure", "2");
+
+        Assert.True(run.ExitCode == 0, run.Output);
+        Assert.Contains("✔ Raccourcis : 2 livrés au module (refresh, colour), sans erreur.", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Compatible avec Ashboard Vision (SDK 1.1).", run.Output, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(ContainerFolder(module.Id)), "Le conteneur d'essai n'a pas été supprimé.");
+    }
+
+    [WindowsToolFact]
+    public void Check_ModuleWithoutShortcuts_SaysNothingAboutThem()
+    {
+        var module = NewModule();
+
+        var run = packed.Run("check", module.Folder, "--out", NewFolder(), "--mesure", "2");
+
+        Assert.True(run.ExitCode == 0, run.Output);
+        Assert.DoesNotContain("Raccourci", run.Output, StringComparison.Ordinal);
+    }
+
+    [WindowsToolFact]
+    public void Check_ShortcutThatThrows_IsReportedAsAnError()
+    {
+        // Le module d'essai lève une exception quand on lui livre le raccourci « boom » : le logiciel la garde au journal sans mettre la case en
+        // erreur, mais le banc la compte contre le module, comme une exception de Render.
+        var module = NewModule(sdk: "1.1", shortcuts: """[ { "id": "ok", "name": "Tout va bien" }, { "id": "boom", "name": "Plante" } ]""");
+
+        var run = packed.Run("check", module.Folder, "--out", NewFolder(), "--mesure", "2");
+
+        Assert.True(run.ExitCode == 1, run.Output);
+        Assert.Contains("✖ Raccourci « boom » : le module lève une exception dans OnShortcutAsync", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Pas compatible : le module lève une exception quand le raccourci « boom » est déclenché.", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("✖ Raccourci « ok »", run.Output, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(ContainerFolder(module.Id)), "Le conteneur d'essai n'a pas été supprimé.");
+    }
+
+    [WindowsToolFact]
     public void Check_ModuleCrashingWithoutPermission_IsNotCompatible()
     {
         var module = NewModule(
@@ -304,7 +346,7 @@ public sealed class ToolTests(PackedTool packed) : IDisposable
     private sealed record NewModuleInfo(string Id, string Folder);
 
     /// <summary>Un module neuf : le module d'essai de l'hôte copié dans un dossier temporaire, avec un manifeste (et donc un identifiant) à lui.</summary>
-    private NewModuleInfo NewModule(string permissions = "", string settings = "[]", string sdk = "1.0", string? manifest = null)
+    private NewModuleInfo NewModule(string permissions = "", string settings = "[]", string sdk = "1.0", string? manifest = null, string shortcuts = "[]")
     {
         var id = "test.tool" + Guid.NewGuid().ToString("N")[..10];
         _containers.Add(id);
@@ -317,7 +359,8 @@ public sealed class ToolTests(PackedTool packed) : IDisposable
               "permissions": [{{permissions}}],
               "minSize": { "columns": 2, "rows": 1 },
               "presets": { "compact": { "columns": 3, "rows": 1 }, "ideal": { "columns": 4, "rows": 2 } },
-              "settings": {{settings}}
+              "settings": {{settings}},
+              "shortcuts": {{shortcuts}}
             }
             """);
         return new NewModuleInfo(id, folder);

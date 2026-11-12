@@ -23,6 +23,13 @@ public class GitHubRepoModule : CommunityModule
     private static readonly TimeSpan RefreshEvery = TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// Le temps minimal entre le début de la dernière actualisation et celle que le raccourci « Rafraîchir » lance : un appui trop proche est
+    /// ignoré. Avec ces 5 minutes, le raccourci ajoute 12 actualisations par heure au plus, soit 24 requêtes de plus jusqu'à 99 versions, 36 en
+    /// tout avec la minuterie : on reste sous les 60 requêtes par heure que GitHub accorde sans jeton.
+    /// </summary>
+    private static readonly TimeSpan MinGapBetweenManualRefreshes = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// GitHub rend les versions par pages de 100. Au plus 5 pages (500 versions) : une actualisation coûte alors 6 requêtes au pire
     /// (36 par heure), sous la limite de 60 sans jeton. Un dépôt qui en a plus voit son total suivi de « 500+ versions ».
     /// </summary>
@@ -41,6 +48,9 @@ public class GitHubRepoModule : CommunityModule
     private volatile bool _closed;
     private volatile Task _refresh = Task.CompletedTask;
     private volatile RepoStats? _stats;
+
+    // Le début de la dernière actualisation lancée, en ticks UTC (Interlocked : la minuterie et le raccourci tournent sur des threads différents).
+    private long _lastRefreshTicks;
 
     /// <summary>
     /// Le client HTTP du module. C'est le point d'entrée des tests : une sous-classe du projet de tests (qui voit ce membre grâce à
@@ -74,6 +84,22 @@ public class GitHubRepoModule : CommunityModule
 
         Refresh();
         _timer = Services.Time.CreateTimer(_ => Refresh(), null, RefreshEvery, RefreshEvery);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Le logiciel appelle cette méthode quand l'utilisateur utilise le raccourci « Rafraîchir » (<c>refresh</c> dans le manifeste, sans touche
+    /// proposée : on lui en donne une dans l'onglet Raccourcis). L'actualisation est la même que celle de la minuterie, mais on la refuse si la
+    /// dernière date de moins de <see cref="MinGapBetweenManualRefreshes"/>, ou si le module n'a rien à actualiser (non configuré, Internet refusé).
+    /// </summary>
+    public override Task OnShortcutAsync(string shortcutId, CancellationToken ct)
+    {
+        var sinceLast = Services.Time.GetUtcNow().UtcTicks - Interlocked.Read(ref _lastRefreshTicks);
+        if (shortcutId == "refresh" && _http is not null && sinceLast >= MinGapBetweenManualRefreshes.Ticks)
+        {
+            Refresh();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -144,6 +170,7 @@ public class GitHubRepoModule : CommunityModule
         {
             if (!_closed && _refresh.IsCompleted)
             {
+                Interlocked.Exchange(ref _lastRefreshTicks, Services.Time.GetUtcNow().UtcTicks);
                 _refresh = RefreshAsync(_stop.Token);
             }
         }

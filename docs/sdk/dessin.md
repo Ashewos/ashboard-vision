@@ -58,13 +58,14 @@ Le module « Démo » suit la forme du thème : son rayon est nul en `Pixel`.
 *Le module « Démo » : `examples/Demo/Demo/DemoModule.cs`.*
 
 ```csharp
-        // La tête a la couleur d'accent du thème, suivie d'une traînée qui s'éteint ; les autres cases ont la couleur de piste.
+        // La tête a la couleur d'accent du thème (ou celle que le raccourci a choisie), suivie d'une traînée qui s'éteint ; les autres cases ont la couleur de piste.
+        var headColour = _colour == 0 ? theme.Accent : HeadColours[_colour - 1];
         byte[] trail = [255, 150, 80, 40];
         using var paint = new SKPaint { IsAntialias = true };
         for (var cell = 0; cell < Cells; cell++)
         {
             var behind = (head - cell + Cells) % Cells;
-            paint.Color = behind < trail.Length ? theme.Accent.WithAlpha(trail[behind]) : theme.Track;
+            paint.Color = behind < trail.Length ? headColour.WithAlpha(trail[behind]) : theme.Track;
             var left = track.Left + cell * (cellWidth + gap);
             canvas.DrawRoundRect(new SKRect(left, top, left + cellWidth, top + cellHeight), radius, radius, paint);
         }

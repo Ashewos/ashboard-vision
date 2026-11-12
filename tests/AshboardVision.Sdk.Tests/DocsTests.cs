@@ -24,8 +24,8 @@ public sealed partial class DocsTests
     /// <summary>Les pages que la documentation du SDK doit contenir.</summary>
     private static readonly string[] ExpectedPages =
     [
-        "README.md", "demarrer.md", "contrat.md", "permissions.md", "dessin.md", "reglages.md", "tests.md", "publier.md", "compatibilite.md",
-        "securite.md",
+        "README.md", "demarrer.md", "contrat.md", "permissions.md", "dessin.md", "reglages.md", "raccourcis.md", "tests.md", "publier.md",
+        "compatibilite.md", "securite.md",
     ];
 
     [GeneratedRegex(@"\[[^\]]*\]\(([^)\s]+)(?:\s+""[^""]*"")?\)")]
