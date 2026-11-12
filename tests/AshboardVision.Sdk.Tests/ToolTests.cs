@@ -69,7 +69,7 @@ public sealed class ToolTests(PackedTool packed) : IDisposable
         Assert.Contains("Processeur :", run.Output, StringComparison.Ordinal);
         Assert.Contains("Mémoire :", run.Output, StringComparison.Ordinal);
         Assert.Contains("✔ Arrêt propre", run.Output, StringComparison.Ordinal);
-        Assert.EndsWith("Compatible avec Ashboard Vision (SDK 1.0)." + Environment.NewLine, run.Output, StringComparison.Ordinal);
+        Assert.EndsWith("Compatible avec Ashboard Vision (SDK 1.1)." + Environment.NewLine, run.Output, StringComparison.Ordinal);
 
         // Une image par taille (minSize, compact, idéal) et par thème, de la taille que la case aurait sur l'écran, avec le dessin du module dedans.
         var files = Directory.GetFiles(output, "*.png").Select(Path.GetFileName).Order().ToArray();

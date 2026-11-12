@@ -142,7 +142,7 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
         Assert.Contains($"✔ Manifeste : {id} 1.0.0", check.Output, StringComparison.Ordinal);
         Assert.Contains("✔ Démarrage enfermé", check.Output, StringComparison.Ordinal);
         Assert.Contains("✔ Arrêt propre", check.Output, StringComparison.Ordinal);
-        Assert.EndsWith("Compatible avec Ashboard Vision (SDK 1.0)." + Environment.NewLine, check.Output, StringComparison.Ordinal);
+        Assert.EndsWith("Compatible avec Ashboard Vision (SDK 1.1)." + Environment.NewLine, check.Output, StringComparison.Ordinal);
 
         // Une image par taille (minSize et idéal : le préréglage compact est la taille minimale) et par thème, avec du dessin dedans.
         var images = Directory.GetFiles(paths.CheckOut, "*.png");

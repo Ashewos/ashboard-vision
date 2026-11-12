@@ -21,7 +21,7 @@ public enum CompatibilityKind
 public static class Compatibility
 {
     /// <summary>La version du SDK que parle ce logiciel.</summary>
-    public static SdkVersion Current { get; } = new(1, 0);
+    public static SdkVersion Current { get; } = new(1, 1);
 
     /// <summary>Les versions majeures que ce logiciel accepte encore.</summary>
     public static IReadOnlySet<int> SupportedMajors { get; } = new HashSet<int> { 1 };
