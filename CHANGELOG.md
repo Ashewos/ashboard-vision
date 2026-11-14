@@ -2,6 +2,44 @@
 
 Les versions sont numérotées selon [SemVer](https://semver.org/lang/fr/) : les bêtas s'écrivent `1.0.0-beta.N`, les stables `1.0.0`, `1.1.0`, etc. Le texte de chaque section sert de notes à la version GitHub du même numéro.
 
+## 1.2.0-beta.1
+
+Première bêta de la 1.2.0 : les **vues multiples**, des **noms de cases**, et des **raccourcis pour les modules complémentaires**.
+
+### Vues
+
+- Tu peux préparer jusqu'à **9 vues**, chacune avec ses propres cases. L'écran en affiche une à la fois.
+- `Ctrl+Alt+Gauche` et `Ctrl+Alt+Droite` passent à la vue précédente ou suivante, en boucle. Les actions « Vue n° 1 » à « Vue n° 9 » sont dans l'onglet Raccourcis, sans touche par défaut.
+- Le passage d'une vue à l'autre glisse, avec un léger flou de mouvement. Tu peux le couper dans **Personnalisation** : « Animer le passage entre les vues ».
+- Dans **Disposition**, les vues sont des onglets au-dessus de l'éditeur. Un point vert montre celle qui est sur l'écran. « + Nouvelle vue » en ajoute une. Le menu d'un onglet permet de la renommer, de la dupliquer ou de la supprimer, et tu réordonnes les onglets en les faisant glisser. Annuler et Rétablir marchent aussi sur les vues.
+- Cliquer sur l'onglet d'une vue fait passer l'écran sur elle. Décoche « L'écran suit la vue choisie » pour préparer une vue sans la montrer.
+- Seule la vue affichée est dessinée. Les modules des autres vues continuent de récupérer leurs données : en revenant sur une vue, tout est à jour. Avec une seule vue, rien ne change.
+- Au démarrage, l'écran reprend la dernière vue affichée.
+- Ta disposition actuelle devient la vue « Vue 1 ». L'étagère, les raccourcis et l'apparence sont communs à toutes les vues.
+
+### Raccourcis
+
+- Les onglets d'un module passent sur `Ctrl+Alt+Haut` et `Ctrl+Alt+Bas`. `Ctrl+Alt+Gauche` et `Ctrl+Alt+Droite` vont aux vues.
+- Si tu avais changé ces raccourcis toi-même, tes choix sont gardés. Les vues ne reçoivent Gauche et Droite que si ces touches sont libres.
+- Un raccourci n'agit que sur la vue affichée : les modules d'une vue cachée ne reçoivent rien.
+
+### Noms de cases
+
+- Chaque case peut recevoir un nom, dans son panneau de réglage (« Nom de la case »). Le nom s'affiche dans les listes de la fenêtre, par exemple quand un même module est placé deux fois. Il ne s'affiche pas sur l'écran.
+
+### Raccourcis des modules complémentaires
+
+- Un module complémentaire peut déclarer des actions, chacune avec une touche proposée. À l'installation, la fenêtre te montre les **raccourcis proposés**. Une touche libre arrive cochée. Une touche déjà prise arrive décochée, avec le nom de ce qui la tient, même quand c'est un autre logiciel de Windows.
+- Les raccourcis des modules complémentaires sont dans l'onglet **Raccourcis**, avec le point d'exclamation jaune. Tu peux en ajouter, en retirer, ou viser une case précise par son nom.
+- Un module ne voit jamais ton clavier : c'est le service qui écoute les touches et qui transmet l'action, au plus 5 fois par seconde.
+- Désinstaller un module retire ses raccourcis.
+
+### SDK 1.1.0
+
+- `CommunityModule.OnShortcutAsync` reçoit les actions déclarées dans le manifeste (`"shortcuts"`). Les aides de test permettent de les déclencher, et `ashboard-module check` vérifie qu'aucune ne fait planter le module.
+- Un module construit avec le SDK 1.0.0 tourne sans rien changer.
+- Nouvelle page de documentation : `docs/sdk/raccourcis.md`. L'exemple Démo reçoit « Changer de couleur » (`Ctrl+Alt+Maj+D`), et Dépôt GitHub reçoit « Rafraîchir », sans touche par défaut.
+
 ## 1.1.0
 
 La 1.1.0 apporte les **modules complémentaires**, créés par la communauté, et le **SDK** pour en écrire. Elle reprend la `1.1.0-beta.1`, essayée sur l'écran.
