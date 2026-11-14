@@ -537,7 +537,7 @@ function Install-Sdk {
 # Pour les tests : lance un processus qui dure (ping, une dizaine de secondes) comme Install-Sdk lance le setup, écrit une ligne et se termine SANS l'attendre. Si le processus
 # n'hérite pas du tube de sortie de ce script, le lecteur de ce tube (Inno Setup, ici le test) voit la fin du flux tout de suite ; sinon il attend la fin du processus.
 function Start-InheritanceProbe {
-    $info = New-Object System.Diagnostics.ProcessStartInfo((Join-Path $env:SystemRoot 'System32\ping.exe'), '-n 9 127.0.0.1')
+    $info = New-Object System.Diagnostics.ProcessStartInfo((Join-Path $env:SystemRoot 'System32\ping.exe'), '-n 21 127.0.0.1')
     $null = Start-DrainedProcess $info (-not $Unprotected)
     Write-ProgressLine '1/1'
 }
