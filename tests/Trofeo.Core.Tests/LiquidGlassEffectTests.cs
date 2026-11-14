@@ -185,14 +185,15 @@ public class LiquidGlassEffectTests
         Assert.Equal(120, glass.Height);
         Assert.Equal(0, glass.GetPixel(0, 0).Alpha);
         Assert.Equal(0, glass.GetPixel(199, 119).Alpha);
-        Assert.InRange(glass.GetPixel(100, 60).Alpha, 127, 128);
+        // L'alpha vaut (masque × opacité)², comme sur le canevas non prémultiplié de la démo : 255 × 0,5².
+        Assert.InRange(glass.GetPixel(100, 60).Alpha, 63, 65);
 
-        // Sur la diagonale du coin (rayon 30), l'alpha passe de 0 à 128 par au moins une valeur intermédiaire.
+        // Sur la diagonale du coin (rayon 30), l'alpha passe de 0 à 64 par au moins une valeur intermédiaire.
         var partial = 0;
         for (var i = 0; i < 30; i++)
         {
             var alpha = glass.GetPixel(i, i).Alpha;
-            if (alpha is > 8 and < 120) partial++;
+            if (alpha is > 3 and < 58) partial++;
         }
         Assert.True(partial >= 1, "pas de pixel à demi couvert sur la courbe du coin");
     }
@@ -212,6 +213,31 @@ public class LiquidGlassEffectTests
             var alpha = bytes[i + 3];
             Assert.True(bytes[i] <= alpha && bytes[i + 1] <= alpha && bytes[i + 2] <= alpha, $"couleur au-dessus de l'alpha, octet {i}");
         }
+    }
+
+    [Fact]
+    public void Edge_FollowsTheDemoCanvas_ColorTimesAlphaCubed()
+    {
+        // Ligne 0 : sdf = −0,5, donc masque = 0,5. Sur du blanc, la démo montre la couleur c·a à l'alpha a² :
+        // en prémultiplié, alpha = 0,25 (64) et couleur = a³ = 0,125 (32).
+        using var scene = Solid(SKColors.White);
+        using var effect = new LiquidGlassEffect();
+        using var image = effect.RenderGlass(scene, scene, SKPoint.Empty, Shape, Neutral);
+        using var bitmap = SKBitmap.FromImage(image);
+        var bytes = bitmap.GetPixelSpan();
+        var edge = 100 * 4;
+        Assert.InRange(bytes[edge + 3], 62, 66);
+        Assert.InRange(bytes[edge], 30, 34);
+        Assert.InRange(bytes[edge + 1], 30, 34);
+        Assert.InRange(bytes[edge + 2], 30, 34);
+
+        // Avec une opacité de 0,5 au centre : alpha 0,25, couleur 1 × 0,5³.
+        using var half = effect.RenderGlass(scene, scene, SKPoint.Empty, Shape, Neutral with { Opacity = 0.5f });
+        using var halfBitmap = SKBitmap.FromImage(half);
+        var center = (60 * 200 + 100) * 4;
+        var halfBytes = halfBitmap.GetPixelSpan();
+        Assert.InRange(halfBytes[center + 3], 62, 66);
+        Assert.InRange(halfBytes[center], 30, 34);
     }
 
     [Fact]
@@ -324,8 +350,10 @@ public class LiquidGlassEffectTests
                 for (var x = 0; x < glass.Width; x++)
                 {
                     var pixel = glass.GetPixel(x, y);
-                    // Sur du blanc, tout pixel couvert reste blanc ou presque : un NaN le rendrait noir ou vide.
-                    if (pixel.Alpha > 0) Assert.True(pixel.Red > 100, $"pixel sombre en ({x}, {y})");
+                    // Sur du blanc, un pixel d'alpha a² a pour couleur a (ou plus clair) : un NaN le rendrait noir ou vide.
+                    if (pixel.Alpha < 16) continue;
+                    var expected = 255f * MathF.Sqrt(pixel.Alpha / 255f);
+                    Assert.True(pixel.Red > expected * 0.8f - 12f, $"pixel sombre en ({x}, {y}) : {pixel.Red} pour un alpha de {pixel.Alpha}");
                 }
         }
     }
@@ -381,6 +409,24 @@ public class LiquidGlassEffectTests
             Assert.True(shadow.GetPixel(0, y).Alpha <= 1);
             Assert.True(shadow.GetPixel(shadow.Width - 1, y).Alpha <= 1);
         }
+    }
+
+    [Fact]
+    public void Shadow_AlphaIsSquared_LikeTheDemoCanvas()
+    {
+        // Au contact (d = 0), FS_GLASS sort (0,65 + 0,35) × opacité = 0,3 : la démo en montre le carré, 0,09 (23 sur 255).
+        var settings = new GlassSettings() with { ShadowOpacity = 0.3f, ShadowSpread = 10f, ShadowOffsetY = 0f };
+        using var effect = new LiquidGlassEffect();
+        using var image = effect.RenderShadow(Shape, settings, out var area);
+        Assert.NotNull(image);
+        using var shadow = SKBitmap.FromImage(image);
+
+        var contact = shadow.GetPixel((int)(400 - area.Left), (int)(220 - area.Top));
+        Assert.InRange(contact.Alpha, 21, 25);
+
+        // À 10,5 px du bord (d = 9,5) : (0,65 × e^−0,9025 + 0,35 × e^−1,9) × 0,3 = 0,0948, au carré 0,0090 (2 sur 255).
+        var far = shadow.GetPixel((int)(400 - area.Left), (int)(230 - area.Top));
+        Assert.InRange(far.Alpha, 1, 4);
     }
 
     [Fact]

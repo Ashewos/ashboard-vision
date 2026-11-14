@@ -48,7 +48,9 @@ internal sealed class LiquidGlassEffect : IDisposable
     /// Rend le verre de <paramref name="shape"/> (en coordonnées d'écran). <paramref name="sharp"/> et
     /// <paramref name="blurred"/> sont la même scène, nette et floutée, de même taille, dont le coin haut gauche est en
     /// <paramref name="imageOrigin"/> à l'écran. Le résultat a la taille de <paramref name="shape"/> arrondie au pixel
-    /// supérieur et se pose en <c>shape.Location</c> ; il est en alpha prémultiplié, et son alpha vaut masque × opacité.
+    /// supérieur et se pose en <c>shape.Location</c> ; il est en alpha prémultiplié, et son alpha vaut (masque × opacité)².
+    /// Le carré reproduit ce que montre la démo de liquidglass, dont le canevas n'est pas prémultiplié : une sortie
+    /// (c, a) de <c>FS_GLASS</c> s'y voit comme la couleur c·a à l'alpha a².
     /// </summary>
     public SKImage RenderGlass(SKImage sharp, SKImage blurred, SKPoint imageOrigin, SKRect shape, GlassSettings s)
     {
@@ -90,6 +92,7 @@ internal sealed class LiquidGlassEffect : IDisposable
     /// <summary>
     /// Rend l'ombre de <paramref name="shape"/> : une image noire translucide qui couvre <paramref name="area"/> (la forme
     /// élargie de <see cref="ShadowMargin"/>, calée sur les pixels), vide à l'intérieur du rectangle arrondi.
+    /// Son alpha est le carré de celui de <c>FS_GLASS</c>, comme à l'écran dans la démo (canevas non prémultiplié).
     /// Rend <c>null</c> quand l'opacité de l'ombre est nulle.
     /// </summary>
     public SKImage? RenderShadow(SKRect shape, GlassSettings s, out SKRect area)

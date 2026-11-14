@@ -17,6 +17,10 @@
 //   - Le masque 1 − smoothstep(−1,5 ; 0,5 ; sdf) va jusqu'à 0,5 px hors de la forme (l'original le coupait à sdf > 0
 //     pour y dessiner l'ombre) : le bord du verre reste lissé, même sans ombre dessous.
 //   - La sortie est en alpha prémultiplié (Skia), bornée à [0 ; 1] comme le faisait le tampon d'image de WebGL.
+//   - L'alpha suit ce que montre la démo. Son canevas WebGL n'est pas prémultiplié (premultipliedAlpha: false) et le
+//     programme y est dessiné en (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) sur du vide : pour une sortie (c, a), le canevas
+//     garde (c·a, a²), lu comme une couleur c·a à l'alpha a². Le verre rend donc (c·a³, a²) en prémultiplié, avec
+//     a = masque × opacité, et l'ombre a pour alpha le carré de celui de FS_GLASS.
 //   - Gardes contre les divisions par zéro et les NaN pour les formes minuscules (elles ne changent rien dès que la
 //     forme fait plus de quelques pixels).
 //
@@ -197,9 +201,11 @@ half4 main(vec2 fragCoord) {
 	fin += vec3(envRefl);
 	fin = mix(fin, vec3(1.0), fres * 0.2);
 
-	// WebGL bornait la couleur en l'écrivant ; Skia attend en plus un alpha prémultiplié.
-	float alpha = clamp(mask * u_alpha, 0.0, 1.0);
-	return half4(half3(clamp(fin, 0.0, 1.0) * alpha), half(alpha));
+	// WebGL bornait la couleur en l'écrivant. Le canevas non prémultiplié de la démo montre la couleur fin × a à
+	// l'alpha a² (voir l'en-tête) : en prémultiplié, (fin × a³, a²).
+	float a = clamp(mask * u_alpha, 0.0, 1.0);
+	float alpha = a * a;
+	return half4(half3(clamp(fin, 0.0, 1.0) * a * alpha), half(alpha));
 }
 
 //#section shadow
@@ -226,7 +232,8 @@ half4 main(vec2 fragCoord) {
 		float outerShadow = exp(-d * d * falloff) * 0.65;
 		float contactShadow = exp(-d * 0.08 / max(spread * 0.04, 0.01)) * 0.35;
 		float shadow = clamp((outerShadow + contactShadow) * u_shadowAlpha, 0.0, 1.0);
-		return half4(0.0, 0.0, 0.0, half(shadow));
+		// Le canevas non prémultiplié de la démo montre l'ombre au carré (voir l'en-tête).
+		return half4(0.0, 0.0, 0.0, half(shadow * shadow));
 	}
 	return half4(0.0);
 }
