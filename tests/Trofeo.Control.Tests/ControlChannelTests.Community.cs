@@ -180,15 +180,15 @@ public partial class ControlChannelTests
     }
 
     [Fact]
-    public async Task Hello_OldWindowProtocol2_IsMismatch()
+    public async Task Hello_ServiceOfProtocol3_IsMismatch()
     {
         var name = NewPipeName();
-        var handler = new FakeHandler { WelcomeToReturn = SampleWelcome() with { ProtocolVersion = 2 } };
+        var handler = new FakeHandler { WelcomeToReturn = SampleWelcome() with { ProtocolVersion = 3 } };
         using var server = new ControlServer(name, handler);
         server.Start();
 
         var ex = await Assert.ThrowsAsync<ProtocolMismatchException>(() => ConnectAsync(name));
-        Assert.Contains("version 2", ex.Message);
+        Assert.Contains("version 4", ex.Message);
         Assert.Contains("version 3", ex.Message);
     }
 
@@ -305,6 +305,26 @@ public partial class ControlChannelTests
         Assert.Equal("Un autre module porte déjà cet identifiant", package.Conflict);
         Assert.Equal("1.2.0", package.InstalledVersion);
         Assert.Equal([@"inspectPackage C:\Téléchargements\alex.demo-1.3.0.avmod"], handler.Calls);
+    }
+
+    [Fact]
+    public async Task DeclaredShortcuts_RoundTrip_ForAPackageAndAnUpdatePreparation()
+    {
+        ModuleShortcutInfo[] shortcuts = [new("refresh", "Rafraîchir", "Ctrl+Alt+Shift+R"), new("open", "Ouvrir", null)];
+        var handler = new FakeHandler
+        {
+            PackageToReturn = new PackageInfo("alex.demo", "Démo", "Alex", "1.3.0", "Démo", [], [], null, null, shortcuts),
+            PreparationToReturn = new ModuleUpdatePreparation(true, null, "1.3.0", "Notes.", [], [], shortcuts),
+        };
+        var (server, client) = await StartAsync(handler);
+        using var _ = server;
+        await using var __ = client;
+
+        var package = await client.InspectPackageAsync("a.avmod", CancellationToken.None);
+        var preparation = await client.PrepareModuleUpdateAsync("alex.demo", CancellationToken.None);
+
+        Assert.Equal(shortcuts, package.Shortcuts);
+        Assert.Equal(shortcuts, preparation.Shortcuts);
     }
 
     [Fact]

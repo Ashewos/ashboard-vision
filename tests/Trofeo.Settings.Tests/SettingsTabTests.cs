@@ -476,7 +476,7 @@ public sealed class SettingsTabTests : IDisposable
         Assert.Equal("disposition.trofeo.json", _picker.SuggestedName);
         var imported = LayoutTransfer.Import(File.ReadAllText(target));
         Assert.NotNull(imported.Layout);
-        Assert.Equal(_document.Current.Placements.Count, imported.Layout!.Placements.Count);
+        Assert.Equal(_document.Current.Views[0].Placements.Count, imported.Layout!.Views[0].Placements.Count);
         Assert.Equal("Disposition exportée : ma-disposition.trofeo.json", tab.ShareMessage);
         Assert.False(tab.ShareMessageIsError);
     }
@@ -532,7 +532,7 @@ public sealed class SettingsTabTests : IDisposable
         Assert.Equal(before, File.ReadAllText(Path.Combine(_dir, "layout.json")));
         Assert.False(File.Exists(Path.Combine(_dir, "layout.json.avant-import")));
         Assert.Equal(0, _link.ReloadCount);
-        Assert.Equal(DashboardLayout.Default.Placements.Count, _document.Current.Placements.Count);
+        Assert.Equal(DashboardLayout.Default.Views[0].Placements.Count, _document.Current.Views[0].Placements.Count);
     }
 
     [Fact]
@@ -574,12 +574,10 @@ public sealed class SettingsTabTests : IDisposable
         Assert.Equal(0, _link.ReloadCount);
     }
 
-    private static DashboardLayout Shared() => new(
+    private static DashboardLayout Shared() => DashboardLayout.SingleView(
         0,
-        [new ModulePlacement(Guid.NewGuid(), "clock", 0, 0, 4, 2, TextSize.Large, JsonDocument.Parse("""{"format":"12h"}""").RootElement.Clone())])
-    {
-        MaxFps = 6,
-    };
+        [new ModulePlacement(Guid.NewGuid(), "clock", 0, 0, 4, 2, TextSize.Large, JsonDocument.Parse("""{"format":"12h"}""").RootElement.Clone())],
+        maxFps: 6);
 
     [Fact]
     public async Task Import_Valid_BacksUpThenSaves()
@@ -596,7 +594,7 @@ public sealed class SettingsTabTests : IDisposable
         Assert.Equal(before, File.ReadAllText(layoutPath + ".avant-import"));   // l'ancienne disposition est gardée
         var now = _store.Load();
         Assert.Equal(180, now.Rotation);   // l'orientation est celle de CE PC (le fichier partagé disait 0), voir Import_KeepsThisPcsOrientation
-        Assert.Equal("clock", Assert.Single(now.Placements).TypeId);
+        Assert.Equal("clock", Assert.Single(now.Views[0].Placements).TypeId);
         Assert.Equal(6, now.MaxFps);
         Assert.Equal(1, _link.ReloadCount);
         Assert.Equal("Disposition importée. Ctrl+Z la défait.", tab.ShareMessage);
@@ -616,7 +614,7 @@ public sealed class SettingsTabTests : IDisposable
 
         await tab.ImportAsync();
 
-        Assert.Equal("clock", Assert.Single(_document.Current.Placements).TypeId);   // la disposition, elle, est bien importée
+        Assert.Equal("clock", Assert.Single(_document.Current.Views[0].Placements).TypeId);   // la disposition, elle, est bien importée
         Assert.Equal(mine, _document.Current.Rotation);
         Assert.Equal(mine, _store.Load().Rotation);
     }
@@ -646,11 +644,11 @@ public sealed class SettingsTabTests : IDisposable
     public async Task Import_ModuleWithASecretField_KeepsThisPcsSettings()
     {
         var tab = Open();
-        var mine = Compact(_document.Current.Placements.Single(p => p.TypeId == "network").Settings);
+        var mine = Compact(_document.Current.Views[0].Placements.Single(p => p.TypeId == "network").Settings);
 
-        await ImportAsync(tab, new DashboardLayout(180, [Network(Guid.NewGuid(), Hostile)]));
+        await ImportAsync(tab, DashboardLayout.SingleView(180, [Network(Guid.NewGuid(), Hostile)]));
 
-        var network = Assert.Single(_document.Current.Placements);
+        var network = Assert.Single(_document.Current.Views[0].Placements);
         Assert.Equal(mine, Compact(network.Settings));
         // L'hôte du fichier reçu n'atteint jamais layout.json : la clé UniFi de ce PC ne peut pas partir vers lui.
         Assert.DoesNotContain("attaquant.example", File.ReadAllText(_store.FilePath));
@@ -663,9 +661,9 @@ public sealed class SettingsTabTests : IDisposable
     {
         var tab = Open();
 
-        await ImportAsync(tab, new DashboardLayout(180, [Network(new Guid("11111111-0000-0000-0000-000000000001"), Hostile)]));
+        await ImportAsync(tab, DashboardLayout.SingleView(180, [Network(new Guid("11111111-0000-0000-0000-000000000001"), Hostile)]));
 
-        var network = Assert.Single(_document.Current.Placements);
+        var network = Assert.Single(_document.Current.Views[0].Placements);
         Assert.Equal(new Guid("11111111-0000-0000-0000-000000000001"), network.InstanceId); // l'emplacement importé est gardé
         Assert.Equal("""{"source":"pc"}""", Compact(network.Settings));
     }
@@ -674,11 +672,11 @@ public sealed class SettingsTabTests : IDisposable
     public async Task Import_ModuleWithASecretFieldAndNoLocalCounterpart_ClearsItsSettings()
     {
         var clock = new ModulePlacement(Guid.NewGuid(), "clock", 0, 0, 4, 2, TextSize.Normal, Json("{}"));
-        var tab = Open(new DashboardLayout(180, [clock])); // aucun module Réseau sur ce PC
+        var tab = Open(DashboardLayout.SingleView(180, [clock])); // aucun module Réseau sur ce PC
 
-        await ImportAsync(tab, new DashboardLayout(180, [Network(Guid.NewGuid(), Hostile)]));
+        await ImportAsync(tab, DashboardLayout.SingleView(180, [Network(Guid.NewGuid(), Hostile)]));
 
-        var network = Assert.Single(_document.Current.Placements);
+        var network = Assert.Single(_document.Current.Views[0].Placements);
         Assert.Equal("{}", Compact(network.Settings));
         Assert.DoesNotContain("attaquant.example", File.ReadAllText(_store.FilePath));
         Assert.Contains("Réglages gardés pour Réseau", tab.ShareMessage);
@@ -688,10 +686,7 @@ public sealed class SettingsTabTests : IDisposable
     public async Task Import_ShelvedModuleWithASecretField_IsProtectedToo()
     {
         var tab = Open();
-        var shared = new DashboardLayout(180, [])
-        {
-            Shelf = [Network(Guid.NewGuid(), Hostile)],
-        };
+        var shared = DashboardLayout.SingleView(180, [], shelf: [Network(Guid.NewGuid(), Hostile)]);
 
         await ImportAsync(tab, shared);
 
@@ -704,12 +699,12 @@ public sealed class SettingsTabTests : IDisposable
     public async Task Import_TwoInstancesOfASecretType_TakeLocalOnesInOrder_ThenClear()
     {
         var second = new Guid("a2002423-c807-4403-9c5a-2a983fb6a372");
-        var tab = Open(new DashboardLayout(180,
+        var tab = Open(DashboardLayout.SingleView(180,
         [
             Network(LocalNetwork, """{"source":"freebox"}""", column: 0, row: 0),
             Network(second, """{"source":"pc"}""", column: 4, row: 0),
         ]));
-        var shared = new DashboardLayout(180,
+        var shared = DashboardLayout.SingleView(180,
         [
             Network(Guid.NewGuid(), Hostile, column: 0, row: 0),
             Network(Guid.NewGuid(), Hostile, column: 4, row: 0),
@@ -720,7 +715,7 @@ public sealed class SettingsTabTests : IDisposable
 
         Assert.Equal(
             ["""{"source":"freebox"}""", """{"source":"pc"}""", "{}"],
-            _document.Current.Placements.Select(p => Compact(p.Settings)));
+            _document.Current.Views[0].Placements.Select(p => Compact(p.Settings)));
         Assert.DoesNotContain("attaquant.example", File.ReadAllText(_store.FilePath));
     }
 
@@ -731,7 +726,7 @@ public sealed class SettingsTabTests : IDisposable
 
         await ImportAsync(tab, Shared());
 
-        Assert.Equal("""{"format":"12h"}""", Compact(Assert.Single(_document.Current.Placements).Settings));
+        Assert.Equal("""{"format":"12h"}""", Compact(Assert.Single(_document.Current.Views[0].Placements).Settings));
         Assert.Equal("Disposition importée. Ctrl+Z la défait.", tab.ShareMessage);
     }
 
@@ -743,11 +738,11 @@ public sealed class SettingsTabTests : IDisposable
         File.WriteAllText(shared, ExportedJson(Shared()));
         _picker.Result = shared;
         await tab.ImportAsync();
-        Assert.Single(_document.Current.Placements);
+        Assert.Single(_document.Current.Views[0].Placements);
 
         await _session.UndoAsync();
 
-        Assert.Equal(DashboardLayout.Default.Placements.Count, _document.Current.Placements.Count);
+        Assert.Equal(DashboardLayout.Default.Views[0].Placements.Count, _document.Current.Views[0].Placements.Count);
         Assert.Equal(180, _document.Current.Rotation);
     }
 
@@ -756,7 +751,7 @@ public sealed class SettingsTabTests : IDisposable
     {
         var tab = Open();
         var shared = Path.Combine(_dir, "futur.trofeo.json");
-        var layout = new DashboardLayout(
+        var layout = DashboardLayout.SingleView(
             180, [new ModulePlacement(Guid.NewGuid(), "hologramme", 0, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone())]);
         File.WriteAllText(shared, ExportedJson(layout));
         _picker.Result = shared;
@@ -775,7 +770,7 @@ public sealed class SettingsTabTests : IDisposable
         // Le type vient d'un fichier reçu d'un tiers : il est affiché comme n'importe quel texte non fiable.
         var tab = Open();
         var shared = Path.Combine(_dir, "futur.trofeo.json");
-        var layout = new DashboardLayout(
+        var layout = DashboardLayout.SingleView(
             180, [new ModulePlacement(Guid.NewGuid(), "holo‮gramme​", 0, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone())]);
         File.WriteAllText(shared, ExportedJson(layout));
         _picker.Result = shared;
@@ -791,7 +786,7 @@ public sealed class SettingsTabTests : IDisposable
     {
         var tab = Open();
         var shared = Path.Combine(_dir, "petit.trofeo.json");
-        var layout = new DashboardLayout(
+        var layout = DashboardLayout.SingleView(
             180, [new ModulePlacement(Guid.NewGuid(), "claudecode", 0, 0, 2, 1, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone())]);
         File.WriteAllText(shared, ExportedJson(layout));
         _picker.Result = shared;

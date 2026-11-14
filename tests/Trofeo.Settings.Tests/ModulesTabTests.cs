@@ -182,7 +182,7 @@ public sealed class ModulesTabTests
 
         Assert.Equal("overview", f.SettingsOf(CodexId).GetProperty("view").GetString());
         Assert.Single(f.Document.Current.Shelf!);
-        Assert.Equal(5, f.Document.Current.Placements.Count);
+        Assert.Equal(5, f.Document.Current.Views[0].Placements.Count);
     }
 
     // ---- Les secrets ----
@@ -795,10 +795,10 @@ public sealed class ModulesTabTests
         f.Tab.Select(ClockId);
         Assert.Contains(f.Tab.Placed, p => p.Id == ClockId);
 
-        await f.Session.ApplyAsync(layout => layout with
+        await f.Session.ApplyAsync(layout => layout.WithPlacements(
+            layout.Views[0].Id, [.. layout.Views[0].Placements.Where(p => p.InstanceId != ClockId)]) with
         {
-            Placements = [.. layout.Placements.Where(p => p.InstanceId != ClockId)],
-            Shelf = [.. layout.Shelf!, layout.Placements.Single(p => p.InstanceId == ClockId)],
+            Shelf = [.. layout.Shelf!, layout.Views[0].Placements.Single(p => p.InstanceId == ClockId)],
         });
 
         Assert.DoesNotContain(f.Tab.Placed, p => p.Id == ClockId);

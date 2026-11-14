@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Trofeo.Control;
 using Trofeo.Core.Layout;
+using Trofeo.Core.Shortcuts;
 using Trofeo.Settings.Services;
 
 namespace Trofeo.Settings.ViewModels;
@@ -291,12 +292,39 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
         if (!string.IsNullOrEmpty(package.Conflict))
             problems.Add(package.Conflict);
 
+        // Les raccourcis que le module propose : leurs touches sont vérifiées maintenant, pour que les cases arrivent justes.
+        IReadOnlyList<ProposedShortcutItem> proposals = [];
+        if (problems.Count == 0 && package.Id is not null)
+        {
+            IsBusy = true;
+            try
+            {
+                proposals = await ProposeShortcutsAsync(package.Id, package.Shortcuts, installed).ConfigureAwait(true);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        // Pendant la vérification des touches aussi, une autre boîte a pu s'ouvrir.
+        if (Dialog is not null)
+        {
+            _waitingPackage = path;
+            return;
+        }
+
         var name = string.IsNullOrWhiteSpace(package.Name) ? Path.GetFileName(path) : package.Name;
         var content = new ModuleDialogContent(
             name, package.Author, package.Version, installed is null ? null : package.InstalledVersion, package.Description, null,
-            problems.Count > 0 ? [] : Choices(package.Declared, installed), problems);
+            problems.Count > 0 ? [] : Choices(package.Declared, installed), problems, proposals);
 
-        Open(new InstallModuleDialogViewModel(ModuleDialogMode.Install, content, granted => _link.InstallPackageAsync(path, granted), null, OnDialogClosed));
+        // Une mise à jour faite avec un fichier perd aussi les liaisons des raccourcis que la nouvelle version ne déclare plus.
+        var moduleId = package.Id;
+        var declared = installed is null ? null : package.Shortcuts;
+        Open(new InstallModuleDialogViewModel(
+            ModuleDialogMode.Install, content, granted => _link.InstallPackageAsync(path, granted), null, OnDialogClosed,
+            afterCommit: moduleId is null ? null : chosen => ApplyShortcutsAsync(moduleId, chosen, declared)));
     }
 
     private async Task<CommunityOverview?> TryReadOverviewAsync()
@@ -359,9 +387,11 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
             return;
 
         var shown = new ModuleDialogContent(info.Name, info.Author, info.UpdateVersion, info.Version, info.Description, info.UpdateNotes, [], []);
+        IReadOnlyList<ModuleShortcutInfo>? updatedShortcuts = null; // ce que la nouvelle version déclare, connu à la fin de la préparation
         var dialog = new InstallModuleDialogViewModel(
             ModuleDialogMode.Update, shown, granted => _link.InstallModuleUpdateAsync(info.Id, granted),
-            () => _link.CancelModuleUpdateAsync(info.Id), OnDialogClosed, preparing: true);
+            () => _link.CancelModuleUpdateAsync(info.Id), OnDialogClosed, preparing: true,
+            afterCommit: chosen => ApplyShortcutsAsync(info.Id, chosen, updatedShortcuts));
         Message = null;
         _updatingId = info.Id;
         Dialog = dialog;
@@ -387,9 +417,126 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
             return;
         }
 
+        updatedShortcuts = preparation.Shortcuts;
+        var proposals = await ProposeShortcutsAsync(info.Id, preparation.Shortcuts, info).ConfigureAwait(true);
+        if (dialog.IsAbandoned)
+            return;
+
         dialog.Apply(new ModuleDialogContent(
             info.Name, info.Author, preparation.Version ?? info.UpdateVersion, info.Version, info.Description, preparation.Notes ?? info.UpdateNotes,
-            Choices(preparation.Declared, info, preparation.NewPermissions), []));
+            Choices(preparation.Declared, info, preparation.NewPermissions), [], proposals));
+    }
+
+    // ---- Les raccourcis que propose un module ----
+
+    /// <summary>Un module déclare 10 raccourcis au plus (le manifeste le refuse au-delà) : la boîte n'en montre pas davantage.</summary>
+    private const int MaxProposedShortcuts = 10;
+
+    /// <summary>
+    /// Les raccourcis à proposer : ceux que le module déclare avec des touches par défaut et qui sont <b>nouveaux</b> (pas déclarés par la
+    /// version installée, pas déjà liés). Une touche libre arrive cochée ; une touche déjà prise par le logiciel (une autre action, un autre
+    /// module, un raccourci de ce module) ou par un autre logiciel de Windows (le service essaie de l'enregistrer) arrive décochée, avec ce
+    /// qui la tient. Le service qui ne répond pas ne bloque rien : la touche est tenue pour libre, sans vérification.
+    /// </summary>
+    private async Task<IReadOnlyList<ProposedShortcutItem>> ProposeShortcutsAsync(
+        string moduleId, IReadOnlyList<ModuleShortcutInfo>? declared, CommunityModuleInfo? installed)
+    {
+        if (declared is null || declared.Count == 0)
+            return [];
+
+        var bindings = _session.Document.Current.Shortcuts ?? ShortcutDefaults.All;
+        // Le nom d'une action d'un autre module, pour dire qui tient une touche.
+        if (_overview is null && bindings.Any(b => b.Command == ShortcutCommand.Community))
+            _overview = await TryReadOverviewAsync().ConfigureAwait(true);
+        var community = _overview?.Modules ?? [];
+
+        var proposals = new List<ProposedShortcutItem>();
+        foreach (var shortcut in declared.Take(MaxProposedShortcuts))
+        {
+            if (string.IsNullOrWhiteSpace(shortcut.Id) || shortcut.Keys is null || ShortcutKeys.Normalize(shortcut.Keys) is not { } keys)
+                continue; // sans touches par défaut (ou illisibles) : rien à proposer, on peut toujours lui en donner dans l'onglet Raccourcis
+
+            var isNew = installed?.Shortcuts is { } known
+                ? !known.Any(k => string.Equals(k.Id, shortcut.Id, StringComparison.Ordinal))
+                : !bindings.Any(b => b.Command == ShortcutCommand.Community && b.ModuleId == moduleId && b.ShortcutId == shortcut.Id);
+            if (!isNew)
+                continue;
+
+            string? takenBy = null;
+            var bySoftware = false;
+            if (bindings.FirstOrDefault(b => ShortcutKeys.Same(b.Keys, keys)) is { } holder)
+            {
+                takenBy = string.Format(Texts.ShortcutKeyTakenBy, ShortcutLabels.ActionText(holder, community));
+                bySoftware = true;
+            }
+            else if (proposals.FirstOrDefault(p => ShortcutKeys.Same(p.Keys, keys)) is { } earlier)
+            {
+                takenBy = string.Format(Texts.ShortcutKeyTakenBy, earlier.Name); // deux raccourcis du même module ne partagent pas leurs touches
+                bySoftware = true;
+            }
+            else
+            {
+                switch (await TestKeysAsync(keys).ConfigureAwait(true))
+                {
+                    case ShortcutKeyState.Unreadable:
+                        continue;
+                    case ShortcutKeyState.TakenByAnotherProgram:
+                        takenBy = Texts.ShortcutKeyTakenElsewhere;
+                        break;
+                }
+            }
+
+            proposals.Add(new ProposedShortcutItem(moduleId, shortcut.Id, shortcut.Name, keys, takenBy, bySoftware, isChecked: takenBy is null));
+        }
+
+        return proposals;
+    }
+
+    private async Task<ShortcutKeyState> TestKeysAsync(string keys)
+    {
+        try
+        {
+            return await _link.TestShortcutKeysAsync(keys).ConfigureAwait(true);
+        }
+        catch (ControlException)
+        {
+            return ShortcutKeyState.Free; // le service ne répond pas : l'installation n'attend pas après lui
+        }
+    }
+
+    /// <summary>
+    /// Le module est installé : les raccourcis cochés rejoignent la disposition (action d'un module complémentaire, sans case visée), et,
+    /// pour une mise à jour (<paramref name="declared"/> connu), les liaisons des raccourcis que la nouvelle version ne déclare plus
+    /// partent. Les liaisons que l'utilisateur a déjà gardées ne changent pas. Une touche prise entre-temps n'est pas ajoutée. Un
+    /// enregistrement refusé est dit dans le message de la section.
+    /// </summary>
+    private async Task ApplyShortcutsAsync(
+        string moduleId, IReadOnlyList<ProposedShortcutItem> chosen, IReadOnlyList<ModuleShortcutInfo>? declared)
+    {
+        var outcome = await _session.ApplyAsync(layout =>
+        {
+            var list = (layout.Shortcuts ?? ShortcutDefaults.All).ToList();
+            var changed = false;
+            if (declared is not null)
+            {
+                changed = list.RemoveAll(b => b.Command == ShortcutCommand.Community && b.ModuleId == moduleId
+                    && !declared.Any(d => string.Equals(d.Id, b.ShortcutId, StringComparison.Ordinal))) > 0;
+            }
+
+            foreach (var item in chosen)
+            {
+                if (list.Any(b => ShortcutKeys.Same(b.Keys, item.Keys))
+                    || list.Any(b => b.Command == ShortcutCommand.Community && b.ModuleId == moduleId && b.ShortcutId == item.ShortcutId))
+                    continue;
+                list.Add(new ShortcutBinding(item.Keys, ShortcutCommand.Community, 0, null, moduleId, item.ShortcutId));
+                changed = true;
+            }
+
+            return changed ? layout with { Shortcuts = list } : null;
+        }).ConfigureAwait(true);
+
+        if (outcome is { Saved: false } refused)
+            Message = UntrustedText.Block(refused.Message);
     }
 
     // ---- Relancer, désinstaller ----
@@ -426,11 +573,18 @@ public sealed partial class CommunitySectionViewModel : ObservableObject, IDispo
 
     private static DashboardLayout? RemovePlacements(DashboardLayout layout, string typeId)
     {
-        var placements = layout.Placements.Where(p => p.TypeId != typeId).ToList();
+        var views = layout.Views.Select(v => v with { Placements = v.Placements.Where(p => p.TypeId != typeId).ToList() }).ToList();
         var shelf = layout.Shelf?.Where(p => p.TypeId != typeId).ToList();
-        if (placements.Count == layout.Placements.Count && (shelf is null || shelf.Count == layout.Shelf!.Count))
+        var noPlacementGone = views.Sum(v => v.Placements.Count) == layout.AllPlacements.Count() && (shelf is null || shelf.Count == layout.Shelf!.Count);
+
+        // Les raccourcis du module partent avec lui, ceux qui visaient ses cases avec elles, dans la même modification.
+        var withoutModule = layout.Shortcuts?.Where(b => !(b.Command == ShortcutCommand.Community && b.ModuleId == typeId)).ToList();
+        var noBindingGone = withoutModule is null || withoutModule.Count == layout.Shortcuts!.Count;
+        if (noPlacementGone && noBindingGone)
             return null;
-        return layout with { Placements = placements, Shelf = shelf };
+
+        var gone = layout.AllPlacements.Concat(layout.Shelf ?? []).Where(p => p.TypeId == typeId).Select(p => p.InstanceId).ToHashSet();
+        return LayoutBindings.WithoutTargets(layout with { Views = views, Shelf = shelf, Shortcuts = withoutModule ?? layout.Shortcuts }, gone);
     }
 
     /// <summary>Une demande qui change les modules : vrai si le service l'a acceptée ; sinon son message reste affiché, tel quel. La liste est relue.</summary>

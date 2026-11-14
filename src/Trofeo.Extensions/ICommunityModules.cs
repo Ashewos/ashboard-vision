@@ -23,11 +23,23 @@ public sealed record PackageInspection(
 public sealed record CommunityStoreInfo(
     string ModulesRoot, bool DeveloperMode, IReadOnlyList<string> DevFolders, bool Tampered, bool Unreadable);
 
+/// <summary>Ce que le routeur des raccourcis clavier demande aux modules de la communauté : transmettre un raccourci à des cases.</summary>
+public interface ICommunityShortcuts
+{
+    /// <summary>
+    /// Transmet le raccourci <paramref name="shortcutId"/> du module <paramref name="moduleId"/> aux cases <paramref name="instances"/>
+    /// (déjà choisies par le service : celles de la vue affichée, et la case visée s'il y en a une). Faux si rien n'a été envoyé : l'hôte
+    /// ne tourne pas, le module est mis de côté, le manifeste ne déclare pas ce raccourci, ou le module a déjà reçu 5 appuis dans la
+    /// dernière seconde (le décompte est par appui, pas par case).
+    /// </summary>
+    bool SendShortcut(string moduleId, string shortcutId, IReadOnlyCollection<Guid> instances);
+}
+
 /// <summary>
 /// Le point d'entrée du service pour les modules de la communauté : les voir, installer, valider, régler et désinstaller.
 /// <see cref="CommunityModules"/> l'implémente ; le canal de contrôle ne dépend que de cette interface.
 /// </summary>
-public interface ICommunityModules
+public interface ICommunityModules : ICommunityShortcuts
 {
     /// <summary>Les modules trouvés au dernier examen du dossier des modules (et des dossiers de développement).</summary>
     IReadOnlyList<CommunityEntry> Entries { get; }

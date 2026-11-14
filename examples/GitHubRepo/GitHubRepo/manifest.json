@@ -4,7 +4,7 @@
   "description": "Affiche les étoiles, la dernière version et les téléchargements d'un dépôt GitHub.",
   "author": "Ashewos",
   "version": "1.0.0",
-  "sdk": "1.0",
+  "sdk": "1.1",
   "entry": "GitHubRepo.dll",
   "permissions": ["internet"],
   "minSize": { "columns": 3, "rows": 1 },
@@ -14,6 +14,9 @@
   },
   "settings": [
     { "kind": "text", "key": "repo", "label": "Dépôt", "placeholder": "Ashewos/ashboard-vision", "maxLength": 100, "help": "Écris-le sous la forme propriétaire/nom." },
-    { "kind": "secret", "key": "token", "label": "Jeton GitHub (facultatif)", "help": "Sans jeton, GitHub limite à 60 requêtes par heure : c'est assez, le module en fait 12." }
+    { "kind": "secret", "key": "token", "label": "Jeton GitHub (facultatif)", "help": "Sans jeton, GitHub limite à 60 requêtes par heure : c'est assez, le module en fait environ 12 seul et jusqu'à 50 si tu utilises « Rafraîchir »." }
+  ],
+  "shortcuts": [
+    { "id": "refresh", "name": "Rafraîchir" }
   ]
 }

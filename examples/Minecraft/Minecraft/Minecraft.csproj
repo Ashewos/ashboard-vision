@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <!-- Dans le dépôt, le module référence le SDK par projet. Dans ton projet, ce sera la ligne du modèle (dotnet new ashboard-module) :
-         <PackageReference Include="AshboardVision.Sdk" Version="1.0.0" />. Le paquet embarque Trofeo.ModuleKit (le thème, ModuleDrawing,
+         <PackageReference Include="AshboardVision.Sdk" Version="1.1.0" />. Le paquet embarque Trofeo.ModuleKit (le thème, ModuleDrawing,
          ModuleHealth…) ; sans paquet, il faut aussi le référencer. -->
     <ProjectReference Include="..\..\..\src\AshboardVision.Sdk\AshboardVision.Sdk.csproj" />
     <ProjectReference Include="..\..\..\src\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />

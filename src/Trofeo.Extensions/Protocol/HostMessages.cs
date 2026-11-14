@@ -25,6 +25,8 @@ namespace Trofeo.Extensions.Protocol;
 [JsonDerivedType(typeof(AppearanceChanged), "appearanceChanged")]
 [JsonDerivedType(typeof(Limits), "limits")]
 [JsonDerivedType(typeof(FrameDone), "frameDone")]
+[JsonDerivedType(typeof(Visibility), "visibility")]
+[JsonDerivedType(typeof(Shortcut), "shortcut")]
 [JsonDerivedType(typeof(Lookup), "lookup")]
 [JsonDerivedType(typeof(RunAction), "runAction")]
 [JsonDerivedType(typeof(SecretValue), "secretValue")]
@@ -49,7 +51,7 @@ public abstract record HostMessage
     /// La version du protocole parlée par ce logiciel (<see cref="Hello.Protocol"/>). Même numéro majeur : compatible ;
     /// le numéro mineur n'augmente que pour ajouter des messages ou des propriétés optionnelles.
     /// </summary>
-    public const string ProtocolVersion = "1.0";
+    public const string ProtocolVersion = "1.1";
 
     /// <summary>
     /// Vrai pour les messages que seul l'hôte envoie (de <see cref="Ready"/> à <see cref="Failure"/>). Le canal n'oppose pas
@@ -91,6 +93,21 @@ public sealed record Limits(int MaxFps) : HostMessage;
 
 /// <summary>Le service a fini de copier le tampon <c>Buffer</c> (0 ou 1) : l'hôte peut de nouveau y écrire.</summary>
 public sealed record FrameDone(Guid InstanceId, int Buffer) : HostMessage;
+
+/// <summary>
+/// La case d'une instance est cachée (dans une vue qui n'est pas affichée) ou redevient visible. Cachée, l'instance continue de
+/// tourner (démarrage, minuteries du module) mais l'hôte ne la dessine pas ; une demande de dessin faite entre-temps part dès
+/// qu'elle redevient visible. Une instance est visible à son ouverture. Ajouté au protocole 1.1 ; une instance inconnue est ignorée.
+/// </summary>
+public sealed record Visibility(Guid InstanceId, bool Visible) : HostMessage;
+
+/// <summary>
+/// Un raccourci clavier du module, déclenché par l'utilisateur : l'hôte appelle <c>OnShortcutAsync</c> de l'instance de la case, avec
+/// l'identifiant du raccourci tel que le manifeste le déclare (le module ne voit jamais le clavier). L'hôte ne vérifie pas
+/// l'identifiant et livre aussi à une instance cachée : c'est le service qui choisit la case (celle de la vue affichée) et qui limite le
+/// rythme. Une instance inconnue est ignorée. Ajouté au protocole 1.1.
+/// </summary>
+public sealed record Shortcut(Guid InstanceId, string ShortcutId) : HostMessage;
 
 /// <summary>Demande la liste d'un champ de recherche des réglages.</summary>
 public sealed record Lookup(int Id, string FieldKey, string Query) : HostMessage;

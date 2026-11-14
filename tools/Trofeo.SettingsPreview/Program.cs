@@ -84,6 +84,7 @@ internal static class Program
         RenderSettings(folder, scratch, jpeg, connected.Welcome, connected.Status);
         RenderFirstRun(folder, scratch, jpeg, connected.Welcome, connected.Status);
         RenderCommunity(folder, scratch, jpeg, connected.Welcome, connected.Status);
+        RenderViews(folder, scratch, jpeg, connected.Welcome, connected.Status);
 
         // L'onglet Disposition : un module choisi, des glissements (libre, refusé), l'ajout, l'oubli à confirmer.
         var layoutStatus = connected.Status with
@@ -258,10 +259,8 @@ internal static class Program
     {
         static void Run(Task task) => task.GetAwaiter().GetResult();
         static System.Text.Json.JsonElement Json(string json) => System.Text.Json.JsonDocument.Parse(json).RootElement.Clone();
-        static DashboardLayout WithSettings(Guid id, string json) => Base with
-        {
-            Placements = [.. Base.Placements.Select(p => p.InstanceId == id ? p with { Settings = Json(json) } : p)],
-        };
+        static DashboardLayout WithSettings(Guid id, string json) => Base.WithPlacements(
+            Base.Views[0].Id, [.. Base.Views[0].Placements.Select(p => p.InstanceId == id ? p with { Settings = Json(json) } : p)]);
         static Trofeo.Control.ModuleState State(Guid id, string typeId, Trofeo.ModuleKit.ModuleHealth health, string? message = null, params string[] notices) =>
             new(id, typeId, health, message, notices);
 
@@ -393,21 +392,20 @@ internal static class Program
         static void Run(Task task) => task.GetAwaiter().GetResult();
 
         // Claude Code et Codex côte à côte : tous deux acceptent les raccourcis.
-        var twoAgents = Base with
+        var twoAgents = Base.WithPlacements(Base.Views[0].Id,
+        [
+            Base.Views[0].Placements[0] with { Column = 0, Columns = 8 },
+            new Trofeo.Core.Layout.ModulePlacement(CodexId, "codex", 8, 0, 8, 4, Trofeo.ModuleKit.TextSize.Normal,
+                System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone()),
+        ]) with
         {
-            Placements =
-            [
-                Base.Placements[0] with { Column = 0, Columns = 8 },
-                new Trofeo.Core.Layout.ModulePlacement(CodexId, "codex", 8, 0, 8, 4, Trofeo.ModuleKit.TextSize.Normal,
-                    System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone()),
-            ],
             Shelf = [],
             Shortcuts =
             [
                 .. Trofeo.Core.Shortcuts.ShortcutDefaults.All.Take(2),
-                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+1", Trofeo.ModuleKit.ModuleCommandKind.SelectTab, 0, CodexId),
-                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+2", Trofeo.ModuleKit.ModuleCommandKind.SelectTab, 1, CodexId),
-                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+F5", Trofeo.ModuleKit.ModuleCommandKind.NextTab, 0, Guid.NewGuid()),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+1", Trofeo.Core.Shortcuts.ShortcutCommand.SelectTab, 0, CodexId),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+2", Trofeo.Core.Shortcuts.ShortcutCommand.SelectTab, 1, CodexId),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+F5", Trofeo.Core.Shortcuts.ShortcutCommand.NextTab, 0, Guid.NewGuid()),
             ],
         };
 
@@ -457,6 +455,50 @@ internal static class Program
 
         Render(folder, scratch, "raccourcis-vide.png", 1440, 900, jpeg, Connected, (_, model) => Open(model),
             layout: Base with { Shortcuts = [] });
+
+        // Les raccourcis de modules complémentaires : point jaune, nom du raccourci et du module, cases visées. L'un vise une case précise,
+        // un autre est celui d'un module mis de côté, un troisième a été refusé par Windows.
+        var minecraftCase = new Guid("a11ce000-0000-4000-8000-000000000001");
+        var minecraftShortcuts = new[]
+        {
+            new ModuleShortcutInfo("refresh", "Rafraîchir", "Ctrl+Alt+Shift+R"),
+            new ModuleShortcutInfo("mute", "Couper le son", "Ctrl+Alt+Shift+M"),
+        };
+        var modulesLayout = (twoAgents with
+        {
+            Shelf = [],
+            Shortcuts =
+            [
+                .. Trofeo.Core.Shortcuts.ShortcutDefaults.All.Take(4), // les raccourcis d'onglets et de vues, puis ceux des modules
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+R", Trofeo.Core.Shortcuts.ShortcutCommand.Community, 0, minecraftCase, "alex.minecraft", "refresh"),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+M", Trofeo.Core.Shortcuts.ShortcutCommand.Community, 0, null, "alex.minecraft", "mute"),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+P", Trofeo.Core.Shortcuts.ShortcutCommand.Community, 0, null, "bob.meteo", "forecast"),
+            ],
+        }).WithPlacements(twoAgents.Views[0].Id,
+        [
+            twoAgents.Views[0].Placements[0] with { Column = 0, Columns = 5 },
+            twoAgents.Views[0].Placements[1] with { Column = 5, Columns = 5 },
+            new Trofeo.Core.Layout.ModulePlacement(minecraftCase, "alex.minecraft", 10, 0, 6, 4, Trofeo.ModuleKit.TextSize.Normal,
+                System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone(), "Survie"),
+        ]);
+        void WithModules(FakeServiceLink link)
+        {
+            link.Set(LinkState.Connected, welcome, status with { RefusedShortcutKeys = ["Ctrl+Alt+Shift+M"] });
+            link.Community = new CommunityOverview(
+            [
+                CommunityFixture.Module("alex.minecraft", name: "Serveur Minecraft", shortcuts: minecraftShortcuts),
+                CommunityFixture.Module("bob.meteo", LinkCommunityState.SetAside, "2.3.1", name: "Météo détaillée", author: "Bob",
+                    shortcuts: [new ModuleShortcutInfo("forecast", "Voir la prévision", null)]),
+            ], @"C:\Modules", false, [], false);
+        }
+
+        Render(folder, scratch, "raccourcis-modules.png", 1440, 1240, jpeg, WithModules, (_, model) => Open(model), layout: modulesLayout);
+        Render(folder, scratch, "raccourcis-modules-ajout.png", 1440, 1240, jpeg, WithModules, (_, model) =>
+        {
+            Open(model);
+            model.ShortcutsTab.AddShortcut();
+            model.ShortcutsTab.Rows[^1].SelectedAction = model.ShortcutsTab.ActionChoices.First(c => c.ShortcutId == "refresh");
+        }, layout: modulesLayout);
     }
 
     /// <summary>L'onglet Paramètres : capteurs à installer, capteurs actifs, installation refusée, démarrage introuvable, import refusé.</summary>
@@ -617,7 +659,7 @@ internal static class Program
         Shot("assistant-3-modules-1200x760.png", 1200, 760, Connected, FirstRunStep.Modules);
 
         // Plus de place : Claude Code occupe toute la largeur, Codex ne tient pas.
-        var full = Base with { Placements = [Base.Placements[0] with { Columns = 16 }] };
+        var full = Base.WithPlacements(Base.Views[0].Id, [Base.Views[0].Placements[0] with { Columns = 16 }]);
         Shot("assistant-3-modules-sans-place.png", 1440, 900, Connected, FirstRunStep.Modules,
             model => Run(model.FirstRun.SetModuleAsync("codex", true)), full);
 
@@ -628,10 +670,8 @@ internal static class Program
             model => Run(model.FirstRun.ClaudeForm!.VisibleFields.OfType<Trofeo.Settings.ViewModels.Fields.ActionFieldViewModel>().Single().RequestAsync()));
 
         Shot("assistant-5-reseau.png", 1440, 900, Connected, FirstRunStep.Network);
-        var unifi = Base with
-        {
-            Placements = [.. Base.Placements.Select(p => p.TypeId == "network" ? p with { Settings = Json("""{"source":"unifi","unifi":{"host":"192.168.1.1"}}""") } : p)],
-        };
+        var unifi = Base.WithPlacements(Base.Views[0].Id,
+            [.. Base.Views[0].Placements.Select(p => p.TypeId == "network" ? p with { Settings = Json("""{"source":"unifi","unifi":{"host":"192.168.1.1"}}""") } : p)]);
         Shot("assistant-5-reseau-unifi.png", 1440, 900, Connected, FirstRunStep.Network, layout: unifi);
         Shot("assistant-5-reseau-unifi-1200x760.png", 1200, 760, Connected, FirstRunStep.Network, layout: unifi);
 
@@ -644,7 +684,7 @@ internal static class Program
             model => Run(model.FirstRun.ContinueAsync()), system: Windows(fails: true));
 
         // Sans Claude Code : sept étapes, et la quatrième est Réseau.
-        var withoutClaude = Base with { Placements = [.. Base.Placements.Where(p => p.TypeId != "claudecode")] };
+        var withoutClaude = Base.WithPlacements(Base.Views[0].Id, [.. Base.Views[0].Placements.Where(p => p.TypeId != "claudecode")]);
         Shot("assistant-sans-claude-reseau.png", 1440, 900, Connected, FirstRunStep.Network, layout: withoutClaude);
     }
 
@@ -675,13 +715,12 @@ internal static class Program
                 new Trofeo.ModuleKit.NumberField("refresh", "Actualiser toutes les (secondes)", 5, 300, 30),
             ]),
             community);
-        var layoutWith = Base with
+        var layoutWith = Base.WithPlacements(Base.Views[0].Id,
+        [
+            .. Base.Views[0].Placements.Where(p => p.TypeId != "clock"),
+            new ModulePlacement(CommunityFixture.DemoId, "alex.minecraft", 12, 0, 4, 2, Trofeo.ModuleKit.TextSize.Normal, Json("""{"port":25565}""")),
+        ]) with
         {
-            Placements =
-            [
-                .. Base.Placements.Where(p => p.TypeId != "clock"),
-                new ModulePlacement(CommunityFixture.DemoId, "alex.minecraft", 12, 0, 4, 2, Trofeo.ModuleKit.TextSize.Normal, Json("""{"port":25565}""")),
-            ],
             Shelf = [],
         };
         IReadOnlyList<ModuleTypeInfo> types = [.. SampleData.Types(), minecraft];
@@ -825,6 +864,25 @@ internal static class Program
         // La boîte d'installation : l'avertissement, les trois permissions déclarées, décochées.
         Render(folder, scratch, "dialogue-installation.png", 1440, 900, jpeg, Connected, (_, model) =>
             Run(model.SettingsTab.Community.OpenPackageAsync(path)));
+
+        // Un module qui propose des raccourcis : une touche libre arrive cochée ; celle que le logiciel donne déjà et celle d'un autre
+        // logiciel arrivent décochées, avec ce qui les tient. Une action sans touche par défaut n'est pas montrée.
+        Render(folder, scratch, "install-raccourcis.png", 1440, 1240, jpeg,
+            link =>
+            {
+                Connected(link);
+                link.Package = CommunityFixture.Package(
+                    id: "alex.minecraft", name: "Serveur Minecraft", declared: [],
+                    shortcuts:
+                    [
+                        new ModuleShortcutInfo("refresh", "Rafraîchir", "Ctrl+Alt+Shift+R"),
+                        new ModuleShortcutInfo("next", "Serveur suivant", "Ctrl+Alt+Down"),
+                        new ModuleShortcutInfo("mute", "Couper le son", "Ctrl+Alt+Shift+M"),
+                        new ModuleShortcutInfo("open", "Ouvrir la page", null),
+                    ]);
+                link.KeyStates["Ctrl+Alt+Shift+M"] = Trofeo.Control.ShortcutKeyState.TakenByAnotherProgram;
+            },
+            (_, model) => Run(model.SettingsTab.Community.OpenPackageAsync(path)));
 
         Render(folder, scratch, "dialogue-installation-1200x760.png", 1200, 760, jpeg, Connected, (_, model) =>
         {
@@ -984,6 +1042,61 @@ internal static class Program
             }, layout: layoutWith);
     }
 
+    /// <summary>
+    /// Les vues de l'onglet Disposition : trois onglets, la deuxième vue choisie (et un de ses modules) alors que la première est sur
+    /// l'écran (le point vert), « L'écran suit la vue choisie » décochée puisque c'est le seul état où elles diffèrent ; puis le menu
+    /// de l'onglet choisi. La bande montre toujours la vue de l'écran : le faux service n'a qu'une image.
+    /// </summary>
+    private static void RenderViews(string folder, string scratch, byte[] jpeg, Welcome welcome, ServiceStatus status)
+    {
+        static void Run(Task task) => task.GetAwaiter().GetResult();
+        static System.Text.Json.JsonElement Json(string json) => System.Text.Json.JsonDocument.Parse(json).RootElement.Clone();
+        static ModulePlacement Case(string id, string typeId, int column, int row, int columns, int rows, string? name = null) =>
+            new(new Guid(id), typeId, column, row, columns, rows, Trofeo.ModuleKit.TextSize.Normal, Json("{}"), name);
+
+        var first = Base.Views[0] with { Name = "Bureau" };
+        var layout = Base with
+        {
+            Views =
+            [
+                first,
+                new LayoutView(new Guid("71e00000-0000-4000-8000-000000000002"), "Jeux",
+                [
+                    Case("71e00000-0000-4000-8000-0000000000a1", "monitoring", 0, 0, 6, 4, "Ma machine"),
+                    Case("71e00000-0000-4000-8000-0000000000a2", "network", 6, 0, 4, 2),
+                    Case("71e00000-0000-4000-8000-0000000000a3", "nowplaying", 6, 2, 4, 2, "Ma musique"),
+                    Case("71e00000-0000-4000-8000-0000000000a4", "clock", 10, 0, 4, 2),
+                ]),
+                new LayoutView(new Guid("71e00000-0000-4000-8000-000000000003"), "Réunion", []),
+            ],
+        };
+        var onScreen = first.Id;
+        var monitoring = new Guid("71e00000-0000-4000-8000-0000000000a1");
+        var preferences = new EditorPreferences(FirstRunDone: true, FollowView: false);
+
+        void Connected(FakeServiceLink link)
+        {
+            link.Set(LinkState.Connected, welcome, status);
+            link.ShownViewId = onScreen;
+        }
+
+        void Arrange(MainViewModel model)
+        {
+            Run(model.LayoutTab.SelectViewAsync(model.LayoutTab.ViewTabs[1]));
+            model.LayoutTab.Select(monitoring);
+        }
+
+        Render(folder, scratch, "disposition-vues.png", 1440, 900, jpeg, Connected, (_, model) => Arrange(model),
+            layout: layout, preferences: preferences);
+
+        Render(folder, scratch, "disposition-vues-menu.png", 1440, 900, jpeg, Connected, (window, model) =>
+        {
+            Arrange(model);
+            Dispatcher.UIThread.RunJobs();
+            var menu = window.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "TabMenu" && b.IsVisible);
+            menu.Flyout!.ShowAt(menu);
+        }, layout: layout, preferences: preferences);
+    }
     private static readonly Guid ClaudeId = new("3c1d9f5e-7a2b-4e8c-9b1f-6d2a0e4c8b17");
     private static readonly Guid MonitoringId = new("246ac06d-eec2-4d64-9930-24b64603a03b");
     private static readonly Guid NowPlayingId = new("8ebcc647-ab4b-401d-b2b3-f7a0ebd97b4b");
@@ -1048,7 +1161,7 @@ internal static class Program
         using var composer = new FrameComposer();
         var theme = AppearanceResolver.Resolve(new AppearanceSettings("classique"), new SkiaSystemFonts(), Warn);
         using var background = BackgroundFactory.Create(null, theme, null, Warn);
-        using var frame = composer.Compose(PreviewScene.Layout(Trofeo.ModuleKit.TextSize.Normal), scene.ByPlacement, theme, background, PreviewScene.Now);
+        using var frame = composer.Compose(PreviewScene.Layout(Trofeo.ModuleKit.TextSize.Normal).Views[0].Placements, scene.ByPlacement, theme, background, PreviewScene.Now);
 
         using var rotated = new SKBitmap(frame.Width, frame.Height);
         using (var canvas = new SKCanvas(rotated))

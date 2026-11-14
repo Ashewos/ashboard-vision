@@ -38,6 +38,28 @@ public class FrameSchedulerTests
     }
 
     [Fact]
+    public void ShouldRender_IgnoringTheCap_RendersEveryTime_AndConsumesTheDirtyFlag()
+    {
+        var time = new FakeTimeProvider();
+        using var scheduler = new FrameScheduler(time, maxFps: 10);
+        Assert.True(scheduler.ShouldRender(anyAnimating: true));
+        scheduler.OnRendered();
+        time.Advance(TimeSpan.FromMilliseconds(5)); // bien avant l'intervalle de 100 ms
+        scheduler.MarkDirty();
+
+        Assert.False(scheduler.ShouldRender(anyAnimating: true));
+        Assert.True(scheduler.ShouldRender(anyAnimating: false, ignoreCap: true));
+        Assert.False(scheduler.IsDirty);
+        scheduler.OnRendered();
+
+        // Le plafond reprend ensuite : l'intervalle se compte depuis cette image.
+        time.Advance(TimeSpan.FromMilliseconds(50));
+        Assert.False(scheduler.ShouldRender(anyAnimating: true));
+        time.Advance(TimeSpan.FromMilliseconds(50));
+        Assert.True(scheduler.ShouldRender(anyAnimating: true));
+    }
+
+    [Fact]
     public void Wake_SetsSignal_WithoutMarkingDirty()
     {
         using var scheduler = new FrameScheduler(new FakeTimeProvider());

@@ -6,5 +6,5 @@ public static class ControlPipe
     public const string Name = "trofeo-HB-dashboard.control";
 
     /// <summary>Version du protocole ; le client refuse un service qui en annonce une autre.</summary>
-    public const int ProtocolVersion = 3;
+    public const int ProtocolVersion = 4;
 }

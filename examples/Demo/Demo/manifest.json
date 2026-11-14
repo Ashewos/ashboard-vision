@@ -4,7 +4,7 @@
   "description": "Une animation à 12 images par seconde qui suit le thème, pour essayer le plafond d'images et la consommation.",
   "author": "Ashewos",
   "version": "1.0.0",
-  "sdk": "1.0",
+  "sdk": "1.1",
   "entry": "Demo.dll",
   "permissions": [],
   "minSize": { "columns": 3, "rows": 1 },
@@ -14,5 +14,8 @@
   },
   "settings": [
     { "kind": "toggle", "key": "animate", "label": "Animer", "default": true, "help": "Décoché, le module ne demande plus d'images : compare la consommation dans la fenêtre de réglage." }
+  ],
+  "shortcuts": [
+    { "id": "colour", "name": "Changer de couleur", "keys": "Ctrl+Alt+Shift+D" }
   ]
 }

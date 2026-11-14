@@ -19,8 +19,15 @@ internal sealed class CheckLog : IModuleLog
 {
     private const int MaxLines = 200;
     private readonly ConcurrentQueue<string> _lines = new();
+    private long _total;
 
     public IReadOnlyList<string> Lines => [.. _lines];
+
+    /// <summary>Le nombre de lignes écrites depuis le début, y compris celles que <see cref="MaxLines"/> a fait oublier.</summary>
+    public long Total => Interlocked.Read(ref _total);
+
+    /// <summary>Les lignes écrites après que <see cref="Total"/> valait <paramref name="total"/> (celles qui sont encore gardées).</summary>
+    public IReadOnlyList<string> Since(long total) => [.. Lines.TakeLast((int)Math.Clamp(Total - total, 0, MaxLines))];
 
     public void Info(string message) => Add(message);
 
@@ -31,6 +38,7 @@ internal sealed class CheckLog : IModuleLog
     private void Add(string message)
     {
         _lines.Enqueue(message);
+        Interlocked.Increment(ref _total);
         while (_lines.Count > MaxLines && _lines.TryDequeue(out _))
         {
         }
@@ -177,15 +185,19 @@ internal sealed class CheckCase : IDisposable
     private readonly object _gate = new();
     private TaskCompletionSource _changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public CheckCase(CheckSession session, RemoteModule module)
+    public CheckCase(CheckSession session, RemoteModule module, Guid instanceId)
     {
         _session = session;
         Module = module;
+        InstanceId = instanceId;
         module.Invalidated += OnChanged;
         module.StatusChanged += OnChanged;
     }
 
     public RemoteModule Module { get; }
+
+    /// <summary>L'identifiant d'instance de la case, celui que le superviseur attend pour lui transmettre un raccourci.</summary>
+    public Guid InstanceId { get; }
 
     private void OnChanged(object? sender, EventArgs e)
     {
@@ -315,11 +327,15 @@ internal sealed class CheckSession : IAsyncDisposable
     /// <summary>Ouvre une case. Le premier appel fait lancer l'hôte.</summary>
     public CheckCase OpenCase(JsonElement settings)
     {
-        var module = _supervisor.Open(new ModuleContext(Guid.NewGuid(), settings, TimeProvider.System, Log, _secrets));
-        var checkCase = new CheckCase(this, module);
+        var instanceId = Guid.NewGuid();
+        var module = _supervisor.Open(new ModuleContext(instanceId, settings, TimeProvider.System, Log, _secrets));
+        var checkCase = new CheckCase(this, module, instanceId);
         _cases.Add(checkCase);
         return checkCase;
     }
+
+    /// <summary>Transmet un raccourci à cette case, comme le service le fait pour une case de la vue affichée. Faux si le superviseur ne l'a pas transmis.</summary>
+    public bool SendShortcut(string shortcutId, CheckCase checkCase) => _supervisor.SendShortcut(shortcutId, [checkCase.InstanceId]);
 
     /// <summary>Ferme une case ; la dernière fermée fait arrêter l'hôte.</summary>
     public void CloseCase(CheckCase checkCase)

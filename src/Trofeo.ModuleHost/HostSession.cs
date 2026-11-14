@@ -136,6 +136,20 @@ internal sealed class HostSession
                 }
 
                 break;
+            case Visibility visibility:
+                if (_instances.TryGetValue(visibility.InstanceId, out var visibleOwner))
+                {
+                    visibleOwner.SetVisible(visibility.Visible); // une instance inconnue (fermée entre-temps) est ignorée
+                }
+
+                break;
+            case Shortcut shortcut:
+                if (_instances.TryGetValue(shortcut.InstanceId, out var shortcutOwner))
+                {
+                    shortcutOwner.DeliverShortcut(shortcut.ShortcutId); // sans vérifier la liste du manifeste ni la visibilité : le service filtre
+                }
+
+                break;
             case AppearanceChanged changed:
                 _context!.Theme = ResolveTheme(changed.Appearance);
                 foreach (var instance in _instances.Values)

@@ -11,7 +11,9 @@ using Trofeo.Settings.Services;
 namespace Trofeo.Settings.ViewModels;
 
 /// <summary>
-/// L'onglet Disposition : la liste des modules placés et retirés, le module choisi, et les glissements sur le damier.
+/// L'onglet Disposition : les onglets de vues, la liste des modules placés (de la vue choisie) et retirés, le module choisi,
+/// et les glissements sur le damier. La vue choisie est un état de la fenêtre : l'aperçu la montre, et « L'écran suit la vue
+/// choisie » la fait afficher aussi sur l'écran ; le point vert, lui, suit la vue que le service dit afficher.
 /// Toute modification passe par <see cref="LayoutEditor"/> (les règles de placement), puis par
 /// <see cref="LayoutDocument.SaveAsync"/> (écriture et rechargement du service) ; <see cref="LayoutHistory"/> garde de
 /// quoi annuler. Une modification qui ne change rien n'écrit rien. Les points des glissements sont en pixels de l'écran
@@ -29,11 +31,23 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     private PlacedModuleItem? _selectedItem;
     private Drag? _drag;
     private bool _refreshing;
+    private readonly PreferencesStore _preferences;
+    private Guid? _selectedViewId;
+    private int _selectedViewIndex;
+    private ViewTabItem? _selectedViewItem;
+    private bool _viewChosen;
+    private bool _shownSeen;
+    private Guid? _shownView;
+    private bool _isActive = true;
+    private Guid? _pendingDeleteViewId;
+    private string? _caseNameDraft;
 
-    public LayoutTabViewModel(IServiceLink link, EditSession session) : base(Texts.TabLayout)
+    /// <param name="preferences">Les préférences de la fenêtre (« L'écran suit la vue choisie » s'y garde) ; sans elles, les valeurs par défaut, non écrites.</param>
+    public LayoutTabViewModel(IServiceLink link, EditSession session, PreferencesStore? preferences = null) : base(Texts.TabLayout)
     {
         _link = link;
         _session = session;
+        _preferences = preferences ?? new PreferencesStore(new EditorPreferences());
         _document = session.Document;
         _link.Changed += OnLinkChanged;
         _document.Replaced += OnReplaced;
@@ -48,7 +62,10 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
         _session.Changed -= Refresh;
     }
 
-    /// <summary>Les modules placés, dans l'ordre du fichier.</summary>
+    /// <summary>Les onglets de vues, dans l'ordre des vues.</summary>
+    public ObservableCollection<ViewTabItem> ViewTabs { get; } = [];
+
+    /// <summary>Les modules placés dans la vue choisie, dans l'ordre du fichier.</summary>
     public ObservableCollection<PlacedModuleItem> Placed { get; } = [];
 
     /// <summary>Les modules retirés, dans l'ordre où ils l'ont été.</summary>
@@ -100,8 +117,9 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
         }
     }
 
+
     private ModulePlacement? SelectedPlacement =>
-        _selectedId is { } id ? _document.Current.Placements.FirstOrDefault(p => p.InstanceId == id) : null;
+        _selectedId is { } id ? CurrentView.Placements.FirstOrDefault(p => p.InstanceId == id) : null;
 
     private ModuleTypeInfo? SelectedType =>
         SelectedPlacement is { } p && _types.TryGetValue(p.TypeId, out var type) ? type : null;
@@ -146,7 +164,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     private static readonly string[] SelectionProperties =
     [
         nameof(SelectedId), nameof(SelectedItem), nameof(HasSelection), nameof(HasNoSelection), nameof(SelectedName),
-        nameof(SelectedCells), nameof(SelectedPixels), nameof(SelectedMinimum),
+        nameof(SelectedCells), nameof(SelectedPixels), nameof(SelectedMinimum), nameof(CaseName),
         nameof(IsPresetCompact), nameof(IsPresetIdeal), nameof(IsPresetLarge),
         nameof(HasPresetCompact), nameof(HasPresetIdeal), nameof(HasPresetLarge),
         nameof(IsTextSmall), nameof(IsTextNormal), nameof(IsTextLarge), nameof(Spacing),
@@ -157,6 +175,8 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     {
         if (id is { } wanted && Placed.All(p => p.Id != wanted))
             id = null;
+        if (id != _selectedId)
+            _caseNameDraft = null; // le brouillon d'un nom ne passe pas d'une case à l'autre
         _selectedId = id;
         _selectedItem = id is { } chosen ? Placed.FirstOrDefault(p => p.Id == chosen) : null;
         RaiseSelection();
@@ -173,18 +193,20 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     /// <summary>Commence à déplacer un module saisi au point <paramref name="screen"/> (pixels de l'écran).</summary>
     public void BeginMove(Guid id, Point screen)
     {
-        if (!CanEdit || _session.IsBusy || _document.Current.Placements.FirstOrDefault(p => p.InstanceId == id) is not { } origin)
+        var view = CurrentView;
+        if (!CanEdit || _session.IsBusy || view.Placements.FirstOrDefault(p => p.InstanceId == id) is not { } origin)
             return;
         var (column, row) = GridGeometry.CellAt((float)screen.X, (float)screen.Y, Spacing);
-        StartDrag(new Drag(origin, ResizeEdge.Right, isResize: false, column, row));
+        StartDrag(new Drag(view.Id, origin, ResizeEdge.Right, isResize: false, column, row));
     }
 
     /// <summary>Commence à redimensionner un module par l'une de ses huit poignées.</summary>
     public void BeginResize(Guid id, ResizeEdge edge)
     {
-        if (!CanEdit || _session.IsBusy || _document.Current.Placements.FirstOrDefault(p => p.InstanceId == id) is not { } origin)
+        var view = CurrentView;
+        if (!CanEdit || _session.IsBusy || view.Placements.FirstOrDefault(p => p.InstanceId == id) is not { } origin)
             return;
-        StartDrag(new Drag(origin, edge, isResize: true, 0, 0));
+        StartDrag(new Drag(view.Id, origin, edge, isResize: true, 0, 0));
     }
 
     private void StartDrag(Drag drag)
@@ -278,8 +300,8 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
 
     private static EditResult Evaluate(LayoutEditor editor, DashboardLayout layout, Drag drag) =>
         drag.IsResize
-            ? editor.Resize(layout, drag.Origin.InstanceId, drag.Edge, drag.DeltaColumns, drag.DeltaRows)
-            : editor.Move(layout, drag.Origin.InstanceId, drag.TargetColumn, drag.TargetRow);
+            ? editor.Resize(layout, drag.ViewId, drag.Origin.InstanceId, drag.Edge, drag.DeltaColumns, drag.DeltaRows)
+            : editor.Move(layout, drag.ViewId, drag.Origin.InstanceId, drag.TargetColumn, drag.TargetRow);
 
     /// <summary>
     /// Le rectangle (colonne, rangée, colonnes, rangées) que demande un redimensionnement, pour le dessiner même s'il est
@@ -316,38 +338,46 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     // ---- Les modifications ----
 
     [RelayCommand]
-    public Task ApplyPresetAsync(SizePreset preset) =>
-        SelectedId is { } id ? EditAsync((editor, layout) => editor.ApplyPreset(layout, id, preset), SelectedPlacement?.TypeId) : Task.CompletedTask;
+    public Task ApplyPresetAsync(SizePreset preset)
+    {
+        var viewId = SelectedViewId;
+        return SelectedId is { } id ? EditAsync((editor, layout) => editor.ApplyPreset(layout, viewId, id, preset), SelectedPlacement?.TypeId) : Task.CompletedTask;
+    }
 
     [RelayCommand]
     public Task SetTextSizeAsync(TextSize size) =>
         SelectedId is { } id ? EditAsync((editor, layout) => editor.SetTextSize(layout, id, size)) : Task.CompletedTask;
 
     [RelayCommand]
-    public Task RemoveSelectedAsync() =>
-        SelectedId is { } id ? EditAsync((editor, layout) => editor.Remove(layout, id)) : Task.CompletedTask;
+    public Task RemoveSelectedAsync()
+    {
+        var viewId = SelectedViewId;
+        return SelectedId is { } id ? EditAsync((editor, layout) => editor.Remove(layout, viewId, id)) : Task.CompletedTask;
+    }
 
-    /// <summary>Ajoute un module du type choisi à la première place libre ; le module ajouté est choisi.</summary>
+    /// <summary>Ajoute un module du type choisi à la première place libre de la vue choisie ; le module ajouté est choisi.</summary>
     public async Task AddAsync(AddTypeItem type)
     {
         var before = _document.Current;
-        await EditAsync((editor, layout) => editor.Add(layout, type.TypeId, Guid.NewGuid())).ConfigureAwait(true);
-        SelectAddedSince(before);
+        var viewId = SelectedViewId;
+        await EditAsync((editor, layout) => editor.Add(layout, viewId, type.TypeId, Guid.NewGuid())).ConfigureAwait(true);
+        SelectAddedSince(before, viewId);
     }
 
-    /// <summary>Remet un module retiré sur l'écran, avec ses réglages (l'éditeur reprend le dernier retiré de ce type).</summary>
+    /// <summary>Remet un module retiré dans la vue choisie, avec ses réglages (l'éditeur reprend le dernier retiré de ce type).</summary>
     public async Task RestoreAsync(ShelvedModuleItem item)
     {
         var before = _document.Current;
+        var viewId = SelectedViewId;
         await EditAsync((editor, layout) =>
         {
             // L'éditeur reprend le dernier retiré du type : celui qu'on veut passe donc en dernier.
             var shelf = layout.Shelf ?? [];
             var chosen = shelf.FirstOrDefault(s => s.InstanceId == item.Id);
             var ordered = chosen is null ? layout : layout with { Shelf = [.. shelf.Where(s => s.InstanceId != item.Id), chosen] };
-            return editor.Add(ordered, item.TypeId, Guid.NewGuid());
+            return editor.Add(ordered, viewId, item.TypeId, Guid.NewGuid());
         }).ConfigureAwait(true);
-        SelectAddedSince(before);
+        SelectAddedSince(before, viewId);
     }
 
     /// <summary>« Oublier » demande d'abord confirmation : « Ses réglages seront perdus. ».</summary>
@@ -355,8 +385,16 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
 
     public void CancelForget(ShelvedModuleItem item) => item.ConfirmingForget = false;
 
+    /// <summary>
+    /// Oublie la case retirée pour de bon, avec les raccourcis qui la visaient : un seul pas d'annulation, Ctrl+Z remet la case et ses
+    /// raccourcis ensemble.
+    /// </summary>
     public Task ForgetAsync(ShelvedModuleItem item) =>
-        EditAsync((editor, layout) => editor.Forget(layout, item.Id));
+        EditAsync((editor, layout) =>
+        {
+            var result = editor.Forget(layout, item.Id);
+            return result.Ok ? result with { Layout = LayoutBindings.WithoutTargets(result.Layout, [item.Id]) } : result;
+        });
 
     [RelayCommand]
     public Task UndoAsync() => StepHistoryAsync(undo: true);
@@ -365,10 +403,12 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     public Task RedoAsync() => StepHistoryAsync(undo: false);
 
     /// <summary>Choisit le module que la dernière modification a ajouté ou remis sur l'écran, s'il y en a un.</summary>
-    private void SelectAddedSince(DashboardLayout before)
+    private void SelectAddedSince(DashboardLayout before, Guid viewId)
     {
-        var added = _document.Current.Placements.FirstOrDefault(p => before.Placements.All(b => b.InstanceId != p.InstanceId));
-        if (added is not null)
+        var previous = before.Views.FirstOrDefault(v => v.Id == viewId)?.Placements ?? [];
+        var added = _document.Current.Views.FirstOrDefault(v => v.Id == viewId)?.Placements
+            .FirstOrDefault(p => previous.All(b => b.InstanceId != p.InstanceId));
+        if (added is not null && viewId == SelectedViewId)
             Select(added.InstanceId);
     }
 
@@ -410,8 +450,8 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     private string? ReasonOf(DashboardLayout layout, EditResult result, string? typeId) => result.Error switch
     {
         PlacementError.Overlap => string.Format(Texts.LayoutBlocked,
-            result.Blocker is { } blocker && layout.Placements.FirstOrDefault(p => p.InstanceId == blocker) is { } other
-                ? NameOf(other.TypeId)
+            result.Blocker is { } blocker && layout.AllPlacements.FirstOrDefault(p => p.InstanceId == blocker) is { } other
+                ? DisplayName(other)
                 : ""),
         PlacementError.OutOfBounds => Texts.LayoutOutside,
         PlacementError.BelowMinSize when typeId is not null && _types.TryGetValue(typeId, out var type) =>
@@ -430,7 +470,8 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     private void OnLinkChanged()
     {
         // Le service renvoie son état chaque seconde ; la liste ne se reconstruit que si ce qu'il a annoncé a changé.
-        if (!ReferenceEquals(_knownTypes, _link.KnownTypes()))
+        // Le point vert suit la vue que le service dit afficher : le clavier la change sans que la fenêtre y soit pour rien.
+        if (!ReferenceEquals(_knownTypes, _link.KnownTypes()) || _shownView != _link.ShownViewId)
             Refresh();
         else
             RefreshHealth();
@@ -458,7 +499,8 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
                 CancelDrag();
 
             var layout = _document.Current;
-            var placed = layout.Placements.Select(p => new PlacedModuleItem(p, NameOf(p.TypeId), IsCommunityType(p.TypeId))).ToList();
+            ReconcileViews(layout);
+            var placed = CurrentView.Placements.Select(p => new PlacedModuleItem(p, DisplayName(p), IsCommunityType(p.TypeId))).ToList();
             ApplyHealth(placed);
             if (Placed.Count == placed.Count && Placed.Zip(placed).All(pair => pair.First.SameShape(pair.Second)))
             {
@@ -472,7 +514,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
                     Placed.Add(item);
             }
 
-            var shelved = (layout.Shelf ?? []).Select(p => new ShelvedModuleItem(p, NameOf(p.TypeId), this)).ToList();
+            var shelved = (layout.Shelf ?? []).Select(p => new ShelvedModuleItem(p, DisplayName(p), this)).ToList();
             if (!Shelved.Select(s => (s.Id, s.Name)).SequenceEqual(shelved.Select(s => (s.Id, s.Name))))
             {
                 var confirming = Shelved.Where(s => s.ConfirmingForget).Select(s => s.Id).ToHashSet();
@@ -503,6 +545,12 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
         }
 
         RaiseSelection();
+        OnPropertyChanged(nameof(SelectedView));
+        OnPropertyChanged(nameof(SelectedViewId));
+        OnPropertyChanged(nameof(CanDeleteView));
+        RaiseViewDelete();
+
+        SyncPreview();
     }
 
     private void RefreshHealth() => ApplyHealth(Placed);
@@ -516,8 +564,9 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     }
 
     /// <summary>Un glissement en cours : le module d'origine, ce qui le tire, et la dernière cible calculée.</summary>
-    private sealed class Drag(ModulePlacement origin, ResizeEdge edge, bool isResize, int grabColumn, int grabRow)
+    private sealed class Drag(Guid viewId, ModulePlacement origin, ResizeEdge edge, bool isResize, int grabColumn, int grabRow)
     {
+        public Guid ViewId { get; } = viewId;
         public ModulePlacement Origin { get; } = origin;
         public ResizeEdge Edge { get; } = edge;
         public bool IsResize { get; } = isResize;

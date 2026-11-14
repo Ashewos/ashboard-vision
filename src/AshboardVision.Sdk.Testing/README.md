@@ -24,6 +24,7 @@ Elles ne vérifient pas non plus tout ton manifeste : elles n'en lisent que les 
 - Les capteurs et la musique que tu poses sont rendus tels quels au module, sans passer par le JSON du vrai service.
 - Le message d'état (`SetStatus`) n'est pas tronqué, alors que le logiciel le raccourcit.
 - Il n'y a pas de plafond de 16 connexions simultanées pour `ConnectLocalAsync`.
+- `TriggerShortcutAsync(id)` appelle `OnShortcutAsync` directement : il ne compare pas l'identifiant à la liste `shortcuts` du manifeste, et n'applique ni la file de 8 appuis ni la limite de 5 par seconde du logiciel.
 - `Invalidate` ne redessine rien : c'est toi qui appelles `Render`.
 - La taille minimale (`minSize`) n'est pas vérifiée : `Render` accepte n'importe quelle taille du damier.
 - L'heure du `FakeTimeProvider` est en UTC et ne bouge que si tu la fais avancer.
@@ -32,7 +33,7 @@ Elles ne vérifient pas non plus tout ton manifeste : elles n'en lisent que les 
 
 Ce paquet **n'est pas sur nuget.org**. C'est un fichier `.nupkg` joint à chaque version d'Ashboard Vision sur GitHub, et posé sur ton PC par l'installateur du logiciel, à côté de `AshboardVision.Sdk`. Tu l'ajoutes à ton projet de tests comme source locale NuGet.
 
-Il dépend du paquet `AshboardVision.Sdk` 1.0.0 et de `Microsoft.Extensions.TimeProvider.Testing` (le `FakeTimeProvider`). Il embarque `Trofeo.Core.dll`, qui lui fournit les thèmes et les polices du logiciel.
+Il dépend du paquet `AshboardVision.Sdk` 1.1.0 et de `Microsoft.Extensions.TimeProvider.Testing` (le `FakeTimeProvider`). Il embarque `Trofeo.Core.dll`, qui lui fournit les thèmes et les polices du logiciel.
 
 ## Licence
 

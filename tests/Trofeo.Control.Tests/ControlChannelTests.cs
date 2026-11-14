@@ -13,13 +13,17 @@ public partial class ControlChannelTests
     private static async Task<ControlClient> ConnectAsync(string pipeName) =>
         await ControlClient.ConnectAsync(pipeName, TimeSpan.FromSeconds(10), CancellationToken.None);
 
+    private static readonly Guid CurrentViewId = new("11110000-0000-0000-0000-000000000001");
+
     private static ServiceStatus SampleStatus() => new(
         new ScreenInfo(LinkScreenState.Recovering, "Câble débranché"),
         Emulated: true,
         [new ModuleState(Guid.Parse("11111111-1111-1111-1111-111111111111"), "clock", ModuleHealth.Online, "Rien à signaler", ["Remarque"])],
         new ProcessInfo(1_000_000, 2_000_000, 3.5),
         new FrameInfo(42, 1.25, 0.5),
-        new SensorInfo(true, false, true));
+        new SensorInfo(true, false, true),
+        CurrentViewId,
+        ["Ctrl+Alt+Right"]);
 
     private static Welcome SampleWelcome() => new("1.2.3", ControlPipe.ProtocolVersion,
     [
@@ -59,6 +63,31 @@ public partial class ControlChannelTests
         public readonly TaskCompletionSource<Action<PreviewFrame>> Subscribed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public readonly TaskCompletionSource Unsubscribed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int SubscribedMaxFps;
+        public Guid? SubscribedViewId;
+        public Func<Guid, bool> OnShowView { get; set; } = _ => true;
+        public List<Guid> ShownViews { get; } = [];
+
+        public event Action<Guid>? ViewChanged;
+
+        public bool HasViewSubscribers => ViewChanged is not null;
+
+        /// <summary>Le service change de vue (clavier, par exemple) : tous les clients connectés l'apprennent.</summary>
+        public void RaiseViewChanged(Guid viewId) => ViewChanged?.Invoke(viewId);
+
+        public Task<bool> ShowViewAsync(Guid viewId, CancellationToken ct)
+        {
+            lock (ShownViews) ShownViews.Add(viewId);
+            return Task.FromResult(OnShowView(viewId));
+        }
+
+        public Func<string, ShortcutKeyState> OnTestKeys { get; set; } = _ => ShortcutKeyState.Free;
+        public List<string> TestedKeys { get; } = [];
+
+        public Task<ShortcutKeyState> TestShortcutKeysAsync(string keys, CancellationToken ct)
+        {
+            lock (TestedKeys) TestedKeys.Add(keys);
+            return Task.FromResult(OnTestKeys(keys));
+        }
 
         public Welcome Hello() => WelcomeToReturn;
         public ServiceStatus GetStatus() => StatusToReturn;
@@ -92,11 +121,12 @@ public partial class ControlChannelTests
             return Task.FromResult(InstallResult);
         }
 
-        public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame)
+        public IDisposable SubscribePreview(int maxFps, Guid? viewId, Action<PreviewFrame> onFrame)
         {
             if (SubscribeError is not null)
                 throw SubscribeError;
             SubscribedMaxFps = maxFps;
+            SubscribedViewId = viewId;
             Subscribed.TrySetResult(onFrame);
             return new Subscription(Unsubscribed);
         }
@@ -295,7 +325,7 @@ public partial class ControlChannelTests
     }
 
     [Fact]
-    public void ProtocolVersion_IsThree() => Assert.Equal(3, ControlPipe.ProtocolVersion);
+    public void ProtocolVersion_IsFour() => Assert.Equal(4, ControlPipe.ProtocolVersion);
 
     [Fact]
     public void TimeoutFor_UpdateRequests()

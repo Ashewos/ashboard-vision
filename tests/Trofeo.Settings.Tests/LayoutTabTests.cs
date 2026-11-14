@@ -47,7 +47,7 @@ public sealed class LayoutTabTests : IDisposable
         return new LayoutTabViewModel(_link, _session);
     }
 
-    private static DashboardLayout Layout(params ModulePlacement[] placements) => new(180, placements);
+    private static DashboardLayout Layout(params ModulePlacement[] placements) => DashboardLayout.SingleView(180, placements);
 
     private static GridSpacing Classic => GridSpacing.Default;
 
@@ -63,7 +63,7 @@ public sealed class LayoutTabTests : IDisposable
 
     private static double EdgeY(int edge) => GridGeometry.ModuleRect(0, edge - 1, 1, 1, Classic).Bottom + Classic.Gap / 2.0;
 
-    private static ModulePlacement Of(DashboardLayout layout, Guid id) => layout.Placements.Single(p => p.InstanceId == id);
+    private static ModulePlacement Of(DashboardLayout layout, Guid id) => layout.Views[0].Placements.Single(p => p.InstanceId == id);
 
     [Fact]
     public async Task Drag_ToFreeCells_SavesMovedLayout()
@@ -296,7 +296,7 @@ public sealed class LayoutTabTests : IDisposable
 
         await tab.AddAsync(codex);
 
-        var added = _document.Current.Placements.Single(p => p.TypeId == "codex");
+        var added = _document.Current.Views[0].Placements.Single(p => p.TypeId == "codex");
         Assert.Equal((8, 0, 8, 4), (added.Column, added.Row, added.Columns, added.Rows));  // Idéal 8 × 4, première place libre
         Assert.Equal(2, tab.Placed.Count);
         Assert.Equal(added.InstanceId, tab.SelectedItem!.Id);  // le nouveau module est choisi
@@ -311,7 +311,7 @@ public sealed class LayoutTabTests : IDisposable
         Assert.Contains(tab.AddTypes, t => t.TypeId == "clock");
         await tab.AddAsync(tab.AddTypes.Single(t => t.TypeId == "clock"));
 
-        Assert.Equal(2, _document.Current.Placements.Count(p => p.TypeId == "clock"));
+        Assert.Equal(2, _document.Current.Views[0].Placements.Count(p => p.TypeId == "clock"));
     }
 
     [Fact]
@@ -323,7 +323,7 @@ public sealed class LayoutTabTests : IDisposable
 
         Assert.Equal("Plus de place libre : retire ou réduis un module.", tab.RefusalText);
         Assert.Equal(0, _link.ReloadCount);
-        Assert.Single(_document.Current.Placements);
+        Assert.Single(_document.Current.Views[0].Placements);
     }
 
     [Fact]

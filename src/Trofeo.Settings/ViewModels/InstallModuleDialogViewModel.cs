@@ -44,34 +44,40 @@ public enum ModuleDialogMode
 
 /// <summary>
 /// Ce que la boîte montre d'un module. Le nom, l'auteur, la description et les notes viennent du module : ce sont des données non
-/// fiables, nettoyées par la boîte (<see cref="UntrustedText"/>) et montrées comme du texte brut.
+/// fiables, nettoyées par la boîte (<see cref="UntrustedText"/>) et montrées comme du texte brut. <paramref name="Shortcuts"/> sont les
+/// raccourcis que le module propose (installation ou mise à jour) ; <c>null</c> : aucun.
 /// </summary>
 public sealed record ModuleDialogContent(
     string? Name, string? Author, string? Version, string? InstalledVersion, string? Description, string? Notes,
-    IReadOnlyList<PermissionChoice> Permissions, IReadOnlyList<string> Problems);
+    IReadOnlyList<PermissionChoice> Permissions, IReadOnlyList<string> Problems,
+    IReadOnlyList<ProposedShortcutItem>? Shortcuts = null);
 
 /// <summary>
 /// La boîte qui installe, valide, met à jour ou règle les permissions d'un module complémentaire : l'avertissement (point d'exclamation
 /// jaune), le nom, l'auteur, la version et la description du module, une case par permission <b>déclarée</b>, puis « Installer » (ou
 /// « Valider », « Mettre à jour », « Enregistrer ») et « Annuler ». Une erreur ou un conflit s'affiche tel quel, sans bouton de
 /// confirmation. Ce qui part au service est exactement ce qui est coché. Pour une mise à jour, la boîte s'ouvre pendant le
-/// téléchargement (<see cref="IsPreparing"/>), et l'abandonner (Annuler, Échap) prévient le service.
+/// téléchargement (<see cref="IsPreparing"/>), et l'abandonner (Annuler, Échap) prévient le service. Quand le module propose des
+/// raccourcis, la section « Raccourcis proposés » a une case par touche ; une fois le module installé, les cases cochées sont remises à
+/// <c>afterCommit</c>, qui les ajoute à la disposition.
 /// </summary>
 public sealed partial class InstallModuleDialogViewModel : ObservableObject
 {
     private readonly Func<IReadOnlyList<ModulePermission>, Task<ActionResult>> _commit;
     private readonly Func<Task>? _abandon;
+    private readonly Func<IReadOnlyList<ProposedShortcutItem>, Task>? _afterCommit;
     private readonly Action<InstallModuleDialogViewModel, bool> _closed;
     private bool _finished;
 
     internal InstallModuleDialogViewModel(
         ModuleDialogMode mode, ModuleDialogContent content,
         Func<IReadOnlyList<ModulePermission>, Task<ActionResult>> commit, Func<Task>? abandon, Action<InstallModuleDialogViewModel, bool> closed,
-        bool preparing = false)
+        bool preparing = false, Func<IReadOnlyList<ProposedShortcutItem>, Task>? afterCommit = null)
     {
         Mode = mode;
         _commit = commit;
         _abandon = abandon;
+        _afterCommit = afterCommit;
         _closed = closed;
         Apply(content);
         if (preparing)
@@ -136,6 +142,15 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
 
     public bool HasPermissions => Permissions.Count > 0;
 
+    /// <summary>Les raccourcis que le module propose, une case chacun ; vide si le module n'en propose aucun (ou aucun de nouveau).</summary>
+    public ObservableCollection<ProposedShortcutItem> ProposedShortcuts { get; } = [];
+
+    /// <summary>La section « Raccourcis proposés » est montrée : il y en a, et la boîte n'attend rien et n'a pas d'erreur.</summary>
+    public bool ShowsProposedShortcuts => !IsPreparing && !HasProblems && ProposedShortcuts.Count > 0;
+
+    public string ProposedShortcutsTitle => Texts.DialogShortcutsTitle;
+    public string ProposedShortcutsHint => Texts.DialogShortcutsHint;
+
     /// <summary>« Ce module ne demande aucune permission. » : le manifeste n'en déclare aucune.</summary>
     public bool ShowsNoPermissions => !IsPreparing && !HasProblems && Permissions.Count == 0;
 
@@ -158,7 +173,7 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
 
     /// <summary>Le service télécharge et lit la mise à jour : les cases arriveront.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanConfirm), nameof(ShowsNoPermissions), nameof(ShowsPermissionArea))]
+    [NotifyPropertyChangedFor(nameof(CanConfirm), nameof(ShowsNoPermissions), nameof(ShowsPermissionArea), nameof(ShowsProposedShortcuts))]
     private bool _isPreparing;
 
     public string PreparingText => string.IsNullOrEmpty(RawVersion) ? Texts.DialogWorking : string.Format(Texts.DialogPreparing, RawVersion);
@@ -210,6 +225,10 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
         foreach (var permission in content.Permissions)
             Permissions.Add(permission);
 
+        ProposedShortcuts.Clear();
+        foreach (var shortcut in content.Shortcuts ?? [])
+            ProposedShortcuts.Add(shortcut);
+
         IsPreparing = false;
         NotifyContent();
     }
@@ -220,6 +239,7 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
         var cleaned = UntrustedText.Block(message);
         Problems = [cleaned.Length > 0 ? cleaned : Texts.DialogPreparationFailed];
         Permissions.Clear();
+        ProposedShortcuts.Clear();
         IsPreparing = false;
         NotifyContent();
     }
@@ -232,6 +252,7 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
         OnPropertyChanged(nameof(HasNewPermissions));
         OnPropertyChanged(nameof(ShowsNoPermissions));
         OnPropertyChanged(nameof(ShowsPermissionArea));
+        OnPropertyChanged(nameof(ShowsProposedShortcuts));
         OnPropertyChanged(nameof(CanConfirm));
         OnPropertyChanged(nameof(HasAuthor));
         OnPropertyChanged(nameof(HasVersion));
@@ -252,7 +273,13 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
     /// <summary>Les permissions cochées, dans l'ordre des cases : c'est tout ce qui part au service.</summary>
     public IReadOnlyList<ModulePermission> CheckedPermissions => [.. Permissions.Where(p => p.IsChecked).Select(p => p.Permission)];
 
-    /// <summary>Confirme avec les permissions cochées. Un refus du service s'affiche tel quel et la boîte reste ouverte.</summary>
+    /// <summary>Les raccourcis proposés qui sont cochés, dans l'ordre des cases.</summary>
+    public IReadOnlyList<ProposedShortcutItem> CheckedShortcuts => [.. ProposedShortcuts.Where(p => p.IsChecked && p.CanCheck)];
+
+    /// <summary>
+    /// Confirme avec les permissions cochées, puis (module installé) ajoute les raccourcis cochés. Un refus du service s'affiche tel quel
+    /// et la boîte reste ouverte.
+    /// </summary>
     [RelayCommand]
     public async Task ConfirmAsync()
     {
@@ -265,6 +292,8 @@ public sealed partial class InstallModuleDialogViewModel : ObservableObject
         try
         {
             result = await _commit(CheckedPermissions).ConfigureAwait(true);
+            if (result.Ok && _afterCommit is not null)
+                await _afterCommit(CheckedShortcuts).ConfigureAwait(true);
         }
         catch (ControlException ex)
         {

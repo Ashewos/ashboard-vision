@@ -95,52 +95,61 @@
       </Border>
 
       <!-- Colonne de droite : le module choisi. -->
-      <Border Grid.Column="2" Classes="panel" Padding="24">
-        <Panel>
-          <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.LayoutNothingSelected}" IsVisible="{Binding HasNoSelection}" />
+      <Border Grid.Column="2" Classes="panel" Padding="24,24,16,24">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <Panel Margin="0,0,8,0">
+            <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.LayoutNothingSelected}" IsVisible="{Binding HasNoSelection}" />
 
-          <StackPanel Spacing="20" IsVisible="{Binding HasSelection}">
-            <StackPanel Spacing="6">
-              <TextBlock Classes="heading" Text="{Binding SelectedName}" TextTrimming="CharacterEllipsis" />
-              <StackPanel Orientation="Horizontal" Spacing="24">
-                <TextBlock Classes="number lead" Text="{Binding SelectedCells}" />
-                <TextBlock Classes="number lead" Text="{Binding SelectedPixels}" />
-                <TextBlock Classes="number lead muted" Text="{Binding SelectedMinimum}" />
+            <StackPanel Spacing="20" IsVisible="{Binding HasSelection}">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="heading" Text="{Binding SelectedName}" TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal" Spacing="24">
+                  <TextBlock Classes="number lead" Text="{Binding SelectedCells}" />
+                  <TextBlock Classes="number lead" Text="{Binding SelectedPixels}" />
+                  <TextBlock Classes="number lead muted" Text="{Binding SelectedMinimum}" />
+                </StackPanel>
               </StackPanel>
+
+              <StackPanel Spacing="8">
+                <TextBlock Classes="section" Text="{x:Static t:Texts.LayoutCaseName}" />
+                <TextBox Name="CaseNameBox" HorizontalAlignment="Left" Width="320" Text="{Binding CaseName}"
+                         MaxLength="{x:Static vm:LayoutTabViewModel.NameMaxLength}"
+                         AutomationProperties.Name="{x:Static t:Texts.LayoutCaseName}" KeyDown="OnCaseNameKeyDown" LostFocus="OnCaseNameLostFocus" />
+              </StackPanel>
+
+              <WrapPanel Orientation="Horizontal">
+                <StackPanel Spacing="8" Margin="0,0,40,16">
+                  <TextBlock Classes="section" Text="{x:Static t:Texts.LayoutPresets}" />
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Classes="choice" Classes.primary="{Binding IsPresetCompact}" IsEnabled="{Binding HasPresetCompact}"
+                            Content="{x:Static t:Texts.LayoutPresetCompact}"
+                            Command="{Binding ApplyPresetCommand}" CommandParameter="{x:Static mk:SizePreset.Compact}" />
+                    <Button Classes="choice" Classes.primary="{Binding IsPresetIdeal}" IsEnabled="{Binding HasPresetIdeal}"
+                            Content="{x:Static t:Texts.LayoutPresetIdeal}"
+                            Command="{Binding ApplyPresetCommand}" CommandParameter="{x:Static mk:SizePreset.Ideal}" />
+                    <Button Classes="choice" Classes.primary="{Binding IsPresetLarge}" IsEnabled="{Binding HasPresetLarge}"
+                            Content="{x:Static t:Texts.LayoutPresetLarge}"
+                            Command="{Binding ApplyPresetCommand}" CommandParameter="{x:Static mk:SizePreset.Large}" />
+                  </StackPanel>
+                </StackPanel>
+
+                <StackPanel Spacing="8" Margin="0,0,0,16">
+                  <TextBlock Classes="section" Text="{x:Static t:Texts.LayoutTextSize}" />
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Classes="choice" Classes.primary="{Binding IsTextSmall}" Content="{x:Static t:Texts.LayoutTextSmall}"
+                            Command="{Binding SetTextSizeCommand}" CommandParameter="{x:Static mk:TextSize.Small}" />
+                    <Button Classes="choice" Classes.primary="{Binding IsTextNormal}" Content="{x:Static t:Texts.LayoutTextNormal}"
+                            Command="{Binding SetTextSizeCommand}" CommandParameter="{x:Static mk:TextSize.Normal}" />
+                    <Button Classes="choice" Classes.primary="{Binding IsTextLarge}" Content="{x:Static t:Texts.LayoutTextLarge}"
+                            Command="{Binding SetTextSizeCommand}" CommandParameter="{x:Static mk:TextSize.Large}" />
+                  </StackPanel>
+                </StackPanel>
+              </WrapPanel>
+
+              <Button HorizontalAlignment="Left" Content="{x:Static t:Texts.LayoutRemove}" Command="{Binding RemoveSelectedCommand}" />
             </StackPanel>
-
-            <WrapPanel Orientation="Horizontal">
-              <StackPanel Spacing="8" Margin="0,0,40,16">
-                <TextBlock Classes="section" Text="{x:Static t:Texts.LayoutPresets}" />
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <Button Classes="choice" Classes.primary="{Binding IsPresetCompact}" IsEnabled="{Binding HasPresetCompact}"
-                          Content="{x:Static t:Texts.LayoutPresetCompact}"
-                          Command="{Binding ApplyPresetCommand}" CommandParameter="{x:Static mk:SizePreset.Compact}" />
-                  <Button Classes="choice" Classes.primary="{Binding IsPresetIdeal}" IsEnabled="{Binding HasPresetIdeal}"
-                          Content="{x:Static t:Texts.LayoutPresetIdeal}"
-                          Command="{Binding ApplyPresetCommand}" CommandParameter="{x:Static mk:SizePreset.Ideal}" />
-                  <Button Classes="choice" Classes.primary="{Binding IsPresetLarge}" IsEnabled="{Binding HasPresetLarge}"
-                          Content="{x:Static t:Texts.LayoutPresetLarge}"
-                          Command="{Binding ApplyPresetCommand}" CommandParameter="{x:Static mk:SizePreset.Large}" />
-                </StackPanel>
-              </StackPanel>
-
-              <StackPanel Spacing="8" Margin="0,0,0,16">
-                <TextBlock Classes="section" Text="{x:Static t:Texts.LayoutTextSize}" />
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <Button Classes="choice" Classes.primary="{Binding IsTextSmall}" Content="{x:Static t:Texts.LayoutTextSmall}"
-                          Command="{Binding SetTextSizeCommand}" CommandParameter="{x:Static mk:TextSize.Small}" />
-                  <Button Classes="choice" Classes.primary="{Binding IsTextNormal}" Content="{x:Static t:Texts.LayoutTextNormal}"
-                          Command="{Binding SetTextSizeCommand}" CommandParameter="{x:Static mk:TextSize.Normal}" />
-                  <Button Classes="choice" Classes.primary="{Binding IsTextLarge}" Content="{x:Static t:Texts.LayoutTextLarge}"
-                          Command="{Binding SetTextSizeCommand}" CommandParameter="{x:Static mk:TextSize.Large}" />
-                </StackPanel>
-              </StackPanel>
-            </WrapPanel>
-
-            <Button HorizontalAlignment="Left" Content="{x:Static t:Texts.LayoutRemove}" Command="{Binding RemoveSelectedCommand}" />
-          </StackPanel>
-        </Panel>
+          </Panel>
+        </ScrollViewer>
       </Border>
     </Grid>
   </Grid>

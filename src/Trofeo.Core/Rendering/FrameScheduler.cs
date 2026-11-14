@@ -96,16 +96,18 @@ public sealed class FrameScheduler : IDisposable
     /// Vrai s'il faut rendre une image maintenant. Quand la réponse est vraie, la demande de
     /// redessin en attente est consommée : un <see cref="MarkDirty"/> arrivé pendant le rendu
     /// reste donc en attente pour l'image suivante. À appeler depuis le thread de la boucle.
+    /// <paramref name="ignoreCap"/> : le plafond d'images par seconde ne retient pas cette image (le glissement d'une vue à
+    /// l'autre va aussi vite que l'envoi le permet) ; l'image suivante, elle, compte son intervalle depuis celle-ci.
     /// </summary>
-    public bool ShouldRender(bool anyAnimating)
+    public bool ShouldRender(bool anyAnimating, bool ignoreCap = false)
     {
-        bool wanted = anyAnimating || IsDirty;
+        bool wanted = anyAnimating || IsDirty || ignoreCap;
         if (!wanted)
         {
             return false;
         }
 
-        if (_hasRendered && _time.GetElapsedTime(_lastRenderTimestamp) < MinInterval)
+        if (!ignoreCap && _hasRendered && _time.GetElapsedTime(_lastRenderTimestamp) < MinInterval)
         {
             return false;
         }

@@ -58,7 +58,7 @@ public sealed class ToolPackageTests(PackedTool packed)
     {
         var entries = Entries();
 
-        Assert.Equal("AshboardVision.Sdk.Tool.1.0.0.nupkg", Path.GetFileName(packed.PackagePath));
+        Assert.Equal("AshboardVision.Sdk.Tool.1.1.0.nupkg", Path.GetFileName(packed.PackagePath));
         Assert.Contains("README.md", entries);
         Assert.Contains("AshboardVision.Sdk.Tool.nuspec", entries);
         Assert.All(ToolEntries, entry => Assert.Contains(entry, entries));
@@ -99,7 +99,7 @@ public sealed class ToolPackageTests(PackedTool packed)
         var metadata = Child(ReadNuspec().Root!, "metadata");
 
         Assert.Equal("AshboardVision.Sdk.Tool", Text(metadata, "id"));
-        Assert.Equal("1.0.0", Text(metadata, "version"));
+        Assert.Equal("1.1.0", Text(metadata, "version"));
         Assert.Equal("Ashewos", Text(metadata, "authors"));
         Assert.Equal("README.md", Text(metadata, "readme"));
 

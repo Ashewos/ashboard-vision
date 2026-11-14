@@ -39,7 +39,7 @@ public sealed class ShortcutsTabTests : IDisposable
         List<ModulePlacement> placements = [Placement(ClaudeId, "claudecode", 0, 8, 4)];
         placements.Add(secondClaude ? Placement(Guid.NewGuid(), "claudecode", 8, 6, 3) : Placement(CodexId, "codex", 8, 6, 3));
         placements.Add(Placement(new Guid("5b0c5e2e-6a53-4c0b-9d0e-3f1a7c1d2b01"), "clock", 14, 2, 1));
-        _store.Save(new DashboardLayout(180, placements) { Shortcuts = shortcuts });
+        _store.Save(DashboardLayout.SingleView(180, placements, shortcuts));
         _document = new LayoutDocument(_store, _link);
         _document.Load();
         _session = new EditSession(_document);
@@ -55,15 +55,15 @@ public sealed class ShortcutsTabTests : IDisposable
     // ---- La liste ----
 
     [Fact]
-    public void Rows_Default_ListsElevenShortcuts_ActionInWords_KeysAsPill()
+    public void Rows_Default_ListsThirteenShortcuts_ActionInWords_KeysAsPill()
     {
         var tab = Open();
 
-        Assert.Equal(11, tab.Rows.Count);
+        Assert.Equal(13, tab.Rows.Count);
         Assert.Equal(["Onglet précédent", "Onglet suivant", "Aller à l'onglet 1", "Aller à l'onglet 9"],
-            new[] { tab.Rows[0], tab.Rows[1], tab.Rows[2], tab.Rows[10] }.Select(r => r.ActionText));
-        Assert.Equal(["Ctrl + Alt + ←", "Ctrl + Alt + →", "Ctrl + Alt + Maj + 1"],
-            tab.Rows.Take(3).Select(r => r.KeysText));
+            new[] { tab.Rows[0], tab.Rows[1], tab.Rows[4], tab.Rows[12] }.Select(r => r.ActionText));
+        Assert.Equal(["Ctrl + Alt + ↑", "Ctrl + Alt + ↓", "Ctrl + Alt + Maj + 1"],
+            new[] { tab.Rows[0], tab.Rows[1], tab.Rows[4] }.Select(r => r.KeysText));
         Assert.All(tab.Rows, r => Assert.False(r.IsCapturing));
         Assert.False(tab.IsCapturing);
     }
@@ -94,7 +94,7 @@ public sealed class ShortcutsTabTests : IDisposable
 
         Assert.Equal(CodexId, Saved[1].Target);
         Assert.Equal(CodexId, OnDisk[1].Target);
-        Assert.Equal(ModuleCommandKind.NextTab, Saved[1].Command);
+        Assert.Equal(ShortcutCommand.NextTab, Saved[1].Command);
         Assert.Equal(CodexId, tab.Rows[1].SelectedTarget!.Id);
         Assert.Equal(1, _link.ReloadCount);
     }
@@ -103,7 +103,7 @@ public sealed class ShortcutsTabTests : IDisposable
     public void Rows_TargetNoLongerOnScreen_IsShownAsGone()
     {
         var gone = Guid.NewGuid();
-        var tab = Open([new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab, 0, gone)]);
+        var tab = Open([new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextTab, 0, gone)]);
 
         var row = tab.Rows[0];
         Assert.Equal("Un module qui n'est plus là", row.SelectedTarget!.Name);
@@ -127,7 +127,7 @@ public sealed class ShortcutsTabTests : IDisposable
         Assert.True(handled);
         Assert.False(tab.IsCapturing);
         Assert.Equal("Ctrl+F5", Saved[0].Keys);
-        Assert.Equal(ModuleCommandKind.PreviousTab, Saved[0].Command);
+        Assert.Equal(ShortcutCommand.PreviousTab, Saved[0].Command);
         Assert.Equal("Ctrl+F5", OnDisk[0].Keys);
         Assert.Equal("Ctrl + F5", tab.Rows[0].KeysText);
         Assert.Equal(1, _link.ReloadCount);
@@ -153,7 +153,7 @@ public sealed class ShortcutsTabTests : IDisposable
 
         Assert.True(tab.IsCapturing);
         Assert.Equal(0, _link.ReloadCount);
-        Assert.Equal("Ctrl+Alt+Left", Saved[0].Keys);
+        Assert.Equal("Ctrl+Alt+Up", Saved[0].Keys);
     }
 
     [Fact]
@@ -175,11 +175,11 @@ public sealed class ShortcutsTabTests : IDisposable
         var tab = Open();
         tab.BeginCapture(tab.Rows[0]); // « Onglet précédent » veut les touches de « Onglet suivant »
 
-        await tab.CaptureAsync(Key.Right, CtrlAlt);
+        await tab.CaptureAsync(Key.Down, CtrlAlt);
 
-        Assert.Equal("Ctrl+Alt+Right sert déjà à « Onglet suivant ».", tab.Rows[0].Refusal);
+        Assert.Equal("Déjà pris par « Onglet suivant ».", tab.Rows[0].Refusal);
         Assert.True(tab.Rows[0].HasRefusal);
-        Assert.Equal("Ctrl+Alt+Left", Saved[0].Keys);
+        Assert.Equal("Ctrl+Alt+Up", Saved[0].Keys);
         Assert.Equal(0, _link.ReloadCount); // rien n'est enregistré
         Assert.True(tab.IsCapturing); // on peut essayer une autre combinaison
 
@@ -194,7 +194,7 @@ public sealed class ShortcutsTabTests : IDisposable
         var tab = Open();
         tab.BeginCapture(tab.Rows[1]);
 
-        await tab.CaptureAsync(Key.Right, CtrlAlt); // les mêmes touches que celles de la ligne : rien à changer
+        await tab.CaptureAsync(Key.Down, CtrlAlt); // les mêmes touches que celles de la ligne : rien à changer
 
         Assert.False(tab.Rows[1].HasRefusal);
         Assert.False(tab.IsCapturing);
@@ -204,12 +204,12 @@ public sealed class ShortcutsTabTests : IDisposable
     [Fact]
     public async Task Shortcut_DuplicateInAnotherSpelling_IsRefused()
     {
-        var tab = Open([new ShortcutBinding("alt+ctrl+right", ModuleCommandKind.NextTab), new ShortcutBinding("Ctrl+Alt+Left", ModuleCommandKind.PreviousTab)]);
+        var tab = Open([new ShortcutBinding("alt+ctrl+right", ShortcutCommand.NextTab), new ShortcutBinding("Ctrl+Alt+Left", ShortcutCommand.PreviousTab)]);
         tab.BeginCapture(tab.Rows[1]);
 
         await tab.CaptureAsync(Key.Right, CtrlAlt);
 
-        Assert.Equal("Ctrl+Alt+Right sert déjà à « Onglet suivant ».", tab.Rows[1].Refusal);
+        Assert.Equal("Déjà pris par « Onglet suivant ».", tab.Rows[1].Refusal);
     }
 
     [Theory]
@@ -256,19 +256,19 @@ public sealed class ShortcutsTabTests : IDisposable
 
         tab.AddShortcut();
 
-        Assert.Equal(12, tab.Rows.Count);
-        Assert.True(tab.Rows[11].IsDraft);
-        Assert.True(tab.Rows[11].IsCapturing);
+        Assert.Equal(14, tab.Rows.Count);
+        Assert.True(tab.Rows[13].IsDraft);
+        Assert.True(tab.Rows[13].IsCapturing);
         Assert.Equal(0, _link.ReloadCount); // le brouillon n'est pas enregistré
 
-        tab.Rows[11].SelectedAction = tab.ActionChoices.Single(a => a.Command == ModuleCommandKind.SelectTab && a.Index == 2);
+        tab.Rows[13].SelectedAction = tab.ActionChoices.Single(a => a.Command == ShortcutCommand.SelectTab && a.Index == 2);
         await tab.CaptureAsync(Key.T, CtrlAlt);
 
-        Assert.Equal(12, Saved.Count);
-        Assert.Equal(new ShortcutBinding("Ctrl+Alt+T", ModuleCommandKind.SelectTab, 2), Saved[11]);
-        Assert.Equal(12, OnDisk.Count);
-        Assert.False(tab.Rows[11].IsDraft);
-        Assert.Equal("Aller à l'onglet 3", tab.Rows[11].ActionText);
+        Assert.Equal(14, Saved.Count);
+        Assert.Equal(new ShortcutBinding("Ctrl+Alt+T", ShortcutCommand.SelectTab, 2), Saved[13]);
+        Assert.Equal(14, OnDisk.Count);
+        Assert.False(tab.Rows[13].IsDraft);
+        Assert.Equal("Aller à l'onglet 3", tab.Rows[13].ActionText);
         Assert.False(tab.IsCapturing);
     }
 
@@ -280,7 +280,7 @@ public sealed class ShortcutsTabTests : IDisposable
 
         await tab.CaptureAsync(Key.Escape, KeyModifiers.None);
 
-        Assert.Equal(11, tab.Rows.Count);
+        Assert.Equal(13, tab.Rows.Count);
         Assert.False(tab.IsCapturing);
         Assert.Equal(0, _link.ReloadCount);
     }
@@ -291,10 +291,10 @@ public sealed class ShortcutsTabTests : IDisposable
         var tab = Open();
         tab.AddShortcut();
 
-        await tab.CaptureAsync(Key.Left, CtrlAlt);
+        await tab.CaptureAsync(Key.Up, CtrlAlt);
 
-        Assert.Equal("Ctrl+Alt+Left sert déjà à « Onglet précédent ».", tab.Rows[11].Refusal);
-        Assert.Equal(11, Saved.Count);
+        Assert.Equal("Déjà pris par « Onglet précédent ».", tab.Rows[13].Refusal);
+        Assert.Equal(13, Saved.Count);
     }
 
     [Fact]
@@ -304,10 +304,10 @@ public sealed class ShortcutsTabTests : IDisposable
 
         await tab.DeleteAsync(tab.Rows[0]);
 
-        Assert.Equal(10, Saved.Count);
-        Assert.Equal("Ctrl+Alt+Right", Saved[0].Keys);
-        Assert.Equal(10, tab.Rows.Count);
-        Assert.Equal(10, OnDisk.Count);
+        Assert.Equal(12, Saved.Count);
+        Assert.Equal("Ctrl+Alt+Down", Saved[0].Keys);
+        Assert.Equal(12, tab.Rows.Count);
+        Assert.Equal(12, OnDisk.Count);
     }
 
     [Fact]
@@ -316,9 +316,9 @@ public sealed class ShortcutsTabTests : IDisposable
         var tab = Open();
         tab.AddShortcut();
 
-        await tab.DeleteAsync(tab.Rows[11]);
+        await tab.DeleteAsync(tab.Rows[13]);
 
-        Assert.Equal(11, tab.Rows.Count);
+        Assert.Equal(13, tab.Rows.Count);
         Assert.False(tab.IsCapturing);
         Assert.Equal(0, _link.ReloadCount);
     }
@@ -326,14 +326,14 @@ public sealed class ShortcutsTabTests : IDisposable
     [Fact]
     public async Task Shortcuts_ResetDefaults_Saves()
     {
-        var tab = Open([new ShortcutBinding("Ctrl+F5", ModuleCommandKind.NextTab)]);
+        var tab = Open([new ShortcutBinding("Ctrl+F5", ShortcutCommand.NextTab)]);
         Assert.Single(tab.Rows);
 
         await tab.ResetAsync();
 
         Assert.Equal(ShortcutDefaults.All, Saved);
         Assert.Equal(ShortcutDefaults.All, OnDisk);
-        Assert.Equal(11, tab.Rows.Count);
+        Assert.Equal(13, tab.Rows.Count);
     }
 
     [Fact]
@@ -351,12 +351,12 @@ public sealed class ShortcutsTabTests : IDisposable
     {
         var tab = Open();
         await tab.DeleteAsync(tab.Rows[0]);
-        Assert.Equal(10, tab.Rows.Count);
+        Assert.Equal(12, tab.Rows.Count);
 
         await _session.UndoAsync();
 
-        Assert.Equal(11, tab.Rows.Count);
-        Assert.Equal("Ctrl+Alt+Left", tab.Rows[0].Keys);
+        Assert.Equal(13, tab.Rows.Count);
+        Assert.Equal("Ctrl+Alt+Up", tab.Rows[0].Keys);
     }
 
     [Fact]
@@ -375,7 +375,7 @@ public sealed class ShortcutsTabTests : IDisposable
     [Fact]
     public async Task Failure_FromReload_IsShownOnItsRow()
     {
-        const string failure = "Raccourci « Ctrl+Alt+Right » indisponible : déjà pris par une autre application.";
+        const string failure = "Raccourci « Ctrl+Alt+Down » indisponible : déjà pris par une autre application.";
         _link.OnReload = () => Task.FromResult(new Reloaded(true, null, [failure, "Fond d'écran introuvable : x.jpg. Fond du thème utilisé."]));
         var tab = Open();
 
@@ -390,7 +390,7 @@ public sealed class ShortcutsTabTests : IDisposable
     [Fact]
     public async Task Failure_IsClearedBySavingAgain()
     {
-        const string failure = "Raccourci « Ctrl+Alt+Right » indisponible : touches illisibles.";
+        const string failure = "Raccourci « Ctrl+Alt+Down » indisponible : touches illisibles.";
         _link.OnReload = () => Task.FromResult(new Reloaded(true, null, [failure]));
         var tab = Open();
         await tab.SetTargetAsync(tab.Rows[0], tab.Rows[0].Targets[1]);

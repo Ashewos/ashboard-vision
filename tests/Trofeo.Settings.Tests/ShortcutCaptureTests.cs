@@ -143,14 +143,14 @@ public sealed class ShortcutCaptureTests : IDisposable
 
         var texts = window.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible).Select(t => t.Text).ToList();
         Assert.Contains("Onglet précédent", texts);
-        Assert.Contains("Ctrl + Alt + →", texts);
+        Assert.Contains("Ctrl + Alt + ↓", texts);
         Assert.Contains("Aller à l'onglet 9", texts);
         var buttons = window.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).Select(b => b.Content as string).ToList();
         Assert.Contains("Ajouter un raccourci", buttons);
         Assert.Contains("Remettre les raccourcis par défaut", buttons);
-        Assert.Equal(11, buttons.Count(c => c == "Modifier"));
-        Assert.Equal(11, buttons.Count(c => c == "Supprimer"));
-        Assert.Equal(11, model.ShortcutsTab.Rows.Count);
+        Assert.Equal(13, buttons.Count(c => c == "Modifier"));
+        Assert.Equal(13, buttons.Count(c => c == "Supprimer"));
+        Assert.Equal(13, model.ShortcutsTab.Rows.Count);
     }
 
     [AvaloniaFact]
@@ -177,7 +177,7 @@ public sealed class ShortcutCaptureTests : IDisposable
     {
         var (window, model) = Open();
         await model.ShortcutsTab.DeleteAsync(model.ShortcutsTab.Rows[0]);   // une modification à annuler
-        Assert.Equal(10, model.ShortcutsTab.Rows.Count);
+        Assert.Equal(12, model.ShortcutsTab.Rows.Count);
         var first = model.Document.Current.Shortcuts![0].Keys;
 
         model.ShortcutsTab.BeginCapture(model.ShortcutsTab.Rows[0]);
@@ -186,7 +186,7 @@ public sealed class ShortcutCaptureTests : IDisposable
 
         // Ctrl+Z est refusé comme raccourci (une lettre veut Alt ou Win), et ce n'est pas non plus une annulation :
         // la suppression reste, l'historique n'a pas reculé, et la ligne dit pourquoi en attendant une autre combinaison.
-        Assert.Equal(10, model.ShortcutsTab.Rows.Count);
+        Assert.Equal(12, model.ShortcutsTab.Rows.Count);
         Assert.Equal(first, model.Document.Current.Shortcuts![0].Keys);
         Assert.False(model.Session.CanRedo);
         Assert.True(model.ShortcutsTab.IsCapturing);
@@ -223,18 +223,18 @@ public sealed class ShortcutCaptureTests : IDisposable
         var (window, model) = Open();
         _ = model.ShortcutsTab.DeleteAsync(model.ShortcutsTab.Rows[0]);
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(10, model.ShortcutsTab.Rows.Count);
+        Assert.Equal(12, model.ShortcutsTab.Rows.Count);
 
         window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, null);
         Dispatcher.UIThread.RunJobs();
 
-        Assert.Equal(11, model.ShortcutsTab.Rows.Count);
+        Assert.Equal(13, model.ShortcutsTab.Rows.Count);
     }
 
     [AvaloniaFact]
     public async Task HotkeyFailure_IsOnItsRow_NotRepeatedInTheBanner_OnTheShortcutsTab()
     {
-        const string failure = "Raccourci « Ctrl+Alt+Right » indisponible : déjà pris par une autre application.";
+        const string failure = "Raccourci « Ctrl+Alt+Down » indisponible : déjà pris par une autre application.";
         const string other = "Le module Heure n'a pas pu démarrer.";
         _link.OnReload = () => Task.FromResult(new Reloaded(true, null, [failure, other]));
         var (_, model) = Open();

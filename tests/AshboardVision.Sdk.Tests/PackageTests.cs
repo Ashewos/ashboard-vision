@@ -30,7 +30,7 @@ public sealed class PackageTests(PackedSdk packed) : IClassFixture<PackedSdk>
             .ToArray();
 
         Assert.Equal(ExpectedEntries.Order(StringComparer.Ordinal), entries);
-        Assert.Equal("AshboardVision.Sdk.1.0.0.nupkg", Path.GetFileName(packed.PackagePath));
+        Assert.Equal("AshboardVision.Sdk.1.1.0.nupkg", Path.GetFileName(packed.PackagePath));
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class PackageTests(PackedSdk packed) : IClassFixture<PackedSdk>
         var metadata = Child(nuspec.Root!, "metadata");
 
         Assert.Equal("AshboardVision.Sdk", Text(metadata, "id"));
-        Assert.Equal("1.0.0", Text(metadata, "version"));
+        Assert.Equal("1.1.0", Text(metadata, "version"));
         Assert.Equal("Ashewos", Text(metadata, "authors"));
         Assert.Equal("README.md", Text(metadata, "readme"));
 

@@ -93,6 +93,10 @@ Sans horloge à toi, un test qui dépend de l'heure est un test qui attend. Avec
         Assert.NotEqual(atStart.Bytes, nextPace.Bytes);
 ```
 
+### Un raccourci
+
+`host.TriggerShortcutAsync("identifiant")` appelle `OnShortcutAsync` de ton module et attend qu'elle ait fini. Un test complet est dans [les raccourcis](raccourcis.md#tester-un-raccourci).
+
 ### Une permission refusée
 
 Accorde une liste vide pour voir ce que fait ton module sans rien. Ici : sans Internet, il le dit et ne fait aucune requête.
@@ -218,7 +222,7 @@ ashboard-module check MonModule/bin/Debug/net10.0 --out check-out
 - Le premier argument est le dossier de ton module : celui où `manifest.json` est à côté de la DLL. Sans lui, la commande prend le dossier où tu es.
 - `--out` est le dossier où écrire les images PNG (`check-out` si tu ne le dis pas).
 
-Elle fait sept vérifications, dans l'ordre. Chaque ligne commence par `✔` (réussi), `!` (à regarder) ou `✖` (échoué).
+Elle fait huit vérifications, dans l'ordre. Chaque ligne commence par `✔` (réussi), `!` (à regarder) ou `✖` (échoué).
 
 | # | Vérification |
 |---|---|
@@ -227,24 +231,26 @@ Elle fait sept vérifications, dans l'ordre. Chaque ligne commence par `✔` (r�
 | 3 | **Le démarrage enfermé** : ton module doit envoyer sa première image en moins de 10 secondes. |
 | 4 | **Les images** : une image PNG pour ta taille minimale et chacun de tes préréglages, dans les trois thèmes. Les fichiers s'appellent `<id>_<thème>_<colonnes>x<lignes>.png`. |
 | 5 | **Chaque permission refusée, l'une après l'autre** : le module ne doit pas s'arrêter. |
-| 6 | **La mesure** : le temps de dessin, le processeur, la mémoire. |
-| 7 | **L'arrêt propre** : l'hôte s'arrête en moins de 5 secondes. |
+| 6 | **Les raccourcis** (si ton manifeste en déclare) : chacun est livré à ton module enfermé, et ni une exception de `OnShortcutAsync` ni l'arrêt de l'hôte ne sont permis. Voir [les raccourcis](raccourcis.md#tester-un-raccourci). |
+| 7 | **La mesure** : le temps de dessin, le processeur, la mémoire. |
+| 8 | **L'arrêt propre** : l'hôte s'arrête en moins de 5 secondes. |
 
-Elle conclut « Compatible avec Ashboard Vision (SDK 1.0). », avec le code de sortie 0, ou « Pas compatible : … » avec la raison de chaque échec, en français, et le code 1. Un `!` ne rend jamais le module incompatible.
+Elle conclut « Compatible avec Ashboard Vision (SDK 1.1). », avec le code de sortie 0, ou « Pas compatible : … » avec la raison de chaque échec, en français, et le code 1. Un `!` ne rend jamais le module incompatible.
 
 Voici à quoi ressemble la sortie. Les chiffres changent d'une machine à l'autre.
 
 ```text
 ✔ Manifeste : ashewos.demo 1.0.0 (Démo)
-✔ Compatibilité : le module demande le SDK 1.0, Ashboard Vision parle le 1.0.
+✔ Compatibilité : le module demande le SDK 1.1, Ashboard Vision parle le 1.1.
 ✔ Démarrage enfermé : première image en 0,6 s (sans permission).
 ✔ Images : 6 images PNG écrites dans « C:\dev\demo\check-out » (2 tailles × 3 thèmes).
+✔ Raccourcis : 1 livré au module (colour), sans erreur.
 ✔ Dessin : 1,8 ms en moyenne, 4,1 ms au plus (120 dessins demandés, de la demande à l'image reçue).
 ✔ Processeur : 0,3 % de la machine en moyenne sur 30,0 s
 ✔ Mémoire : 58,4 Mio au plus (mémoire privée de l'hôte)
 ✔ Arrêt propre : l'hôte s'est arrêté en 0,1 s.
 
-Compatible avec Ashboard Vision (SDK 1.0).
+Compatible avec Ashboard Vision (SDK 1.1).
 ```
 
 ### Les repères de consommation

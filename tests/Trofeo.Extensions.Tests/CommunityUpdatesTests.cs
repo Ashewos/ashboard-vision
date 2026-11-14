@@ -416,6 +416,7 @@ public sealed class CommunityUpdatesTests : IAsyncLifetime
         Assert.True(preparation.Ok, preparation.Message);
         Assert.Equal(Internet, preparation.Declared);
         Assert.Empty(preparation.NewPermissions);
+        Assert.Empty(preparation.Shortcuts!); // le manifeste n'en déclare aucun : la liste est dite vide, pas « non dite »
     }
 
     [WindowsHostFact]

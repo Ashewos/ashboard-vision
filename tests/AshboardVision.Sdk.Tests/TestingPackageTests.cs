@@ -35,7 +35,7 @@ public sealed class TestingPackageTests(PackedSdkTesting packed) : IClassFixture
 
         // ModuleKit et le SDK viennent du paquet AshboardVision.Sdk, dont celui-ci dépend : ils ne sont pas embarqués une seconde fois.
         Assert.Equal(ExpectedEntries.Order(StringComparer.Ordinal), entries);
-        Assert.Equal("AshboardVision.Sdk.Testing.1.0.0.nupkg", Path.GetFileName(packed.PackagePath));
+        Assert.Equal("AshboardVision.Sdk.Testing.1.1.0.nupkg", Path.GetFileName(packed.PackagePath));
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class TestingPackageTests(PackedSdkTesting packed) : IClassFixture
         var metadata = Child(ReadNuspec().Root!, "metadata");
 
         Assert.Equal("AshboardVision.Sdk.Testing", Text(metadata, "id"));
-        Assert.Equal("1.0.0", Text(metadata, "version"));
+        Assert.Equal("1.1.0", Text(metadata, "version"));
         Assert.Equal("Ashewos", Text(metadata, "authors"));
         Assert.Equal("README.md", Text(metadata, "readme"));
 
@@ -68,7 +68,7 @@ public sealed class TestingPackageTests(PackedSdkTesting packed) : IClassFixture
             .ToArray();
 
         // Core est embarqué (lib/), pas référencé : aucune dépendance Trofeo.*, ni celles de Core (ProtectedData). SkiaSharp arrive par le paquet du SDK.
-        Assert.Equal([("AshboardVision.Sdk", "1.0.0"), ("Microsoft.Extensions.TimeProvider.Testing", "10.0.0")], dependencies);
+        Assert.Equal([("AshboardVision.Sdk", "1.1.0"), ("Microsoft.Extensions.TimeProvider.Testing", "10.0.0")], dependencies);
         Assert.DoesNotContain(dependencies, dependency => dependency.Item1!.StartsWith("Trofeo", StringComparison.OrdinalIgnoreCase));
     }
 

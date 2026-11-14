@@ -16,7 +16,7 @@ Tu obtiens un module qui affiche « Bonjour » et l'heure, suit le thème du log
 
 Ce paquet **n'est pas sur nuget.org**. C'est un fichier `.nupkg` joint à chaque version d'Ashboard Vision sur GitHub, et posé sur ton PC par l'installateur du logiciel (case « Outils pour créer des modules (SDK) »), qui lance aussi `dotnet new install AshboardVision.Sdk.Templates`. À la main : `dotnet new install <chemin du fichier .nupkg>`.
 
-Le module généré dépend des paquets `AshboardVision.Sdk` et `AshboardVision.Sdk.Testing` (même ligne de numéros, 1.0.0), à trouver dans la même source locale NuGet.
+Le module généré dépend des paquets `AshboardVision.Sdk` et `AshboardVision.Sdk.Testing` (même ligne de numéros, 1.1.0), à trouver dans la même source locale NuGet.
 
 ## Licence
 

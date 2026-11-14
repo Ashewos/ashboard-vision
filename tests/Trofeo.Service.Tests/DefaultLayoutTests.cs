@@ -31,9 +31,9 @@ public sealed class DefaultLayoutTests
     {
         var types = RealDescriptors();
 
-        foreach (var placement in DashboardLayout.Default.Placements)
+        foreach (var placement in DashboardLayout.Default.Views[0].Placements)
         {
-            Assert.Equal(PlacementError.None, LayoutValidator.Check(DashboardLayout.Default, placement, types));
+            Assert.Equal(PlacementError.None, LayoutValidator.Check(DashboardLayout.Default.Views[0].Placements, placement, types));
         }
     }
 
@@ -42,9 +42,9 @@ public sealed class DefaultLayoutTests
     {
         var layout = DashboardLayout.Default;
 
-        Assert.Equal(["claudecode", "monitoring", "nowplaying", "clock", "network"], layout.Placements.Select(p => p.TypeId));
-        Assert.Equal(layout.Placements.Count, layout.Placements.Select(p => p.InstanceId).Distinct().Count());
+        Assert.Equal(["claudecode", "monitoring", "nowplaying", "clock", "network"], layout.Views[0].Placements.Select(p => p.TypeId));
+        Assert.Equal(layout.Views[0].Placements.Count, layout.Views[0].Placements.Select(p => p.InstanceId).Distinct().Count());
         var types = RealDescriptors();
-        Assert.All(layout.Placements, p => Assert.Equal(PlacementError.None, LayoutValidator.Check(layout, p, types)));
+        Assert.All(layout.Views[0].Placements, p => Assert.Equal(PlacementError.None, LayoutValidator.Check(layout.Views[0].Placements, p, types)));
     }
 }

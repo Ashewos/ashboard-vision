@@ -23,30 +23,28 @@ public class FrameComposerTests
     public void Compose_Size()
     {
         using var frame = new FrameComposer().Compose(
-            new DashboardLayout(0, []), new Dictionary<Guid, IModule>(), Themes.Classique, DateTimeOffset.UnixEpoch);
+            [], new Dictionary<Guid, IModule>(), Themes.Classique, DateTimeOffset.UnixEpoch);
 
         Assert.Equal(1920, frame.Width);
         Assert.Equal(462, frame.Height);
     }
 
     [Fact]
-    public void Compose_InvalidLayout_Throws()
+    public void Compose_NullPlacements_Throws()
     {
-        var layout = new DashboardLayout(0, null!);
-
         Assert.ThrowsAny<Exception>(() => new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule>(), Themes.Classique, DateTimeOffset.UnixEpoch));
+            null!, new Dictionary<Guid, IModule>(), Themes.Classique, DateTimeOffset.UnixEpoch));
     }
 
     [Fact]
     public void Compose_PaintsPanelInModuleRect()
     {
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 12, 0, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 12, 0, 4, 2)]);
         var modules = new Dictionary<Guid, IModule> { [id] = new FakeModule() };
         var theme = Themes.Classique;
 
-        using var frame = new FrameComposer().Compose(layout, modules, theme, DateTimeOffset.UnixEpoch);
+        using var frame = new FrameComposer().Compose(layout.Views[0].Placements, modules, theme, DateTimeOffset.UnixEpoch);
 
         Assert.Equal(theme.Background, frame.GetPixel(5, 5));
 
@@ -66,11 +64,11 @@ public class FrameComposerTests
     {
         var id = Guid.NewGuid();
         var module = new FakeModule();
-        var layout = new DashboardLayout(0, [Place(id, 12, 0, 4, 2) with { TextSize = TextSize.Large }]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 12, 0, 4, 2) with { TextSize = TextSize.Large }]);
         var now = new DateTimeOffset(2026, 10, 24, 12, 0, 0, TimeSpan.Zero);
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule> { [id] = module }, Themes.Classique, now);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule> { [id] = module }, Themes.Classique, now);
 
         var call = Assert.Single(module.RenderCalls);
         var rect = GridGeometry.ModuleRect(12, 0, 4, 2);
@@ -84,10 +82,10 @@ public class FrameComposerTests
     [Fact]
     public void Compose_PlacementWithoutInstance_PaintsPanelOnly()
     {
-        var layout = new DashboardLayout(0, [Place(Guid.NewGuid(), 12, 0, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(Guid.NewGuid(), 12, 0, 4, 2)]);
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule>(), Themes.Classique, DateTimeOffset.UnixEpoch);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule>(), Themes.Classique, DateTimeOffset.UnixEpoch);
 
         Assert.NotEqual(Themes.Classique.Background, frame.GetPixel(1500, 100));
     }
@@ -98,14 +96,14 @@ public class FrameComposerTests
         var badId = Guid.NewGuid();
         var goodId = Guid.NewGuid();
         var green = new SKColor(0, 255, 0);
-        var layout = new DashboardLayout(0, [Place(badId, 0, 0, 4, 2), Place(goodId, 12, 0, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(badId, 0, 0, 4, 2), Place(goodId, 12, 0, 4, 2)]);
         var modules = new Dictionary<Guid, IModule>
         {
             [badId] = new FakeModule(throwOnRender: true),
             [goodId] = new FakeModule((canvas, ctx) => canvas.DrawRect(ctx.Bounds, new SKPaint { Color = green })),
         };
 
-        using var frame = new FrameComposer().Compose(layout, modules, Themes.Classique, DateTimeOffset.UnixEpoch);
+        using var frame = new FrameComposer().Compose(layout.Views[0].Placements, modules, Themes.Classique, DateTimeOffset.UnixEpoch);
 
         Assert.Equal(green, frame.GetPixel(1500, 100));
 
@@ -133,13 +131,13 @@ public class FrameComposerTests
     public void Compose_ModuleDrawsOutsideBounds_IsClipped()
     {
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 12, 0, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 12, 0, 4, 2)]);
         var modules = new Dictionary<Guid, IModule>
         {
             [id] = new FakeModule((canvas, _) => canvas.DrawRect(0, 0, 1920, 462, new SKPaint { Color = SKColors.Red })),
         };
 
-        using var frame = new FrameComposer().Compose(layout, modules, Themes.Classique, DateTimeOffset.UnixEpoch);
+        using var frame = new FrameComposer().Compose(layout.Views[0].Placements, modules, Themes.Classique, DateTimeOffset.UnixEpoch);
 
         Assert.Equal(Themes.Classique.Background, frame.GetPixel(5, 5));
         Assert.Equal(SKColors.Red, frame.GetPixel(1500, 100));
@@ -149,14 +147,14 @@ public class FrameComposerTests
     public void Compose_ModuleFillsBounds_IsClippedToRoundedCorners()
     {
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 12, 0, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 12, 0, 4, 2)]);
         var modules = new Dictionary<Guid, IModule>
         {
             [id] = new FakeModule((canvas, ctx) => canvas.DrawRect(ctx.Bounds, new SKPaint { Color = SKColors.Red })),
         };
         var rect = GridGeometry.ModuleRect(12, 0, 4, 2);
 
-        using var frame = new FrameComposer().Compose(layout, modules, Themes.Classique, DateTimeOffset.UnixEpoch);
+        using var frame = new FrameComposer().Compose(layout.Views[0].Placements, modules, Themes.Classique, DateTimeOffset.UnixEpoch);
 
         Assert.Equal(Themes.Classique.Background, frame.GetPixel(rect.Left, rect.Top)); // le coin arrondi n'est pas rouge
         Assert.Equal(SKColors.Red, frame.GetPixel(rect.Left + 40, rect.Top + 40));
@@ -166,13 +164,13 @@ public class FrameComposerTests
     public void Compose_ModuleKeepsThrowing_LogsOnlyOnce()
     {
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 12, 0, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 12, 0, 4, 2)]);
         var modules = new Dictionary<Guid, IModule> { [id] = new FakeModule(throwOnRender: true) };
         var lines = new List<string>();
         var composer = new FrameComposer(new RateLimitedErrorLog(TimeProvider.System, lines.Add));
 
         for (var i = 0; i < 5; i++)
-            composer.Compose(layout, modules, Themes.Classique, DateTimeOffset.UnixEpoch).Dispose();
+            composer.Compose(layout.Views[0].Placements, modules, Themes.Classique, DateTimeOffset.UnixEpoch).Dispose();
 
         Assert.Single(lines);
         Assert.Contains("fake", lines[0]);
@@ -209,20 +207,20 @@ public class FrameComposerTests
     public void Compose_OldOverload_IsPixelIdentical()
     {
         var composer = new FrameComposer();
-        var empty = new DashboardLayout(0, []);
+        var empty = DashboardLayout.SingleView(0, []);
 
         // Empreinte relevée avant de toucher au compositeur : fond seul, 1920 × 462 × (14 + 17 + 22 + 255).
-        using var oldEmpty = composer.Compose(empty, new Dictionary<Guid, IModule>(), Themes.Classique, DateTimeOffset.UnixEpoch);
+        using var oldEmpty = composer.Compose(empty.Views[0].Placements, new Dictionary<Guid, IModule>(), Themes.Classique, DateTimeOffset.UnixEpoch);
         Assert.Equal(273_208_320L, ByteSum(oldEmpty));
 
         // Avec des panneaux : la surcharge ancienne et la neuve (Classique, fond #0E1116) donnent la même image.
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 0, 0, 4, 2), Place(Guid.NewGuid(), 12, 1, 4, 3)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 0, 0, 4, 2), Place(Guid.NewGuid(), 12, 1, 4, 3)]);
         var modules = new Dictionary<Guid, IModule> { [id] = FillModule(SKColors.Red) };
         using var background = new ColorBackground(ClassiqueBackground);
 
-        using var oldFrame = composer.Compose(layout, modules, Themes.Classique, DateTimeOffset.UnixEpoch);
-        using var newFrame = composer.Compose(layout, modules, Themes.ClassiqueDefinition, background, DateTimeOffset.UnixEpoch);
+        using var oldFrame = composer.Compose(layout.Views[0].Placements, modules, Themes.Classique, DateTimeOffset.UnixEpoch);
+        using var newFrame = composer.Compose(layout.Views[0].Placements, modules, Themes.ClassiqueDefinition, background, DateTimeOffset.UnixEpoch);
 
         Assert.True(SameBytes(oldFrame, newFrame));
     }
@@ -233,14 +231,14 @@ public class FrameComposerTests
         // Le peintre d'avant le plan 4, recopié : Clear, puis le panneau arrondi, puis le module rogné à l'arrondi.
         var theme = Themes.Classique;
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 0, 0, 4, 2), Place(Guid.NewGuid(), 12, 1, 4, 3)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 0, 0, 4, 2), Place(Guid.NewGuid(), 12, 1, 4, 3)]);
         var modules = new Dictionary<Guid, IModule> { [id] = FillModule(SKColors.Red) };
 
         using var reference = new SKBitmap(GridGeometry.Width, GridGeometry.Height);
         using (var canvas = new SKCanvas(reference))
         {
             canvas.Clear(theme.Background);
-            foreach (var placement in layout.Placements)
+            foreach (var placement in layout.Views[0].Placements)
             {
                 var r = GridGeometry.ModuleRect(placement.Column, placement.Row, placement.Columns, placement.Rows);
                 var rect = SKRect.Create(r.Left, r.Top, r.Width, r.Height);
@@ -261,7 +259,7 @@ public class FrameComposerTests
 
         var noOutline = Themes.ClassiqueDefinition with { Panel = new PanelLook(PanelKind.Matte) };
         using var background = new ColorBackground(ClassiqueBackground);
-        using var frame = new FrameComposer().Compose(layout, modules, noOutline, background, DateTimeOffset.UnixEpoch);
+        using var frame = new FrameComposer().Compose(layout.Views[0].Placements, modules, noOutline, background, DateTimeOffset.UnixEpoch);
 
         Assert.True(SameBytes(reference, frame));
     }
@@ -269,12 +267,12 @@ public class FrameComposerTests
     [Fact]
     public void Compose_Classique_DrawsTheOutlineInsideTheModuleRect()
     {
-        var layout = new DashboardLayout(0, [Place(Guid.NewGuid(), 12, 0, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(Guid.NewGuid(), 12, 0, 4, 2)]);
         var rect = GridGeometry.ModuleRect(12, 0, 4, 2);
         using var background = new ColorBackground(ClassiqueBackground);
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule>(), Themes.ClassiqueDefinition, background, DateTimeOffset.UnixEpoch);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule>(), Themes.ClassiqueDefinition, background, DateTimeOffset.UnixEpoch);
 
         int y = (rect.Top + rect.Bottom) / 2;
         Assert.True(frame.GetPixel(rect.Left, y).Red > frame.GetPixel(rect.Left + 4, y).Red + 5);
@@ -289,7 +287,7 @@ public class FrameComposerTests
         using var background = new ColorBackground(Themes.Pixel.Theme.Background);
 
         using var frame = new FrameComposer().Compose(
-            new DashboardLayout(0, [Place(id, 0, 0, 1, 1)]),
+            [Place(id, 0, 0, 1, 1)],
             new Dictionary<Guid, IModule> { [id] = module }, Themes.Pixel, background, DateTimeOffset.UnixEpoch);
 
         var call = Assert.Single(module.RenderCalls);
@@ -302,29 +300,29 @@ public class FrameComposerTests
     public void Compose_Glass_ReusesBackdropForSameFrame()
     {
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 4, 0, 4, 2), Place(Guid.NewGuid(), 10, 1, 4, 3)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 4, 0, 4, 2), Place(Guid.NewGuid(), 10, 1, 4, 3)]);
         var modules = new Dictionary<Guid, IModule> { [id] = new FakeModule() };
         using var background = new StubBackground(SKColor.Parse("#336699"));
         var composer = new FrameComposer();
 
-        composer.Compose(layout, modules, Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch).Dispose();
-        composer.Compose(layout, modules, Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch).Dispose();
+        composer.Compose(layout.Views[0].Placements, modules, Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch).Dispose();
+        composer.Compose(layout.Views[0].Placements, modules, Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch).Dispose();
         Assert.Equal(1, composer.BackdropComputations);
 
         background.Replace(StubBackground.Make(c => c.Clear(SKColor.Parse("#993366"))));
-        composer.Compose(layout, modules, Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch).Dispose();
+        composer.Compose(layout.Views[0].Placements, modules, Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch).Dispose();
         Assert.Equal(2, composer.BackdropComputations);
     }
 
     [Fact]
     public void Compose_NotGlass_NeverBlurs()
     {
-        var layout = new DashboardLayout(0, [Place(Guid.NewGuid(), 4, 0, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(Guid.NewGuid(), 4, 0, 4, 2)]);
         using var background = new StubBackground(SKColor.Parse("#336699"));
         var composer = new FrameComposer();
 
-        composer.Compose(layout, new Dictionary<Guid, IModule>(), Themes.ClassiqueDefinition, background, DateTimeOffset.UnixEpoch).Dispose();
-        composer.Compose(layout, new Dictionary<Guid, IModule>(), Themes.Pixel, background, DateTimeOffset.UnixEpoch).Dispose();
+        composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule>(), Themes.ClassiqueDefinition, background, DateTimeOffset.UnixEpoch).Dispose();
+        composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule>(), Themes.Pixel, background, DateTimeOffset.UnixEpoch).Dispose();
 
         Assert.Equal(0, composer.BackdropComputations);
     }
@@ -332,13 +330,13 @@ public class FrameComposerTests
     [Fact]
     public void Glass_ShowsBlurredBackground()
     {
-        var layout = new DashboardLayout(0, [Place(Guid.NewGuid(), 6, 0, 4, 4)]);
+        var layout = DashboardLayout.SingleView(0, [Place(Guid.NewGuid(), 6, 0, 4, 4)]);
         var rect = GridGeometry.ModuleRect(6, 0, 4, 4);
         Assert.True(rect.Left < 960 && rect.Right > 960);
         using var background = new StubBackground(new SKColor(255, 0, 0), new SKColor(0, 0, 255));
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule>(), Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule>(), Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch);
 
         var center = frame.GetPixel(960, (rect.Top + rect.Bottom) / 2);
         Assert.True(center.Red > 40 && center.Blue > 40, $"mélange attendu, obtenu {center}");
@@ -351,12 +349,12 @@ public class FrameComposerTests
     public void Pixel_DrawsBorderAndOffsetShadow()
     {
         var bg = new SKColor(112, 112, 112);
-        var layout = new DashboardLayout(0, [Place(Guid.NewGuid(), 4, 1, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(Guid.NewGuid(), 4, 1, 4, 2)]);
         var rect = GridGeometry.ModuleRect(4, 1, 4, 2, Themes.Pixel.Grid);
         using var background = new ColorBackground(bg);
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule>(), Themes.Pixel, background, DateTimeOffset.UnixEpoch);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule>(), Themes.Pixel, background, DateTimeOffset.UnixEpoch);
 
         int midY = (rect.Top + rect.Bottom) / 2;
         Assert.Equal(SKColor.Parse("#2E2850"), frame.GetPixel(rect.Left - 2, midY));
@@ -370,12 +368,12 @@ public class FrameComposerTests
     public void Pixel_ModuleClipIsAPlainRect()
     {
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 4, 1, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 4, 1, 4, 2)]);
         var rect = GridGeometry.ModuleRect(4, 1, 4, 2, Themes.Pixel.Grid);
         using var background = new ColorBackground(Themes.Pixel.Theme.Background);
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule> { [id] = FillModule(SKColors.Red) }, Themes.Pixel, background, DateTimeOffset.UnixEpoch);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule> { [id] = FillModule(SKColors.Red) }, Themes.Pixel, background, DateTimeOffset.UnixEpoch);
 
         Assert.Equal(SKColors.Red, frame.GetPixel(rect.Left, rect.Top));
         Assert.Equal(SKColors.Red, frame.GetPixel(rect.Right - 1, rect.Bottom - 1));
@@ -386,12 +384,12 @@ public class FrameComposerTests
     public void Glass_ModuleClipFollowsTheRoundedCorners()
     {
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 4, 1, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 4, 1, 4, 2)]);
         var rect = GridGeometry.ModuleRect(4, 1, 4, 2);
         using var background = new ColorBackground(SKColor.Parse("#241A3D"));
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule> { [id] = FillModule(SKColors.Red) }, Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule> { [id] = FillModule(SKColors.Red) }, Themes.LiquidGlass, background, DateTimeOffset.UnixEpoch);
 
         Assert.NotEqual(SKColors.Red, frame.GetPixel(rect.Left, rect.Top));
         Assert.Equal(SKColors.Red, frame.GetPixel(rect.Left + 60, rect.Top + 60));
@@ -405,7 +403,7 @@ public class FrameComposerTests
     {
         var def = Themes.Find(themeId)!;
         var id = Guid.NewGuid();
-        var layout = new DashboardLayout(0, [Place(id, 2, 1, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(id, 2, 1, 4, 2)]);
         var rect = GridGeometry.ModuleRect(2, 1, 4, 2, def.Grid);
         var junk = new FakeModule((canvas, ctx) =>
         {
@@ -415,8 +413,8 @@ public class FrameComposerTests
         using var background = new ColorBackground(def.DefaultBackground.Color);
         var composer = new FrameComposer(new RateLimitedErrorLog(TimeProvider.System, _ => { }));
 
-        using var broken = composer.Compose(layout, new Dictionary<Guid, IModule> { [id] = junk }, def, background, DateTimeOffset.UnixEpoch);
-        using var clean = composer.Compose(layout, new Dictionary<Guid, IModule>(), def, background, DateTimeOffset.UnixEpoch);
+        using var broken = composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule> { [id] = junk }, def, background, DateTimeOffset.UnixEpoch);
+        using var clean = composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule>(), def, background, DateTimeOffset.UnixEpoch);
 
         // Ce que le module a peint avant d'échouer a disparu : hors texte, le panneau est celui d'un module absent.
         Assert.NotEqual(SKColors.Lime, broken.GetPixel(rect.Left + 20, rect.Top + 20));
@@ -441,12 +439,12 @@ public class FrameComposerTests
     public void Panel_BrightBackdrop_IsDarkenedForLegibility()
     {
         var def = Themes.ClassiqueDefinition with { Theme = Themes.Classique with { PanelOpacity = 0f } };
-        var layout = new DashboardLayout(0, [Place(Guid.NewGuid(), 4, 1, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(Guid.NewGuid(), 4, 1, 4, 2)]);
         var rect = GridGeometry.ModuleRect(4, 1, 4, 2);
         using var background = new ColorBackground(SKColors.White);
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule>(), def, background, DateTimeOffset.UnixEpoch);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule>(), def, background, DateTimeOffset.UnixEpoch);
 
         double sum = 0;
         int count = 0;
@@ -462,7 +460,7 @@ public class FrameComposerTests
     {
         // La moyenne du panneau est basse (un carré blanc sur du noir) : l'ancienne garde ne faisait rien.
         var def = Themes.ClassiqueDefinition with { Theme = Themes.Classique with { PanelOpacity = 0f } };
-        var layout = new DashboardLayout(0, [Place(Guid.NewGuid(), 4, 1, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(Guid.NewGuid(), 4, 1, 4, 2)]);
         var rect = GridGeometry.ModuleRect(4, 1, 4, 2);
         int cx = (rect.Left + rect.Right) / 2, cy = (rect.Top + rect.Bottom) / 2;
         using var bright = new StubBackground(StubBackground.Make(canvas =>
@@ -473,7 +471,7 @@ public class FrameComposerTests
         }));
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule>(), def, bright, DateTimeOffset.UnixEpoch);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule>(), def, bright, DateTimeOffset.UnixEpoch);
 
         Assert.InRange(Luminance(frame.GetPixel(cx, cy)), 0.0, 0.36);
     }
@@ -482,12 +480,12 @@ public class FrameComposerTests
     public void Panel_DarkBackdrop_KeepsUserOpacity()
     {
         var def = Themes.ClassiqueDefinition with { Theme = Themes.Classique with { PanelOpacity = 0.3f } };
-        var layout = new DashboardLayout(0, [Place(Guid.NewGuid(), 4, 1, 4, 2)]);
+        var layout = DashboardLayout.SingleView(0, [Place(Guid.NewGuid(), 4, 1, 4, 2)]);
         var rect = GridGeometry.ModuleRect(4, 1, 4, 2);
         using var background = new ColorBackground(ClassiqueBackground);
 
         using var frame = new FrameComposer().Compose(
-            layout, new Dictionary<Guid, IModule>(), def, background, DateTimeOffset.UnixEpoch);
+            layout.Views[0].Placements, new Dictionary<Guid, IModule>(), def, background, DateTimeOffset.UnixEpoch);
 
         var panel = def.Theme.Panel;
         var expected = new SKColor(

@@ -63,6 +63,16 @@ public sealed partial class ServiceControlHandlerTests
         public List<IReadOnlyList<ShortcutBinding>> Applied { get; } = [];
         public List<string> Failures { get; } = [];
 
+        public IReadOnlyList<string> RefusedKeys { get; set; } = [];
+
+        /// <summary>Le registraire que l'essai d'une touche interroge, à la place de Windows.</summary>
+        public FakeRegistrar Registrar { get; } = new();
+
+        /// <summary>Les touches que le service a lui-même enregistrées.</summary>
+        public List<string> OwnKeys { get; } = [];
+
+        public Task<ShortcutKeyState> TestAsync(string keys) => Task.FromResult(ShortcutKeyProbe.Test(Registrar, keys, OwnKeys));
+
         public Task<IReadOnlyList<string>> ApplyAsync(IReadOnlyList<ShortcutBinding> bindings)
         {
             Applied.Add(bindings);
@@ -95,7 +105,7 @@ public sealed partial class ServiceControlHandlerTests
         public Rig(
             DashboardLayout? layout = null, Func<ScreenInfo>? screen = null, Func<SensorInfo>? sensors = null,
             Func<DashboardLayout, LoopConfig?, LoopConfig>? build = null, LoopConfig? initialConfig = null, UpdateService? updates = null,
-            IReadOnlyList<CommunityEntry>? communityEntries = null)
+            IReadOnlyList<CommunityEntry>? communityEntries = null, bool withoutHotkeys = false)
         {
             Directory.CreateDirectory(_dir);
             LayoutPath = Path.Combine(_dir, "layout.json");
@@ -112,7 +122,7 @@ public sealed partial class ServiceControlHandlerTests
                 sensors ?? (() => new SensorInfo(true, false, false)),
                 new ProcessMeter(() => (TimeSpan.Zero, 1, 2), LoopRig.Time, 4),
                 build ?? ((layout, current) => LoopConfigFactory.Build(layout, new NoSystemFonts(), null, Sink.Warn, current)),
-                Hotkeys, Community, Sink, initialConfig, updates);
+                withoutHotkeys ? null : Hotkeys, Community, Sink, initialConfig, updates);
         }
 
         public string LayoutPath { get; }
@@ -162,7 +172,7 @@ public sealed partial class ServiceControlHandlerTests
         Assert.True(result.Applied);
         Assert.Null(result.Error);
         Assert.Equal(["Plafond d'images invalide : 12 images/s utilisées."], result.Warnings);
-        var placement = Assert.Single(rig.LoopRig.Loop.Layout.Placements);
+        var placement = Assert.Single(rig.LoopRig.Loop.Layout.Views[0].Placements);
         Assert.Equal(B, placement.InstanceId);
         Assert.Single(rig.Hotkeys.Applied);
     }
@@ -257,7 +267,7 @@ public sealed partial class ServiceControlHandlerTests
         Assert.True(result.Applied);
         Assert.Single(built);
         Assert.False(built[0].Disposed);
-        Assert.Equal(6, rig.LoopRig.Loop.Layout.Placements[0].Column);
+        Assert.Equal(6, rig.LoopRig.Loop.Layout.Views[0].Placements[0].Column);
     }
 
     [Fact]
@@ -323,7 +333,7 @@ public sealed partial class ServiceControlHandlerTests
     public async Task Reload_PassesShortcutsToHotkeyHost()
     {
         using var rig = new Rig();
-        ShortcutBinding[] custom = [new("Ctrl+Alt+Up", ModuleCommandKind.NextTab)];
+        ShortcutBinding[] custom = [new("Ctrl+Alt+Up", ShortcutCommand.NextTab)];
         rig.Store.Save(Layout(Place(A, "fake")) with { Shortcuts = custom });
         await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));
 
@@ -407,7 +417,7 @@ public sealed partial class ServiceControlHandlerTests
         using var rig = new Rig();
         rig.Store.Save(Layout(Place(A, "fake"), Place(Conf1, "conf", column: 4, columns: 2, rows: 1)));
         await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));
-        ShortcutBinding[] custom = [new("Ctrl+Alt+Up", ModuleCommandKind.NextTab)];
+        ShortcutBinding[] custom = [new("Ctrl+Alt+Up", ShortcutCommand.NextTab)];
 
         rig.Store.Save(Layout(Place(A, "fake"), Place(Conf1, "conf", column: 4, columns: 2, rows: 1)) with { Shortcuts = custom });
         await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));
@@ -417,7 +427,7 @@ public sealed partial class ServiceControlHandlerTests
     }
 
     [Fact]
-    public async Task Reload_CommandableModuleAppearsOrDisappears_ReappliesHotkeys()
+    public async Task Reload_CommandableModuleAppearsOrDisappears_DoesNotReapplyHotkeys()
     {
         using var rig = new Rig();
         rig.Store.Save(Layout(Place(A, "fake"), Place(Conf1, "conf", column: 4, columns: 2, rows: 1)));
@@ -428,7 +438,8 @@ public sealed partial class ServiceControlHandlerTests
         rig.Store.Save(Layout(Place(A, "fake"), Place(Conf1, "conf", column: 4, columns: 2, rows: 1))); // il revient
         await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));
 
-        Assert.Equal(3, rig.Hotkeys.Applied.Count);
+        Assert.Single(rig.Hotkeys.Applied); // les raccourcis ne dépendent plus d'un module commandable : rien à reposer
+        Assert.Same(ShortcutDefaults.All, rig.Hotkeys.Applied[0]);
     }
 
     [Fact]
@@ -662,7 +673,7 @@ public sealed partial class ServiceControlHandlerTests
         using var rig = new Rig();
         var frames = new List<PreviewFrame>();
 
-        using var subscription = rig.Handler.SubscribePreview(10, frames.Add);
+        using var subscription = rig.Handler.SubscribePreview(10, null, frames.Add);
         rig.LoopRig.Loop.Tick();
         rig.LoopRig.Time.Advance(TimeSpan.FromSeconds(1));
         rig.LoopRig.Loop.Tick();

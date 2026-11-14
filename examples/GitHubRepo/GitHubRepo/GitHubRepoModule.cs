@@ -23,6 +23,19 @@ public class GitHubRepoModule : CommunityModule
     private static readonly TimeSpan RefreshEvery = TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// Le temps minimal entre deux actualisations lancées par le raccourci « Rafraîchir » : un appui trop proche est ignoré, sauf si la dernière
+    /// tentative a échoué sans que GitHub réponde (réseau coupé, délai dépassé) : réessayer tout de suite est alors ce que l'utilisateur veut.
+    /// La minuterie n'entre pas dans ce délai.
+    /// </summary>
+    private static readonly TimeSpan MinGapBetweenManualRefreshes = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Les requêtes qu'on s'accorde par heure glissante, minuterie et raccourci ensemble (GitHub en accorde 60 sans jeton, on garde de la marge).
+    /// La minuterie part toujours ; un « Rafraîchir » qui ferait dépasser ce budget est ignoré.
+    /// </summary>
+    private const int HourlyRequestBudget = 50;
+
+    /// <summary>
     /// GitHub rend les versions par pages de 100. Au plus 5 pages (500 versions) : une actualisation coûte alors 6 requêtes au pire
     /// (36 par heure), sous la limite de 60 sans jeton. Un dépôt qui en a plus voit son total suivi de « 500+ versions ».
     /// </summary>
@@ -41,6 +54,13 @@ public class GitHubRepoModule : CommunityModule
     private volatile bool _closed;
     private volatile Task _refresh = Task.CompletedTask;
     private volatile RepoStats? _stats;
+
+    // La minuterie et le raccourci tournent sur des threads différents : ce qui suit se lit et s'écrit par Interlocked / Volatile.
+    private RequestBudget? _budget; // les requêtes réellement envoyées pendant l'heure écoulée
+    private long _lastManualTicks; // l'instant (UTC) du dernier « Rafraîchir » accepté ; 0 : aucun
+    private int _requestsInThisRefresh; // les requêtes de l'actualisation en cours
+    private int _requestsPerRefresh = 2; // ce que la dernière actualisation réussie a coûté, pour estimer la suivante (2 au plus bas : dépôt + versions)
+    private volatile bool _failedWithoutAnswer; // la dernière tentative a échoué sans réponse de GitHub
 
     /// <summary>
     /// Le client HTTP du module. C'est le point d'entrée des tests : une sous-classe du projet de tests (qui voit ce membre grâce à
@@ -68,12 +88,35 @@ public class GitHubRepoModule : CommunityModule
             return Task.CompletedTask;
         }
 
+        _budget = new RequestBudget(HourlyRequestBudget, TimeSpan.FromHours(1), Services.Time);
         _http = CreateHttpClient();
         _http.BaseAddress = ApiRoot;
         _http.Timeout = TimeSpan.FromSeconds(8);
 
         Refresh();
         _timer = Services.Time.CreateTimer(_ => Refresh(), null, RefreshEvery, RefreshEvery);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Le logiciel appelle cette méthode quand l'utilisateur utilise le raccourci « Rafraîchir » (<c>refresh</c> dans le manifeste, sans touche
+    /// proposée : on lui en donne une dans l'onglet Raccourcis). L'actualisation est la même que celle de la minuterie. Elle est ignorée si le
+    /// module n'a rien à actualiser (non configuré, Internet refusé), si une actualisation est déjà en cours, si le dernier appui accepté date de
+    /// moins de <see cref="MinGapBetweenManualRefreshes"/> (sauf après une tentative sans réponse de GitHub), ou si elle ferait dépasser le budget
+    /// de <see cref="HourlyRequestBudget"/> requêtes par heure (estimé d'après ce que la dernière actualisation a coûté).
+    /// </summary>
+    public override Task OnShortcutAsync(string shortcutId, CancellationToken ct)
+    {
+        if (shortcutId == "refresh" && _http is not null && _budget is { } budget && budget.CanAfford(Volatile.Read(ref _requestsPerRefresh)))
+        {
+            var now = Services.Time.GetUtcNow().UtcTicks;
+            var lastManual = Interlocked.Read(ref _lastManualTicks);
+            if ((lastManual == 0 || now - lastManual >= MinGapBetweenManualRefreshes.Ticks || _failedWithoutAnswer) && Refresh())
+            {
+                Interlocked.Exchange(ref _lastManualTicks, now);
+            }
+        }
+
         return Task.CompletedTask;
     }
 
@@ -138,19 +181,23 @@ public class GitHubRepoModule : CommunityModule
     /// minuterie, sur un thread du pool : une exception qui en sortirait arrêterait le processus du module, donc aucune n'en sort. Un rappel
     /// qui arrive pendant la fermeture (<c>_stop</c> déjà libéré) est simplement ignoré.
     /// </summary>
-    private void Refresh()
+    private bool Refresh()
     {
         try
         {
             if (!_closed && _refresh.IsCompleted)
             {
+                Volatile.Write(ref _requestsInThisRefresh, 0);
                 _refresh = RefreshAsync(_stop.Token);
+                return true;
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Services.Log.Warning("Actualisation ignorée : " + ex.Message);
         }
+
+        return false;
     }
 
     private async Task RefreshAsync(CancellationToken ct)
@@ -179,6 +226,8 @@ public class GitHubRepoModule : CommunityModule
                 pages.ForEach(page => page.Dispose());
             }
 
+            Volatile.Write(ref _requestsPerRefresh, Math.Max(2, Volatile.Read(ref _requestsInThisRefresh)));
+            _failedWithoutAnswer = false;
             SetStatus(ModuleHealth.Online);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -190,6 +239,9 @@ public class GitHubRepoModule : CommunityModule
             // Réseau coupé, délai dépassé, erreur de GitHub, réponse illisible : la dernière image reste (le logiciel l'assombrit derrière
             // le message), l'état le dit, et la prochaine actualisation (dans 10 minutes) réessaie ; si elle réussit, l'état redevient « en ligne ».
             Services.Log.Warning("Actualisation impossible : " + ex.Message);
+
+            // Une erreur de GitHub (ou une réponse illisible) est une réponse ; le reste (réseau coupé, délai dépassé) n'en est pas une.
+            _failedWithoutAnswer = ex is not GitHubProblem;
             SetStatus(ModuleHealth.Offline, ex is GitHubProblem ? ex.Message : "GitHub est injoignable pour le moment.");
         }
 
@@ -224,6 +276,9 @@ public class GitHubRepoModule : CommunityModule
             request.Headers.Authorization = new("Bearer", token.Trim());
         }
 
+        // La requête compte dès qu'elle part, qu'elle aboutisse ou non.
+        _budget!.Record();
+        Interlocked.Increment(ref _requestsInThisRefresh);
         using var response = await _http!.SendAsync(request, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {

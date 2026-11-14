@@ -15,7 +15,8 @@ namespace AshboardVision.Sdk.Tool;
 /// <summary>
 /// <c>ashboard-module check [dossier] [--out dossier]</c> : essaie un module comme le logiciel le lance, dans l'ordre : manifeste et
 /// compatibilité, démarrage enfermé (première image en moins de 10 s), une image PNG par taille et par thème, une passe par permission
-/// refusée (l'hôte ne doit pas s'arrêter), la mesure (temps de dessin, processeur, mémoire) et l'arrêt propre en moins de 5 s.
+/// refusée (l'hôte ne doit pas s'arrêter), la livraison de chaque raccourci déclaré (<see cref="CheckShortcuts"/>), la mesure (temps de
+/// dessin, processeur, mémoire) et l'arrêt propre en moins de 5 s.
 /// <para>
 /// Le module tourne dans son propre conteneur d'essai (<c>ashboard-vision.check.&lt;id&gt;</c>), supprimé à la fin quoi qu'il arrive. L'essai
 /// ne lit ni n'écrit rien du logiciel installé : ni <c>modules.json</c>, ni <c>%AppData%\ashboard-vision</c>, ni le coffre à secrets. Il n'appelle
@@ -161,7 +162,10 @@ internal static class CheckCommand
             await RefusePermissionAsync(plan, permission, settings, sizes[0], classique, report, ct).ConfigureAwait(false);
         }
 
-        // 6. La mesure.
+        // 6. Les raccourcis déclarés par le manifeste.
+        await CheckShortcuts.RunAsync(manifest, main, anchor, log, report, ct).ConfigureAwait(false);
+
+        // 7. La mesure.
         var measureSize = manifest.Presets.TryGetValue(SizePreset.Ideal, out var ideal) ? ideal : manifest.MinSize;
         if (!await MeasureAsync(plan, main, anchor, measureSize, classique, report, ct).ConfigureAwait(false))
         {
@@ -169,7 +173,7 @@ internal static class CheckCommand
             return;
         }
 
-        // 7. L'arrêt propre.
+        // 8. L'arrêt propre.
         var stop = await main.StopAsync(ct).ConfigureAwait(false);
         if (stop.Clean)
         {

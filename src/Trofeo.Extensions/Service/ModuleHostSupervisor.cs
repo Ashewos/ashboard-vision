@@ -499,6 +499,21 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         old?.Dispose();
     }
 
+    /// <summary>
+    /// Une case ouverte se cache ou redevient visible : l'hôte est prévenu (il ne dessine pas une instance cachée). Rend la main tout de
+    /// suite (le message est mis en file). Sans hôte ou sans instance ouverte, rien à dire : l'ouverture portera la visibilité.
+    /// </summary>
+    internal void VisibilityChanged(RemoteModule module, bool visible)
+    {
+        lock (_gate)
+        {
+            if (!_disposed && _instances.Contains(module) && module.Slot is { } slot)
+            {
+                _session?.Post(new Visibility(slot.Id, visible));
+            }
+        }
+    }
+
     /// <summary>Une case se ferme : son instance est refermée dans l'hôte, et l'hôte lui-même s'arrête avec la dernière.</summary>
     internal void Release(RemoteModule module)
     {
@@ -811,6 +826,10 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         var geometry = slot.Geometry;
         connection.Post(new Open(
             slot.Id, module.Settings.Clone(), geometry.Width, geometry.Height, geometry.TextScale, geometry.Columns, geometry.Rows, handle, 0));
+        if (!module.IsVisible)
+        {
+            connection.Post(new Visibility(slot.Id, false)); // une instance est visible à son ouverture : la case cachée le dit tout de suite
+        }
     }
 
     // --- Arrêt de l'hôte, pannes ---------------------------------------------------------------------------------------------------

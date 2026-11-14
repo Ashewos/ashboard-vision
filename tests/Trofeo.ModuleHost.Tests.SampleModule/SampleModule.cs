@@ -43,6 +43,12 @@ public sealed class SampleModule : CommunityModule
             {
                 _color = SKColor.Parse(hex);
             }
+
+            if (settings.TryGetProperty("startDelayMs", out var delay) && delay.TryGetInt32(out var milliseconds))
+            {
+                // Un démarrage lent : la boucle de dessin de l'hôte ne part qu'après (les messages suivant l'ouverture arrivent avant).
+                await Task.Delay(milliseconds, ct);
+            }
         }
 
         Services.Log.Info("started:" + _mode);
@@ -56,6 +62,17 @@ public sealed class SampleModule : CommunityModule
                     {
                         await Task.Delay(50);
                         Invalidate();
+                    }
+                });
+                break;
+            case "ticker":
+                // Une minuterie propre au module : elle doit continuer même quand la case est cachée.
+                _ = Task.Run(async () =>
+                {
+                    for (var i = 0; !_stopped; i++)
+                    {
+                        await Task.Delay(100);
+                        Services.Log.Info("tick-" + i);
                     }
                 });
                 break;
@@ -200,6 +217,21 @@ public sealed class SampleModule : CommunityModule
 
         var mode = Services.Settings.ValueKind == JsonValueKind.Object && Services.Settings.TryGetProperty("mode", out var m) ? m.GetString() : "?";
         return new ActionResult(actionKey != "echec", $"action {actionKey} avec {mode}");
+    }
+
+    public override async Task OnShortcutAsync(string shortcutId, CancellationToken ct)
+    {
+        // Le mode et l'identifiant dans le journal : prouvent que l'appel arrive sur l'instance de la case (ses réglages), pas sur une instance à part.
+        Services.Log.Info($"shortcut:{shortcutId}:{_mode}");
+        if (shortcutId == "boom")
+        {
+            throw new InvalidOperationException("boom du raccourci");
+        }
+
+        if (_mode == "slowShortcut")
+        {
+            await Task.Delay(200, ct);
+        }
     }
 
     public override ValueTask DisposeAsync()

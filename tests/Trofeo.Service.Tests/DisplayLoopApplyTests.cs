@@ -36,7 +36,7 @@ public sealed class DisplayLoopApplyTests
         Assert.Equal(0, module.Disposed);
         Assert.Equal(1, module.Starts);
         Assert.NotEqual(before, module.Rects.Last()); // nouveau rectangle au rendu suivant
-        Assert.Equal(6, rig.Loop.Layout.Placements[0].Column);
+        Assert.Equal(6, rig.Loop.Layout.Views[0].Placements[0].Column);
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class DisplayLoopApplyTests
         await ApplyAndTick(rig, Config(Layout(Place(A, textSize: TextSize.Large))));
 
         Assert.Single(rig.Created);
-        Assert.Equal(TextSize.Large, rig.Loop.Layout.Placements[0].TextSize);
+        Assert.Equal(TextSize.Large, rig.Loop.Layout.Views[0].Placements[0].TextSize);
     }
 
     [Fact]

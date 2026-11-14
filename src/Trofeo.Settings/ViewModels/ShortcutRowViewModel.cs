@@ -21,10 +21,13 @@ public sealed partial class ShortcutRowViewModel
         IsDraft = isDraft;
         IsCapturing = isCapturing;
         Targets = targets;
+        ActionChoices = tab.ActionChoices;
+        ActionText = tab.ActionText(binding);
+        ModuleText = tab.ModuleText(binding);
         Refusal = refusal;
         Failure = failure;
         _selectedTarget = targets.FirstOrDefault(t => t.Id == binding.Target) ?? targets[0];
-        _selectedAction = isDraft ? tab.ActionChoices.FirstOrDefault(a => a.Command == binding.Command && a.Index == binding.Index) : null;
+        _selectedAction = isDraft ? tab.ActionChoices.FirstOrDefault(a => a.Matches(binding)) : null;
     }
 
     public ShortcutBinding Binding { get; }
@@ -32,7 +35,15 @@ public sealed partial class ShortcutRowViewModel
     /// <summary>Les touches en syntaxe de <see cref="ShortcutKeys"/> (« Ctrl+Alt+Right »).</summary>
     public string Keys => Binding.Keys;
 
-    public string ActionText => _tab.ActionText(Binding);
+    public string ActionText { get; }
+
+    /// <summary>Le raccourci est celui d'un module complémentaire : la ligne porte le point d'exclamation jaune, comme partout ailleurs.</summary>
+    public bool IsCommunity => Binding.Command == ShortcutCommand.Community;
+
+    /// <summary>Le nom du module d'un raccourci de module, sous l'action ; <c>null</c> pour les autres.</summary>
+    public string? ModuleText { get; }
+
+    public bool HasModuleText => !string.IsNullOrEmpty(ModuleText);
 
     /// <summary>Les touches pour la pastille : « Ctrl + Alt + → ». Vide pour un brouillon.</summary>
     public string KeysText => IsDraft ? "" : ShortcutCapture.Display(Binding.Keys);
@@ -46,7 +57,7 @@ public sealed partial class ShortcutRowViewModel
     public string? Hint => IsCapturing ? Texts.ShortcutCapture : null;
     public bool HasHint => IsCapturing;
 
-    /// <summary>« Ctrl+Alt+Right sert déjà à « Onglet suivant ». » ; <c>null</c> : rien à refuser.</summary>
+    /// <summary>« Déjà pris par « Onglet suivant ». » ; <c>null</c> : rien à refuser.</summary>
     public string? Refusal { get; }
     public bool HasRefusal => !string.IsNullOrEmpty(Refusal);
 
@@ -55,7 +66,10 @@ public sealed partial class ShortcutRowViewModel
     public bool HasFailure => !string.IsNullOrEmpty(Failure);
 
     public IReadOnlyList<ShortcutTarget> Targets { get; }
-    public IReadOnlyList<ShortcutActionChoice> ActionChoices => _tab.ActionChoices;
+
+    /// <summary>La ligne propose un module visé : pas pour une action de vue, qui agit sur l'écran.</summary>
+    public bool HasTarget => ShortcutsTabViewModel.TakesTarget(Binding.Command);
+    public IReadOnlyList<ShortcutActionChoice> ActionChoices { get; }
 
     /// <summary>Le module visé ; le changer l'enregistre tout de suite (sauf pour un brouillon).</summary>
     public ShortcutTarget? SelectedTarget
@@ -96,5 +110,6 @@ public sealed partial class ShortcutRowViewModel
     /// <summary>Même contenu, même état : l'onglet ne refait pas la liste (les champs gardent leur focus) quand rien n'a changé.</summary>
     internal bool SameShape(ShortcutRowViewModel other) =>
         Binding == other.Binding && IsDraft == other.IsDraft && IsCapturing == other.IsCapturing
-        && Refusal == other.Refusal && Failure == other.Failure && Targets.SequenceEqual(other.Targets);
+        && Refusal == other.Refusal && Failure == other.Failure && Targets.SequenceEqual(other.Targets)
+        && ActionText == other.ActionText && ModuleText == other.ModuleText && ReferenceEquals(ActionChoices, other.ActionChoices);
 }

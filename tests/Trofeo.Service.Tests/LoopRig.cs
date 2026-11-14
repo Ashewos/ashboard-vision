@@ -87,13 +87,14 @@ internal sealed class LoopRig : IDisposable
     /// <param name="secrets">Le coffre de chaque type ; par défaut un coffre en mémoire neuf à chaque appel.</param>
     public LoopRig(
         DashboardLayout? layout = null, IBackground? background = null, ThemeDefinition? theme = null,
-        IReadOnlyList<IModuleFactory>? extraFactories = null, Func<string, ISecretStore>? secrets = null)
+        IReadOnlyList<IModuleFactory>? extraFactories = null, Func<string, ISecretStore>? secrets = null,
+        DisplayedViewStore? viewStore = null)
     {
         Screen = new ScreenDevice(Usb, Time, static () => []);
         Scheduler = new FrameScheduler(Time);
         IModuleFactory[] factories = [new ProbeFactory("fake", this), new ProbeFactory("other", this), .. extraFactories ?? []];
         Registry = new ModuleRegistry(factories, secrets ?? (_ => new FakeSecretStore()));
-        Loop = new DisplayLoop(layout ?? Layout(Place(A, "fake")), Registry, Screen, Scheduler, Time, theme, background);
+        Loop = new DisplayLoop(layout ?? Layout(Place(A, "fake")), Registry, Screen, Scheduler, Time, theme, background, viewStore);
     }
 
     public static JsonElement Json(string json = "{}") => JsonDocument.Parse(json).RootElement.Clone();
@@ -103,7 +104,7 @@ internal sealed class LoopRig : IDisposable
         TextSize textSize = TextSize.Normal) =>
         new(id, type, column, row, columns, rows, textSize, Json(settings));
 
-    public static DashboardLayout Layout(params ModulePlacement[] placements) => new(180, placements);
+    public static DashboardLayout Layout(params ModulePlacement[] placements) => DashboardLayout.SingleView(180, placements);
 
     public IEnumerable<ProbeModule> Of(Guid id) => Created.Where(m => m.InstanceId == id);
 

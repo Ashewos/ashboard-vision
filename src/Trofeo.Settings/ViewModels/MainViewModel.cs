@@ -24,11 +24,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         _link = link;
         Session = new EditSession(document);
-        LayoutTab = new LayoutTabViewModel(link, Session);
+        PreferencesStore = new PreferencesStore(preferences, preferencesPath);
+        LayoutTab = new LayoutTabViewModel(link, Session, PreferencesStore);
         AppearanceTab = new AppearanceTabViewModel(Session, picker, systemFonts ?? new SkiaSystemFonts().Families);
         ModulesTab = new ModulesTabViewModel(link, Session, secrets ?? new NoSecretAccess(), time);
         ShortcutsTab = new ShortcutsTabViewModel(link, Session);
-        PreferencesStore = new PreferencesStore(preferences, preferencesPath);
         SettingsTab = new SettingsTabViewModel(
             link, Session, PreferencesStore, system ?? SystemServices.None, picker, time);
         Pill = new ScreenPillViewModel(link);
@@ -39,6 +39,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _selectedTab = Tabs[0];
 
         _link.SetRealTimePreview(preferences.RealTimePreview);
+        LayoutTab.IsActive = IsGridVisible;
         // Le bandeau « Mode développeur actif » est dans tous les onglets : l'état du mode se lit dès que la liaison est établie.
         SettingsTab.Community.Watch();
         _link.Changed += Refresh;
@@ -139,6 +140,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // Watch pour le bandeau du mode développeur : ni consommation ni minuteur).
         if (value is SettingsTabViewModel)
             SettingsTab.Community.Activate();
+        else if (value is ShortcutsTabViewModel shortcuts)
+            _ = shortcuts.ActivateAsync(); // les raccourcis des modules complémentaires donnent leurs noms et leurs actions
         UpdateConsumptionVisibility();
     }
 
@@ -219,6 +222,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>Le damier se pose sur la bande dans l'onglet Disposition, tant que le service tourne et que l'assistant n'est pas là.</summary>
     public bool IsGridVisible => SelectedTab is LayoutTabViewModel && !HidesContent && !IsFirstRunVisible;
+
+    // La bande est l'éditeur de la vue choisie tant que l'onglet Disposition est regardé ; ailleurs, elle montre la vue qui est sur l'écran.
+    protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.PropertyName == nameof(IsGridVisible))
+            LayoutTab.IsActive = IsGridVisible;
+    }
 
     /// <summary>Le démarrage a échoué : Trofeo.Display.exe est introuvable.</summary>
     [ObservableProperty]

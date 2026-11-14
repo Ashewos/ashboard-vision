@@ -14,7 +14,7 @@ namespace AshboardVision.Sdk.Tests;
 /// L'essai est hermétique : il ne touche à rien des réglages ni des caches de l'utilisateur. Le modèle s'installe dans un dossier de modèles
 /// temporaire (<c>--debug:custom-hive</c>), les paquets se restaurent dans un dossier temporaire (<c>NUGET_PACKAGES</c>), l'outil s'installe
 /// dans un dossier temporaire (<c>--tool-path</c>), et un <c>nuget.config</c> temporaire n'a que deux sources locales, jamais nuget.org : le
-/// dossier des paquets <b>fraîchement fabriqués</b> (réservé aux paquets <c>AshboardVision.*</c>, pour qu'une copie périmée de la même version 1.0.0 dans
+/// dossier des paquets <b>fraîchement fabriqués</b> (réservé aux paquets <c>AshboardVision.*</c>, pour qu'une copie périmée de la même version 1.1.0 dans
 /// le cache de l'utilisateur ne soit jamais servie) et le dossier des paquets de l'utilisateur, utilisé comme source locale pour SkiaSharp, xunit
 /// et consorts (il faut qu'ils y soient déjà : c'est le cas après toute restauration de ce dépôt). Tout est supprimé à la fin, même en cas d'échec.
 /// </para>
@@ -131,7 +131,7 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
         Assert.True(test.ExitCode == 0, test.Output);
 
         // 4. Le banc d'essai (installé comme outil) le déclare compatible.
-        var install2 = Dotnet(paths, paths.Work, "tool", "install", "AshboardVision.Sdk.Tool", "--version", "1.0.0", "--tool-path", paths.ToolPath, "--configfile", paths.NuGetConfig);
+        var install2 = Dotnet(paths, paths.Work, "tool", "install", "AshboardVision.Sdk.Tool", "--version", "1.1.0", "--tool-path", paths.ToolPath, "--configfile", paths.NuGetConfig);
         Assert.True(install2.ExitCode == 0, install2.Output);
 
         var built = Path.Combine(project, "Essai", "bin", "Debug", "net10.0");
@@ -142,7 +142,7 @@ public sealed class TemplateTests : IClassFixture<PackedSdk>, IClassFixture<Pack
         Assert.Contains($"✔ Manifeste : {id} 1.0.0", check.Output, StringComparison.Ordinal);
         Assert.Contains("✔ Démarrage enfermé", check.Output, StringComparison.Ordinal);
         Assert.Contains("✔ Arrêt propre", check.Output, StringComparison.Ordinal);
-        Assert.EndsWith("Compatible avec Ashboard Vision (SDK 1.0)." + Environment.NewLine, check.Output, StringComparison.Ordinal);
+        Assert.EndsWith("Compatible avec Ashboard Vision (SDK 1.1)." + Environment.NewLine, check.Output, StringComparison.Ordinal);
 
         // Une image par taille (minSize et idéal : le préréglage compact est la taille minimale) et par thème, avec du dessin dedans.
         var images = Directory.GetFiles(paths.CheckOut, "*.png");

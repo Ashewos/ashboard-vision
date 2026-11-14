@@ -18,8 +18,6 @@ public sealed class DemoModule : CommunityModule
 {
     private const int StepsPerSecond = 12;
     private const int Cells = 12;
-
-    private bool _animate = true;
 ```
 
 ## La vie d'un module
@@ -33,6 +31,7 @@ Voici ce que le logiciel appelle, dans l'ordre :
 | Le constructeur | Il crée l'objet. **Rien de lourd ici**, et `Services` n'est pas encore disponible : l'utiliser lève une exception (« Services n'est disponible qu'à partir de StartAsync, pas dans le constructeur. »). |
 | `StartAsync(ct)` | Tu lis tes réglages, tu lances ta minuterie ou ta connexion. Reste **rapide** : ne fais pas attendre la première image. |
 | `Render(canvas, ctx)` | Tu dessines. Il est appelé chaque fois qu'une image est nécessaire. |
+| `OnShortcutAsync(id, ct)` | *Facultatif, SDK 1.1.* L'utilisateur a utilisé un [raccourci](raccourcis.md) que ton manifeste déclare. Appelée quand il le fait, jamais avant `StartAsync`. |
 | `DisposeAsync()` | La case se ferme : tu libères tout. |
 
 La première image est dessinée dès que `StartAsync` a rendu la main, sans que tu aies à appeler `Invalidate()`.
@@ -102,6 +101,7 @@ Une exception qui sort d'une de tes méthodes **ne fait pas tomber le logiciel**
 
 - Après une exception de `Render`, la case se rétablit au prochain dessin réussi (un essai par seconde au plus).
 - Après une exception du constructeur ou de `StartAsync`, l'instance reste en erreur jusqu'à ce que la case soit refermée.
+- Une exception de `OnShortcutAsync` est écrite dans le journal et **ne met pas la case en erreur** : le raccourci est perdu, le dessin continue. Le banc d'essai la compte pourtant contre ton module (voir [les raccourcis](raccourcis.md#recevoir-un-raccourci)).
 - Une `OutOfMemoryException` n'est **jamais rattrapée** : elle arrête le processus de ton module.
 - Une exception qui sort d'un thread que **tu** as créé (une minuterie, une tâche) arrête aussi le processus du module. Rattrape tout dans ces fonctions-là.
 
@@ -122,19 +122,23 @@ Le schéma des exemples tient en trois idées :
 *Le module « Dépôt GitHub » : `examples/GitHubRepo/GitHubRepo/GitHubRepoModule.cs`.*
 
 ```csharp
-    private void Refresh()
+    private bool Refresh()
     {
         try
         {
             if (!_closed && _refresh.IsCompleted)
             {
+                Volatile.Write(ref _requestsInThisRefresh, 0);
                 _refresh = RefreshAsync(_stop.Token);
+                return true;
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Services.Log.Warning("Actualisation ignorée : " + ex.Message);
         }
+
+        return false;
     }
 ```
 
@@ -184,7 +188,7 @@ Voici celui du module « Dépôt GitHub ».
   "description": "Affiche les étoiles, la dernière version et les téléchargements d'un dépôt GitHub.",
   "author": "Ashewos",
   "version": "1.0.0",
-  "sdk": "1.0",
+  "sdk": "1.1",
   "entry": "GitHubRepo.dll",
   "permissions": ["internet"],
   "minSize": { "columns": 3, "rows": 1 },
@@ -194,7 +198,10 @@ Voici celui du module « Dépôt GitHub ».
   },
   "settings": [
     { "kind": "text", "key": "repo", "label": "Dépôt", "placeholder": "Ashewos/ashboard-vision", "maxLength": 100, "help": "Écris-le sous la forme propriétaire/nom." },
-    { "kind": "secret", "key": "token", "label": "Jeton GitHub (facultatif)", "help": "Sans jeton, GitHub limite à 60 requêtes par heure : c'est assez, le module en fait 12." }
+    { "kind": "secret", "key": "token", "label": "Jeton GitHub (facultatif)", "help": "Sans jeton, GitHub limite à 60 requêtes par heure : c'est assez, le module en fait environ 12 seul et jusqu'à 50 si tu utilises « Rafraîchir »." }
+  ],
+  "shortcuts": [
+    { "id": "refresh", "name": "Rafraîchir" }
   ]
 }
 ```
@@ -206,7 +213,7 @@ Voici celui du module « Dépôt GitHub ».
 | `description` | oui | Une phrase de description, 300 caractères au plus. |
 | `author` | oui | Ton nom, 40 caractères au plus. |
 | `version` | oui | La version de ton module, au format SemVer : `1.2.3` ou `1.2.3-beta.1`, **sans `v`**. |
-| `sdk` | oui | La version **minimale** du SDK dont tu as besoin, `majeur.mineur` (`1.0`). Voir [la compatibilité](compatibilite.md). |
+| `sdk` | oui | La version **minimale** du SDK dont tu as besoin, `majeur.mineur` (`1.0`, ou `1.1` si tu déclares des raccourcis). Voir [la compatibilité](compatibilite.md). |
 | `entry` | oui | Le nom de ta DLL, à la racine du module, sans dossier. |
 | `permissions` | non | Les permissions que tu demandes : `reseau-local`, `internet`, `ce-pc`, `capteurs`, `musique`. Une permission inconnue est refusée. Voir [les permissions](permissions.md). |
 | `repository` | non | Ton dépôt GitHub, `propriétaire/dépôt`. Sans lui, pas de mise à jour automatique. Voir [Publier](publier.md). |
@@ -214,6 +221,7 @@ Voici celui du module « Dépôt GitHub ».
 | `minSize` | oui | La plus petite taille de ta case : `{ "columns": 1 à 16, "rows": 1 à 4 }`. |
 | `presets` | non | Les tailles proposées : `compact`, `ideal` et `large`, chacune facultative, de la même forme que `minSize`. |
 | `settings` | non | Les champs de réglage. Voir [les réglages](reglages.md). |
+| `shortcuts` | non | Les actions au clavier de ton module (`id`, `name`, `keys` facultative), 10 au plus. Demande `"sdk": "1.1"` au moins. Voir [les raccourcis](raccourcis.md). |
 
 Un module qui demande `ce-pc` **doit** avoir au moins un champ `port` dans ses réglages, sinon le manifeste est refusé.
 
@@ -221,7 +229,7 @@ Pourquoi tout cela est-il dans un fichier et pas dans le code ? Parce que **le c
 
 ## Ce qui ne fait pas partie du contrat
 
-`Trofeo.ModuleKit`, que le paquet `AshboardVision.Sdk` embarque, contient des types publics que les **six modules d'origine** utilisent : `IModule`, `IModuleFactory`, `ICommandableModule`, `ModuleContext`, `ModuleDescriptor`, `ModuleCommand`, `ModuleCommandKind`, `ModuleStatus`, `IConfigurableModuleFactory`, `IModuleNotices`, `SettingsDocument`, `CertificatePinning` et `ModulePermissions`.
+`Trofeo.ModuleKit`, que le paquet `AshboardVision.Sdk` embarque, contient des types publics que les **six modules d'origine** utilisent : `IModule`, `IModuleFactory`, `ICommandableModule`, `IHideableModule`, `ModuleContext`, `ModuleDescriptor`, `ModuleCommand`, `ModuleCommandKind`, `ModuleStatus`, `IConfigurableModuleFactory`, `IModuleNotices`, `SettingsDocument`, `CertificatePinning` et `ModulePermissions`.
 
 Ils ne font **pas** partie du contrat des modules de la communauté. Un module qui s'en sert n'a **aucune garantie de compatibilité** : ils peuvent changer sans prévenir. Écris ton module avec `CommunityModule` et ce que cette documentation décrit.
 
@@ -230,3 +238,4 @@ Ils ne font **pas** partie du contrat des modules de la communauté. Un module q
 - Les permissions et l'accès au réseau : [permissions](permissions.md).
 - Le dessin : [dessin](dessin.md).
 - Les réglages : [reglages](reglages.md).
+- Les raccourcis clavier : [raccourcis](raccourcis.md).

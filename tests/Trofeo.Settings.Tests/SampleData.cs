@@ -99,7 +99,7 @@ public static class SampleData
 
     public static ServiceStatus Status(LinkScreenState screen = LinkScreenState.Ready, bool emulated = false) => new(
         new ScreenInfo(screen, null), emulated, [],
-        new ProcessInfo(1_000_000, 2_000_000, 1.5), new FrameInfo(10, 4, 1), new SensorInfo(true, true, true));
+        new ProcessInfo(1_000_000, 2_000_000, 1.5), new FrameInfo(10, 4, 1), new SensorInfo(true, true, true), Guid.Empty, []);
 
     /// <summary>Une image de l'écran (JPEG 1920 × 462) d'une couleur unie.</summary>
     public static byte[] Jpeg(SKColor color)

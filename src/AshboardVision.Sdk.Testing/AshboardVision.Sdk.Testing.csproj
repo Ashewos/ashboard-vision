@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Les aides de test des créateurs de modules : un module s'exécute dans le processus du test, sans enfermement, avec de faux services
-       (capteurs, musique, coffre à secrets, horloge) et les vrais thèmes du logiciel. Même ligne de numéros que le SDK (1.0.0, AssemblyVersion
-       1.0.0.0 pour toute la ligne 1.x) : le paquet dépend du paquet AshboardVision.Sdk 1.0.0. -->
+       (capteurs, musique, coffre à secrets, horloge) et les vrais thèmes du logiciel. Même ligne de numéros que le SDK (1.1.0, AssemblyVersion
+       1.0.0.0 pour toute la ligne 1.x) : le paquet dépend du paquet AshboardVision.Sdk 1.1.0. -->
   <PropertyGroup>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
 

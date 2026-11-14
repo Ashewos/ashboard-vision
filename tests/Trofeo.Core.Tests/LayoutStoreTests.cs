@@ -33,22 +33,22 @@ public sealed class LayoutStoreTests : IDisposable
         Assert.Equal(180, layout.Rotation);
         Assert.Equal(
             [("claudecode", 0, 0), ("monitoring", 8, 0), ("nowplaying", 8, 2), ("clock", 12, 0), ("network", 12, 2)],
-            layout.Placements.Select(p => (p.TypeId, p.Column, p.Row)));
-        Assert.All(layout.Placements.Where(p => p.TypeId != "claudecode"), p => Assert.Equal((4, 2), (p.Columns, p.Rows)));
-        var claude = layout.Placements.Single(p => p.TypeId == "claudecode");
+            layout.Views[0].Placements.Select(p => (p.TypeId, p.Column, p.Row)));
+        Assert.All(layout.Views[0].Placements.Where(p => p.TypeId != "claudecode"), p => Assert.Equal((4, 2), (p.Columns, p.Rows)));
+        var claude = layout.Views[0].Placements.Single(p => p.TypeId == "claudecode");
         Assert.Equal((8, 4), (claude.Columns, claude.Rows));
         Assert.Equal(new Guid("3c1d9f5e-7a2b-4e8c-9b1f-6d2a0e4c8b17"), claude.InstanceId);
         Assert.Equal("feed", claude.Settings.GetProperty("view").GetString());
         Assert.True(claude.Settings.GetProperty("autoFollow").GetBoolean());
         Assert.Null(layout.Shortcuts);
-        Assert.Equal(layout.Placements.Count, layout.Placements.Select(p => p.InstanceId).Distinct().Count());
-        Assert.Equal(new Guid("5b0c5e2e-6a53-4c0b-9d0e-3f1a7c1d2b01"), layout.Placements.Single(p => p.TypeId == "clock").InstanceId);
-        Assert.Equal("pc", layout.Placements.Single(p => p.TypeId == "network").Settings.GetProperty("source").GetString());
+        Assert.Equal(layout.Views[0].Placements.Count, layout.Views[0].Placements.Select(p => p.InstanceId).Distinct().Count());
+        Assert.Equal(new Guid("5b0c5e2e-6a53-4c0b-9d0e-3f1a7c1d2b01"), layout.Views[0].Placements.Single(p => p.TypeId == "clock").InstanceId);
+        Assert.Equal("pc", layout.Views[0].Placements.Single(p => p.TypeId == "network").Settings.GetProperty("source").GetString());
         // Les modules de données restent dans les colonnes 8 à 15 ; Claude Code occupe les colonnes 0 à 7.
-        Assert.All(layout.Placements.Where(p => p.TypeId != "claudecode"), p => Assert.True(p.Column >= 8));
-        foreach (var a in layout.Placements)
+        Assert.All(layout.Views[0].Placements.Where(p => p.TypeId != "claudecode"), p => Assert.True(p.Column >= 8));
+        foreach (var a in layout.Views[0].Placements)
         {
-            foreach (var b in layout.Placements.Where(b => b != a))
+            foreach (var b in layout.Views[0].Placements.Where(b => b != a))
             {
                 Assert.False(LayoutValidator.Intersects(a, b), $"{a.TypeId} chevauche {b.TypeId}");
             }
@@ -63,7 +63,7 @@ public sealed class LayoutStoreTests : IDisposable
         store.Save(DashboardLayout.Default);
         var loaded = store.Load();
 
-        Assert.Equal(DashboardLayout.Default.Placements.Select(p => p.InstanceId), loaded.Placements.Select(p => p.InstanceId));
+        Assert.Equal(DashboardLayout.Default.Views[0].Placements.Select(p => p.InstanceId), loaded.Views[0].Placements.Select(p => p.InstanceId));
         Assert.False(File.Exists(FilePath + ".bad"));
     }
 
@@ -72,14 +72,14 @@ public sealed class LayoutStoreTests : IDisposable
     {
         var id = Guid.NewGuid();
         var settings = JsonDocument.Parse("""{"format":"12h"}""").RootElement.Clone();
-        var layout = new DashboardLayout(0, [new ModulePlacement(id, "clock", 3, 1, 4, 2, TextSize.Large, settings)]);
+        var layout = DashboardLayout.SingleView(0, [new ModulePlacement(id, "clock", 3, 1, 4, 2, TextSize.Large, settings)]);
         var store = new LayoutStore(FilePath);
 
         store.Save(layout);
         var loaded = store.Load();
 
         Assert.Equal(0, loaded.Rotation);
-        var p = Assert.Single(loaded.Placements);
+        var p = Assert.Single(loaded.Views[0].Placements);
         Assert.Equal(id, p.InstanceId);
         Assert.Equal("clock", p.TypeId);
         Assert.Equal((3, 1, 4, 2), (p.Column, p.Row, p.Columns, p.Rows));
@@ -96,10 +96,10 @@ public sealed class LayoutStoreTests : IDisposable
         var target = Guid.NewGuid();
         var placement = new ModulePlacement(
             Guid.NewGuid(), "clock", 0, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone());
-        var layout = new DashboardLayout(180, [placement],
+        var layout = DashboardLayout.SingleView(180, [placement],
         [
-            new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab),
-            new ShortcutBinding("Ctrl+Shift+F5", ModuleCommandKind.SelectTab, 4, target),
+            new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextTab),
+            new ShortcutBinding("Ctrl+Shift+F5", ShortcutCommand.SelectTab, 4, target),
         ]);
         var store = new LayoutStore(FilePath);
 
@@ -109,8 +109,8 @@ public sealed class LayoutStoreTests : IDisposable
         Assert.NotNull(loaded.Shortcuts);
         Assert.Equal(
             [
-                new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab),
-                new ShortcutBinding("Ctrl+Shift+F5", ModuleCommandKind.SelectTab, 4, target),
+                new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextTab),
+                new ShortcutBinding("Ctrl+Shift+F5", ShortcutCommand.SelectTab, 4, target),
             ],
             loaded.Shortcuts);
         Assert.Contains("\"NextTab\"", File.ReadAllText(FilePath));
@@ -125,7 +125,7 @@ public sealed class LayoutStoreTests : IDisposable
 
         var loaded = new LayoutStore(FilePath).Load();
 
-        Assert.Single(loaded.Placements);
+        Assert.Single(loaded.Views[0].Placements);
         Assert.Null(loaded.Shortcuts);
     }
 
@@ -157,7 +157,7 @@ public sealed class LayoutStoreTests : IDisposable
     [Fact]
     public void Load_LockedFile_ReturnsDefault()
     {
-        new LayoutStore(FilePath).Save(new DashboardLayout(0, []));
+        new LayoutStore(FilePath).Save(DashboardLayout.SingleView(0, []));
         using var locked = new FileStream(FilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
 
         var layout = new LayoutStore(FilePath).Load();
@@ -231,7 +231,7 @@ public sealed class LayoutStoreTests : IDisposable
         var layout = new LayoutStore(FilePath).Load();
 
         Assert.Equal(0, layout.Rotation);
-        Assert.Equal(2, layout.Placements.Count);
+        Assert.Equal(2, layout.Views[0].Placements.Count);
         Assert.False(File.Exists(FilePath + ".bad"));
     }
 
@@ -246,7 +246,7 @@ public sealed class LayoutStoreTests : IDisposable
         var layout = new LayoutStore(FilePath).Load();
 
         Assert.Null(layout.Appearance);
-        Assert.Single(layout.Placements);
+        Assert.Single(layout.Views[0].Placements);
         Assert.False(File.Exists(FilePath + ".bad"));
     }
 
@@ -297,6 +297,59 @@ public sealed class LayoutStoreTests : IDisposable
         Assert.False(new LayoutStore(FilePath).Load().Appearance!.Legibility);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SaveLoad_AnimateViewSwitch_RoundTrips(bool animate)
+    {
+        var store = new LayoutStore(FilePath);
+
+        store.Save(DashboardLayout.Default with { Appearance = new AppearanceSettings("pixel", AnimateViewSwitch: animate) });
+
+        Assert.Equal(animate, store.Load().Appearance!.AnimateViewSwitch);
+    }
+
+    [Fact]
+    public void Load_AppearanceWithoutAnimateViewSwitch_AnimatesByDefault()
+    {
+        var warnings = new List<string>();
+        File.WriteAllText(FilePath, WithAppearance(LayoutJson(180, (0, 0, 4, 2)), """{"Theme":"pixel"}"""));
+
+        var layout = new LayoutStore(FilePath, warnings.Add).Load();
+
+        Assert.True(layout.Appearance!.AnimateViewSwitch);
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void Load_AnimateViewSwitchFalse_IsRead()
+    {
+        File.WriteAllText(FilePath, WithAppearance(LayoutJson(180, (0, 0, 4, 2)), """{"Theme":"pixel","AnimateViewSwitch":false}"""));
+
+        Assert.False(new LayoutStore(FilePath).Load().Appearance!.AnimateViewSwitch);
+    }
+
+    [Theory]
+    [InlineData("\"non\"")]
+    [InlineData("3")]
+    [InlineData("[]")]
+    public void Load_UnreadableAnimateViewSwitch_DefaultsToTrue_KeepsTheRestOfTheAppearance(string value)
+    {
+        File.WriteAllText(
+            FilePath, WithAppearance(LayoutJson(180, (0, 0, 4, 2)), $$"""{"Theme":"pixel","PanelOpacity":0.4,"AnimateViewSwitch":{{value}}}"""));
+
+        var warnings = new List<string>();
+        var layout = new LayoutStore(FilePath, warnings.Add).Load();
+
+        Assert.True(layout.Appearance!.AnimateViewSwitch);
+        Assert.Equal("pixel", layout.Appearance.Theme);
+        Assert.Equal(0.4f, layout.Appearance.PanelOpacity);
+        Assert.Equal("clock", Assert.Single(layout.Views[0].Placements).TypeId);
+        Assert.Equal(
+            ["Réglage « AnimateViewSwitch » illisible dans layout.json : passage animé entre les vues par défaut."], warnings);
+        Assert.False(File.Exists(FilePath + ".bad"));
+    }
+
     [Fact]
     public void Load_UnknownTheme_KeepsPlacements()
     {
@@ -304,7 +357,7 @@ public sealed class LayoutStoreTests : IDisposable
 
         var layout = new LayoutStore(FilePath).Load();
 
-        Assert.Single(layout.Placements);
+        Assert.Single(layout.Views[0].Placements);
         Assert.Equal("neon", layout.Appearance!.Theme);
         Assert.False(File.Exists(FilePath + ".bad"));
     }
@@ -327,7 +380,7 @@ public sealed class LayoutStoreTests : IDisposable
         var layout = new LayoutStore(FilePath, warnings.Add).Load();
 
         Assert.Equal(180, layout.Rotation);
-        Assert.Equal("clock", Assert.Single(layout.Placements).TypeId);
+        Assert.Equal("clock", Assert.Single(layout.Views[0].Placements).TypeId);
         Assert.Null(layout.Appearance);
         Assert.False(File.Exists(FilePath + ".bad"));
         Assert.Equal(["Réglages d'apparence illisibles dans layout.json : apparence par défaut utilisée."], warnings);
@@ -359,7 +412,7 @@ public sealed class LayoutStoreTests : IDisposable
         var layout = new LayoutStore(FilePath).Load();
 
         Assert.Equal(0, layout.Rotation);
-        Assert.Equal("clock", Assert.Single(layout.Placements).TypeId);
+        Assert.Equal("clock", Assert.Single(layout.Views[0].Placements).TypeId);
         Assert.Equal("classique", layout.Appearance!.Theme);
         Assert.False(File.Exists(FilePath + ".bad"));
     }
@@ -369,7 +422,7 @@ public sealed class LayoutStoreTests : IDisposable
     {
         // Chemin d'avant (clé en double) : les entrées null de Shortcuts n'arrivent pas jusqu'aux appelants.
         var json = LayoutJson(180, (0, 0, 4, 2)).TrimEnd().TrimEnd('}') +
-                   ",\"Rotation\":0,\"Shortcuts\":[null,{\"Keys\":\"Ctrl+Alt+Right\",\"Command\":\"NextTab\"}]}";
+                   ",\"Rotation\":0,\"Shortcuts\":[null,{\"Keys\":\"Ctrl+Alt+F6\",\"Command\":\"NextTab\"}]}";
         File.WriteAllText(FilePath, json);
 
         var warnings = new List<string>();
@@ -377,7 +430,7 @@ public sealed class LayoutStoreTests : IDisposable
 
         Assert.Equal(0, layout.Rotation);
         var binding = Assert.Single(layout.Shortcuts!);
-        Assert.Equal("Ctrl+Alt+Right", binding.Keys);
+        Assert.Equal("Ctrl+Alt+F6", binding.Keys);
         Assert.Equal(["Raccourci « ? » ignoré : touches absentes."], warnings);
         Assert.False(File.Exists(FilePath + ".bad"));
     }
@@ -391,7 +444,7 @@ public sealed class LayoutStoreTests : IDisposable
 
         var layout = new LayoutStore(FilePath).Load();
 
-        Assert.Single(layout.Placements);
+        Assert.Single(layout.Views[0].Placements);
         Assert.Equal("liquid-glass", layout.Appearance!.Theme);
         Assert.False(File.Exists(FilePath + ".bad"));
     }
@@ -415,7 +468,7 @@ public sealed class LayoutStoreTests : IDisposable
         var loaded = store.Load();
 
         Assert.Equal(appearance, loaded.Appearance);
-        Assert.Equal(layout.Placements.Select(p => p.InstanceId), loaded.Placements.Select(p => p.InstanceId));
+        Assert.Equal(layout.Views[0].Placements.Select(p => p.InstanceId), loaded.Views[0].Placements.Select(p => p.InstanceId));
         var text = File.ReadAllText(FilePath);
         Assert.Contains("\"Kind\": \"Animated\"", text);
         Assert.Contains("\"Theme\": \"liquid-glass\"", text);
@@ -453,7 +506,7 @@ public sealed class LayoutStoreTests : IDisposable
 
         var layout = new LayoutStore(FilePath).Load();
 
-        Assert.Single(layout.Placements);
+        Assert.Single(layout.Views[0].Placements);
         Assert.Null(layout.Shelf);
         Assert.Null(layout.MaxFps);
     }
@@ -462,7 +515,7 @@ public sealed class LayoutStoreTests : IDisposable
     public void SaveLoad_ShelfAndMaxFps_RoundTrip()
     {
         var shelved = Network(0, 0);
-        var layout = new DashboardLayout(180, [Clock(0, 0)], Shelf: [shelved], MaxFps: 8);
+        var layout = DashboardLayout.SingleView(180, [Clock(0, 0)], shelf: [shelved], maxFps: 8);
         var store = new LayoutStore(FilePath);
 
         store.Save(layout);
@@ -487,7 +540,7 @@ public sealed class LayoutStoreTests : IDisposable
         var warnings = new List<string>();
         var layout = new LayoutStore(FilePath, warnings.Add).Load();
 
-        Assert.Single(layout.Placements);
+        Assert.Single(layout.Views[0].Placements);
         Assert.Null(layout.MaxFps);
         Assert.Equal(["Plafond d'images invalide : 12 images/s utilisées."], warnings);
         Assert.False(File.Exists(FilePath + ".bad"));
@@ -512,7 +565,7 @@ public sealed class LayoutStoreTests : IDisposable
     {
         var id = Guid.NewGuid();
         var store = new LayoutStore(FilePath);
-        store.Save(new DashboardLayout(180, [Clock(0, 0, id: id)], Shelf: [Network(0, 0, id)]));
+        store.Save(DashboardLayout.SingleView(180, [Clock(0, 0, id: id)], shelf: [Network(0, 0, id)]));
 
         Assert.Same(DashboardLayout.Default, store.Load());
         Assert.True(File.Exists(FilePath + ".bad"));
@@ -528,7 +581,7 @@ public sealed class LayoutStoreTests : IDisposable
     public void Load_ShelfOffGrid_IsAccepted()
     {
         var store = new LayoutStore(FilePath);
-        store.Save(new DashboardLayout(180, [Clock(0, 0)], Shelf: [Network(20, 9)]));
+        store.Save(DashboardLayout.SingleView(180, [Clock(0, 0)], shelf: [Network(20, 9)]));
 
         var layout = store.Load();
 
@@ -557,7 +610,7 @@ public sealed class LayoutStoreTests : IDisposable
     {
         File.WriteAllText(FilePath, WithKey(LayoutJson(180, (0, 0, 4, 2)), "Shortcuts", """
             [
-              {"Keys":"Ctrl+Alt+Right","Command":"NextTab","Index":0,"Target":null},
+              {"Keys":"Ctrl+Alt+F6","Command":"NextTab","Index":0,"Target":null},
               {"Keys":"Ctrl+Alt+X","Command":"Fly","Index":0,"Target":null},
               {"Command":"NextTab"},
               {"Keys":"Ctrl","Command":"NextTab"},
@@ -568,11 +621,11 @@ public sealed class LayoutStoreTests : IDisposable
         var warnings = new List<string>();
         var layout = new LayoutStore(FilePath, warnings.Add).Load();
 
-        Assert.Single(layout.Placements);
+        Assert.Single(layout.Views[0].Placements);
         Assert.Equal(
             [
-                new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab),
-                new ShortcutBinding("Ctrl+Alt+F5", ModuleCommandKind.SelectTab, 3),
+                new ShortcutBinding("Ctrl+Alt+F6", ShortcutCommand.NextTab),
+                new ShortcutBinding("Ctrl+Alt+F5", ShortcutCommand.SelectTab, 3),
             ],
             layout.Shortcuts);
         Assert.Equal(
@@ -593,7 +646,7 @@ public sealed class LayoutStoreTests : IDisposable
         var warnings = new List<string>();
         var layout = new LayoutStore(FilePath, warnings.Add).Load();
 
-        Assert.Single(layout.Placements);
+        Assert.Single(layout.Views[0].Placements);
         Assert.Null(layout.Shortcuts);
         Assert.Single(warnings);
         Assert.False(File.Exists(FilePath + ".bad"));
@@ -602,7 +655,7 @@ public sealed class LayoutStoreTests : IDisposable
     [Fact]
     public void TryLoad_Overlap_ReturnsReasonAndNoBackup()
     {
-        new LayoutStore(FilePath).Save(new DashboardLayout(180, [Clock(0, 0), Network(2, 0)]));
+        new LayoutStore(FilePath).Save(DashboardLayout.SingleView(180, [Clock(0, 0), Network(2, 0)]));
 
         var result = new LayoutStore(FilePath).TryLoad();
 
@@ -634,7 +687,7 @@ public sealed class LayoutStoreTests : IDisposable
         var result = new LayoutStore(FilePath).TryLoad();
 
         Assert.Null(result.Error);
-        Assert.Single(result.Layout!.Placements);
+        Assert.Single(result.Layout!.Views[0].Placements);
         Assert.Equal(["Plafond d'images invalide : 12 images/s utilisées."], result.Warnings);
     }
 
@@ -651,7 +704,7 @@ public sealed class LayoutStoreTests : IDisposable
     [Fact]
     public void TryLoad_LockedFile_ReturnsErrorNotDefault()
     {
-        new LayoutStore(FilePath).Save(new DashboardLayout(0, []));
+        new LayoutStore(FilePath).Save(DashboardLayout.SingleView(0, []));
         using var locked = new FileStream(FilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
 
         var result = new LayoutStore(FilePath).TryLoad();
@@ -666,11 +719,11 @@ public sealed class LayoutStoreTests : IDisposable
         var store = new LayoutStore(FilePath);
         Assert.Null(store.Stamp());
 
-        store.Save(new DashboardLayout(180, []));
+        store.Save(DashboardLayout.SingleView(180, []));
         var first = store.Stamp();
         Assert.NotNull(first);
 
-        store.Save(new DashboardLayout(180, [Clock(0, 0)]));
+        store.Save(DashboardLayout.SingleView(180, [Clock(0, 0)]));
         File.SetLastWriteTimeUtc(FilePath, DateTime.UtcNow.AddMinutes(5));
         var second = store.Stamp();
 

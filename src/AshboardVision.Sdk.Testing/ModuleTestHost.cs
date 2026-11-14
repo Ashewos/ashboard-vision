@@ -143,6 +143,25 @@ public sealed class ModuleTestHost<TModule> : IAsyncDisposable
     }
 
     /// <summary>
+    /// Déclenche un raccourci comme le logiciel le ferait : appelle la méthode <c>OnShortcutAsync</c> du module avec cet identifiant et attend qu'elle ait fini.
+    /// L'identifiant n'est pas comparé à la liste <c>shortcuts</c> du manifeste (le logiciel, lui, ne transmet que des raccourcis déclarés) : c'est à toi de
+    /// donner un identifiant déclaré. Une exception du module sort telle quelle vers le test.
+    /// </summary>
+    /// <param name="shortcutId">L'identifiant du raccourci, tel que le manifeste le déclare.</param>
+    /// <exception cref="InvalidOperationException"><see cref="StartAsync"/> n'a pas (encore) réussi.</exception>
+    public async Task TriggerShortcutAsync(string shortcutId)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentException.ThrowIfNullOrEmpty(shortcutId);
+        if (!_started || _module is null)
+        {
+            throw new InvalidOperationException("Appelle StartAsync (et attends-le) avant TriggerShortcutAsync.");
+        }
+
+        await _module.OnShortcutAsync(shortcutId, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Pose les capteurs que le module recevra de <see cref="ModuleServices.GetSensorsAsync"/> (s'il a la permission « capteurs ») ;
     /// <c>null</c> : les capteurs ne sont pas disponibles.
     /// </summary>

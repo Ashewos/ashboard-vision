@@ -51,9 +51,10 @@ public sealed class CommunityFixture : IDisposable
     public static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
     /// <summary>La disposition par défaut, avec une case « Démo » placée et une rangée.</summary>
-    public static DashboardLayout WithDemo() => DashboardLayout.Default with
+    public static DashboardLayout WithDemo() => DashboardLayout.Default.WithPlacements(
+        DashboardLayout.DefaultViewId,
+        [.. DashboardLayout.Default.Views[0].Placements.Where(p => p.TypeId != "clock"), new ModulePlacement(DemoId, "alex.demo", 12, 0, 4, 2, TextSize.Normal, Json("{}"))]) with
     {
-        Placements = [.. DashboardLayout.Default.Placements.Where(p => p.TypeId != "clock"), new ModulePlacement(DemoId, "alex.demo", 12, 0, 4, 2, TextSize.Normal, Json("{}"))],
         Shelf = [new ModulePlacement(DemoShelfId, "alex.demo", 0, 0, 4, 2, TextSize.Normal, Json("{}"))],
     };
 
@@ -66,10 +67,10 @@ public sealed class CommunityFixture : IDisposable
         string id = "alex.demo", LinkCommunityState state = LinkCommunityState.Ready, string version = "1.2.0",
         ModulePermission[]? declared = null, ModulePermission[]? granted = null, string? updateVersion = null, string? updateNotes = null,
         string? message = null, bool fromDevFolder = false, string name = "Démo", string author = "Alex", string description = "Un module pour essayer.",
-        string? devFolderPath = null) => new(
+        string? devFolderPath = null, ModuleShortcutInfo[]? shortcuts = null) => new(
         id, name, author, description, version, state, message,
         declared ?? [ModulePermission.Internet, ModulePermission.Sensors], granted ?? [ModulePermission.Internet], fromDevFolder, updateVersion, updateNotes,
-        devFolderPath);
+        devFolderPath, shortcuts);
 
     public CommunityFixture WithModules(params CommunityModuleInfo[] modules)
     {
@@ -79,8 +80,10 @@ public sealed class CommunityFixture : IDisposable
 
     public static PackageInfo Package(
         string id = "alex.demo", string name = "Démo", string author = "Alex", string version = "1.0.0", string description = "Un module pour essayer.",
-        ModulePermission[]? declared = null, string[]? errors = null, string? conflict = null, string? installedVersion = null) => new(
-        id, name, author, version, description, declared ?? [ModulePermission.Internet, ModulePermission.Sensors], errors ?? [], conflict, installedVersion);
+        ModulePermission[]? declared = null, string[]? errors = null, string? conflict = null, string? installedVersion = null,
+        ModuleShortcutInfo[]? shortcuts = null) => new(
+        id, name, author, version, description, declared ?? [ModulePermission.Internet, ModulePermission.Sensors], errors ?? [], conflict, installedVersion,
+        shortcuts);
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 }

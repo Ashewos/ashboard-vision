@@ -40,6 +40,37 @@ public static class ShortcutKeys
         return true;
     }
 
+    /// <summary>
+    /// L'écriture canonique d'une combinaison lisible : modificateurs dans l'ordre Ctrl, Alt, Shift, Win (sans doublon), puis la touche
+    /// (« alt + ctrl + r » devient « Ctrl+Alt+R »). Rend <c>null</c> si les touches ne se lisent pas (<see cref="TryParse"/>).
+    /// </summary>
+    public static string? Normalize(string keys)
+    {
+        if (!TryParse(keys, out var modifiers, out var virtualKey)) return null;
+
+        var words = new List<string>(5);
+        if ((modifiers & Ctrl) != 0) words.Add("Ctrl");
+        if ((modifiers & Alt) != 0) words.Add("Alt");
+        if ((modifiers & Shift) != 0) words.Add("Shift");
+        if ((modifiers & Win) != 0) words.Add("Win");
+        words.Add(virtualKey switch
+        {
+            0x25 => "Left",
+            0x26 => "Up",
+            0x27 => "Right",
+            0x28 => "Down",
+            >= 0x70 and <= 0x87 => "F" + (virtualKey - 0x70 + 1),
+            _ => ((char)virtualKey).ToString(),
+        });
+        return string.Join('+', words);
+    }
+
+    /// <summary>Les deux écritures désignent la même combinaison (« alt+ctrl+right » et « Ctrl+Alt+Right »).</summary>
+    public static bool Same(string a, string b) =>
+        TryParse(a, out var modsA, out var keyA) && TryParse(b, out var modsB, out var keyB)
+            ? modsA == modsB && keyA == keyB
+            : string.Equals(a?.Trim(), b?.Trim(), StringComparison.OrdinalIgnoreCase);
+
     private static uint Modifier(string word) => word.ToUpperInvariant() switch
     {
         "CTRL" => Ctrl,

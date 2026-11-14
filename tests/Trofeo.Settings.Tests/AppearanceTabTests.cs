@@ -40,7 +40,7 @@ public sealed class AppearanceTabTests : IDisposable
 
     private AppearanceTabViewModel Open(AppearanceSettings? appearance = null)
     {
-        _store.Save(new DashboardLayout(180, [Clock()]) { Appearance = appearance });
+        _store.Save(DashboardLayout.SingleView(180, [Clock()], appearance: appearance));
         _document = new LayoutDocument(_store, _link);
         _document.Load();
         _session = new EditSession(_document);
@@ -78,7 +78,7 @@ public sealed class AppearanceTabTests : IDisposable
         await tab.SetThemeAsync("pixel");
 
         Assert.Equal(new AppearanceSettings("pixel", 0.5f, "Manrope"), OnDisk);   // le reste de l'apparence est gardé
-        Assert.Equal(before.Placements, _document.Current.Placements);             // Placements et Shortcuts inchangés
+        Assert.Equal(before.Views[0].Placements, _document.Current.Views[0].Placements);             // Placements et Shortcuts inchangés
         Assert.Same(before.Shortcuts, _document.Current.Shortcuts);
         Assert.Equal(before.Rotation, _document.Current.Rotation);
         Assert.Equal(1, _link.ReloadCount);
@@ -435,6 +435,38 @@ public sealed class AppearanceTabTests : IDisposable
         Assert.True(tab.IsLegibilityOn);
     }
 
+    // ---- Passage entre les vues ----
+
+    [Fact]
+    public async Task AnimateViewSwitch_Off_WritesFalse_AndOnReturnsToTheDefault()
+    {
+        var tab = Open(new AppearanceSettings("pixel"));
+        Assert.True(tab.IsAnimateViewSwitchOn);
+
+        await tab.SetAnimateViewSwitchAsync(false);
+
+        Assert.False(OnDisk.AnimateViewSwitch);
+        Assert.Equal("pixel", OnDisk.Theme); // le reste de l'apparence est gardé
+        Assert.False(tab.IsAnimateViewSwitchOn);
+
+        await tab.SetAnimateViewSwitchAsync(true);
+
+        Assert.True(OnDisk.AnimateViewSwitch);
+        Assert.True(tab.IsAnimateViewSwitchOn);
+    }
+
+    [Fact]
+    public async Task AnimateViewSwitch_BackToDefault_RemovesTheAppearanceKey()
+    {
+        var tab = Open();
+
+        await tab.SetAnimateViewSwitchAsync(false);
+        Assert.NotNull(_store.Load().Appearance);
+
+        await tab.SetAnimateViewSwitchAsync(true);
+        Assert.Null(_store.Load().Appearance); // plus aucun réglage : la clé Appearance disparaît
+    }
+
     // ---- Avertissements du rechargement ----
 
     private const string BackgroundMissing = "Fond d'écran introuvable : C:\\fonds\\photo.png. Fond du thème utilisé.";
@@ -491,7 +523,7 @@ public sealed class AppearanceTabTests : IDisposable
 
         // Le service ne répète pas l'avertissement quand l'apparence ne change pas : une modification de module l'efface pas.
         ReloadWith();
-        await _session.ApplyAsync(l => l with { Placements = [Clock() with { TextSize = TextSize.Large }] });
+        await _session.ApplyAsync(l => l.WithPlacements(l.Views[0].Id, [Clock() with { TextSize = TextSize.Large }]));
         Assert.Equal(BackgroundMissing, tab.BackgroundWarning);
 
         // Annuler cette modification de module (apparence inchangée) ne l'efface pas non plus.
@@ -511,7 +543,7 @@ public sealed class AppearanceTabTests : IDisposable
         var tab = Open(new AppearanceSettings("classique", Background: new BackgroundSettings(BackgroundKind.Image, Path: @"C:\fonds\photo.png")));
         ReloadWith(BackgroundMissing);
 
-        await _session.ApplyAsync(l => l with { Placements = [Clock() with { TextSize = TextSize.Large }] });
+        await _session.ApplyAsync(l => l.WithPlacements(l.Views[0].Id, [Clock() with { TextSize = TextSize.Large }]));
 
         Assert.Equal(BackgroundMissing, tab.BackgroundWarning);
     }
@@ -578,7 +610,7 @@ public sealed class AppearanceTabTests : IDisposable
         await tab.SetFontAsync(new FontItem("Comic Papyrus", "Comic Papyrus"));
         Assert.True(tab.HasFontWarning);
 
-        _store.Save(new DashboardLayout(180, [Clock()]));                 // quelqu'un réécrit le fichier
+        _store.Save(DashboardLayout.SingleView(180, [Clock()]));                 // quelqu'un réécrit le fichier
         await _session.ApplyAsync(l => l with { Rotation = 0 });          // la fenêtre le relit au lieu de l'écraser
 
         Assert.False(tab.HasFontWarning);
@@ -645,7 +677,7 @@ public sealed class AppearanceTabTests : IDisposable
     public async Task Window_ShowsTheAmberLine_OnThePersonnalisationTab()
     {
         _link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());
-        _store.Save(new DashboardLayout(180, [Clock()]));
+        _store.Save(DashboardLayout.SingleView(180, [Clock()]));
         _document = new LayoutDocument(_store, _link);
         _document.Load();
         using var model = new MainViewModel(_link, _document, new EditorPreferences(FirstRunDone: true));

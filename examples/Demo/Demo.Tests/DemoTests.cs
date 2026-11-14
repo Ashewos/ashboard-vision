@@ -80,4 +80,51 @@ public sealed class DemoTests
         Assert.Equal(atStart.Bytes, samePace.Bytes);
         Assert.NotEqual(atStart.Bytes, nextPace.Bytes);
     }
+
+    [Fact]
+    public async Task Demo_ChangeColourShortcut_ChangesTheDrawnColour()
+    {
+        await using var host = await StartedAsync();
+        host.Time.SetUtcNow(Start);
+        using var before = host.Render(Size, "classique");
+
+        // Le raccourci « colour » (celui que le manifeste déclare) passe la tête à la couleur suivante : même heure, autre dessin.
+        await host.TriggerShortcutAsync("colour");
+        using var after = host.Render(Size, "classique");
+
+        Assert.NotEqual(before.Bytes, after.Bytes);
+    }
+
+    [Fact]
+    public async Task Demo_ChangeColourShortcut_GoesRoundAndReturnsToTheThemeAccent()
+    {
+        await using var host = await StartedAsync();
+        host.Time.SetUtcNow(Start);
+        using var first = host.Render(Size, "classique");
+
+        // Cinq couleurs en tout (l'accent du thème, puis quatre autres) : au sixième appui, on retrouve l'accent.
+        var seen = new List<byte[]> { first.Bytes.ToArray() };
+        for (var press = 0; press < 5; press++)
+        {
+            await host.TriggerShortcutAsync("colour");
+            using var image = host.Render(Size, "classique");
+            seen.Add(image.Bytes.ToArray());
+        }
+
+        Assert.Equal(5, seen.Take(5).Select(Convert.ToBase64String).Distinct().Count());
+        Assert.Equal(seen[0], seen[5]);
+    }
+
+    [Fact]
+    public async Task Demo_UnknownShortcut_ChangesNothing()
+    {
+        await using var host = await StartedAsync();
+        host.Time.SetUtcNow(Start);
+        using var before = host.Render(Size, "classique");
+
+        await host.TriggerShortcutAsync("inconnu");
+        using var after = host.Render(Size, "classique");
+
+        Assert.Equal(before.Bytes, after.Bytes);
+    }
 }

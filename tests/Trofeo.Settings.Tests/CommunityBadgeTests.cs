@@ -216,7 +216,7 @@ public sealed class CommunityBadgeTests : IDisposable
         Assert.True(Named<Button>("CancelButton").IsEffectivelyVisible);
         var problems = Named<ItemsControl>("Problems").GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).ToList();
         Assert.Equal(["Le paquet est trop gros.", "Un autre module porte déjà cet identifiant."], problems);
-        Assert.DoesNotContain(Find<CheckBox>(), c => c.IsEffectivelyVisible);
+        Assert.DoesNotContain(Named<Border>("Dialog").GetVisualDescendants().OfType<CheckBox>(), c => c.IsEffectivelyVisible); // dans la boîte (l'onglet Disposition a sa propre case à cocher)
     }
 
     [AvaloniaFact]

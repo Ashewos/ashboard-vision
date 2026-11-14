@@ -119,7 +119,7 @@ public sealed class ModulesTabViewTests : IDisposable
         Click(ButtonLabelled("12 h (AM/PM)"));
 
         await WaitUntil(() => _link.ReloadCount == 1);
-        Assert.Equal("12h", document.Current.Placements.Single(p => p.InstanceId == ClockId).Settings.GetProperty("format").GetString());
+        Assert.Equal("12h", document.Current.Views[0].Placements.Single(p => p.InstanceId == ClockId).Settings.GetProperty("format").GetString());
         await WaitUntil(() => ButtonLabelled("12 h (AM/PM)").Classes.Contains("primary"));
         Assert.DoesNotContain("primary", ButtonLabelled("24 h").Classes);
     }
@@ -141,7 +141,7 @@ public sealed class ModulesTabViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
 
         await WaitUntil(() => _link.ReloadCount == 1);
-        Assert.Equal("Salon", document.Current.Placements.Single(p => p.InstanceId == MonitoringId).Settings.GetProperty("title").GetString());
+        Assert.Equal("Salon", document.Current.Views[0].Placements.Single(p => p.InstanceId == MonitoringId).Settings.GetProperty("title").GetString());
     }
 
     [AvaloniaFact]
@@ -155,7 +155,7 @@ public sealed class ModulesTabViewTests : IDisposable
         _window!.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
 
         await WaitUntil(() => _link.ReloadCount == 1);
-        Assert.Equal("Bureau", document.Current.Placements.Single(p => p.InstanceId == MonitoringId).Settings.GetProperty("title").GetString());
+        Assert.Equal("Bureau", document.Current.Views[0].Placements.Single(p => p.InstanceId == MonitoringId).Settings.GetProperty("title").GetString());
     }
 
     [AvaloniaFact]
@@ -168,18 +168,17 @@ public sealed class ModulesTabViewTests : IDisposable
         Click(switches[1]);                                               // « Faire pâlir les lignes anciennes »
 
         await WaitUntil(() => _link.ReloadCount == 1);
-        Assert.True(document.Current.Placements.Single(p => p.InstanceId == ClaudeId).Settings.GetProperty("feedFade").GetBoolean());
+        Assert.True(document.Current.Views[0].Placements.Single(p => p.InstanceId == ClaudeId).Settings.GetProperty("feedFade").GetBoolean());
     }
 
     [AvaloniaFact]
     public async Task Secret_ShowsPresence_MasksTheInput_AndSavesToTheVault()
     {
-        var (model, document) = Open(NetworkId, layout => layout with
-        {
-            Placements = [.. layout.Placements.Select(p => p.InstanceId == NetworkId
+        var (model, document) = Open(NetworkId, layout => layout.WithPlacements(
+            layout.Views[0].Id,
+            [.. layout.Views[0].Placements.Select(p => p.InstanceId == NetworkId
                 ? p with { Settings = JsonDocument.Parse("""{"source":"unifi","unifi":{"host":"10.0.0.1"}}""").RootElement.Clone() }
-                : p)],
-        });
+                : p)]));
         Assert.Equal("Absente", Named<TextBlock>("Status").Text);
 
         Click(ButtonLabelled("Modifier"));
@@ -193,7 +192,7 @@ public sealed class ModulesTabViewTests : IDisposable
         await WaitUntil(() => _link.Restarts.Count == 1);
         Assert.Equal("Enregistrée", Named<TextBlock>("Status").Text);
         Assert.Equal(0, _link.ReloadCount);
-        Assert.DoesNotContain("s3cr3t", _store.Load().Placements.Single(p => p.InstanceId == NetworkId).Settings.GetRawText());
+        Assert.DoesNotContain("s3cr3t", _store.Load().Views[0].Placements.Single(p => p.InstanceId == NetworkId).Settings.GetRawText());
         Assert.False(model.Session.CanUndo);                              // un secret n'entre pas dans l'historique de la disposition
         Assert.NotNull(document);
     }
@@ -202,12 +201,11 @@ public sealed class ModulesTabViewTests : IDisposable
     public async Task Action_Confirm_ThenRuns_AndShowsTheMessage()
     {
         _link.OnAction = (_, _) => Task.FromResult(new ActionResult(true, "Certificat oublié."));
-        Open(NetworkId, layout => layout with
-        {
-            Placements = [.. layout.Placements.Select(p => p.InstanceId == NetworkId
+        Open(NetworkId, layout => layout.WithPlacements(
+            layout.Views[0].Id,
+            [.. layout.Views[0].Placements.Select(p => p.InstanceId == NetworkId
                 ? p with { Settings = JsonDocument.Parse("""{"source":"unifi","unifi":{"host":"10.0.0.1"}}""").RootElement.Clone() }
-                : p)],
-        });
+                : p)]));
 
         Click(ButtonLabelled("Oublier le certificat de la console"));
         Assert.Empty(_link.Actions);                                     // la question d'abord
@@ -239,7 +237,7 @@ public sealed class ModulesTabViewTests : IDisposable
         Click(ButtonLabelled("Lyon, Rhône, France"));
 
         await WaitUntil(() => _link.ReloadCount == 1);
-        Assert.Equal("Lyon", document.Current.Placements.Single(p => p.InstanceId == ClockId).Settings.GetProperty("location").GetProperty("name").GetString());
+        Assert.Equal("Lyon", document.Current.Views[0].Placements.Single(p => p.InstanceId == ClockId).Settings.GetProperty("location").GetProperty("name").GetString());
         await WaitUntil(() => Named<TextBlock>("Current").Text == "Lyon");
         Assert.False(city.IsOpen);
     }
@@ -264,6 +262,6 @@ public sealed class ModulesTabViewTests : IDisposable
         model.SelectedTab = model.LayoutTab;                             // on quitte l'onglet sans que le focus ait bougé
 
         await WaitUntil(() => _link.ReloadCount == 1);
-        Assert.Equal("Salon", document.Current.Placements.Single(p => p.InstanceId == MonitoringId).Settings.GetProperty("title").GetString());
+        Assert.Equal("Salon", document.Current.Views[0].Placements.Single(p => p.InstanceId == MonitoringId).Settings.GetProperty("title").GetString());
     }
 }

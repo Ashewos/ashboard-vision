@@ -65,11 +65,10 @@ public sealed class ServiceControlHandler(
     private LoopConfig? _applied = initialConfig;
     private AppearanceSettings? _appliedAppearance = initialConfig?.Layout.Appearance;
 
-    // Les raccourcis posés en dernier (au démarrage, puis à chaque pose) et s'il y avait alors un module commandable ; sous
-    // _reloadGate. Un rechargement qui ne change ni l'un ni l'autre ne les repose pas : sinon un raccourci pris par une autre
-    // application remettrait son avertissement après chaque modification sans rapport. null : état inconnu, la prochaine pose a lieu.
+    // Les raccourcis posés en dernier (au démarrage, puis à chaque pose) ; sous _reloadGate. Un rechargement qui ne les change
+    // pas ne les repose pas : sinon un raccourci pris par une autre application remettrait son avertissement après chaque
+    // modification sans rapport. null : état inconnu, la prochaine pose a lieu.
     private IReadOnlyList<ShortcutBinding>? _appliedShortcuts = initialConfig is null ? null : initialConfig.Layout.Shortcuts ?? ShortcutDefaults.All;
-    private bool _appliedCommandable = loop.FindCommandTarget(null) is not null;
 
     public Welcome Hello() => new(ServiceVersion, ControlPipe.ProtocolVersion, GetTypes());
 
@@ -99,7 +98,8 @@ public sealed class ServiceControlHandler(
             .ToList();
         return new ServiceStatus(
             screen(), status.Emulated, modules, meter.Read(),
-            new FrameInfo(status.FramesSent, status.RenderMs, status.SendMs), sensors());
+            new FrameInfo(status.FramesSent, status.RenderMs, status.SendMs), sensors(), loop.CurrentViewId,
+            hotkeys?.RefusedKeys ?? []);
     }
 
     /// <summary>L'état du lien avec l'écran tel que la fenêtre de réglage le connaît.</summary>
@@ -161,15 +161,13 @@ public sealed class ServiceControlHandler(
             if (hotkeys is not null)
             {
                 var wanted = layout.Shortcuts ?? ShortcutDefaults.All;
-                var commandable = loop.FindCommandTarget(null) is not null;
-                if (_appliedShortcuts is null || commandable != _appliedCommandable || !_appliedShortcuts.SequenceEqual(wanted))
+                if (_appliedShortcuts is null || !_appliedShortcuts.SequenceEqual(wanted))
                 {
                     try
                     {
                         // Les refus de cette pose sont rendus une fois ; tant que rien ne change, on ne les répète pas.
                         warnings.AddRange(await hotkeys.ApplyAsync(wanted).ConfigureAwait(false));
                         _appliedShortcuts = wanted;
-                        _appliedCommandable = commandable;
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
@@ -180,7 +178,7 @@ public sealed class ServiceControlHandler(
                 }
             }
 
-            Trace.TraceInformation($"Disposition rechargée : {layout.Placements.Count} module(s), {warnings.Count} avertissement(s).");
+            Trace.TraceInformation($"Disposition rechargée : {layout.AllPlacements.Count()} module(s), {warnings.Count} avertissement(s).");
             return new Reloaded(true, null, warnings);
         }
         finally
@@ -217,7 +215,7 @@ public sealed class ServiceControlHandler(
     public async Task<ActionResult> RunActionAsync(Guid instanceId, string actionKey, CancellationToken ct)
     {
         var layout = loop.Layout;
-        var placed = layout.Placements.FirstOrDefault(p => p.InstanceId == instanceId);
+        var placed = layout.AllPlacements.FirstOrDefault(p => p.InstanceId == instanceId);
         var placement = placed ?? layout.Shelf?.FirstOrDefault(p => p.InstanceId == instanceId);
         if (placement is null) return new ActionResult(false, "Module introuvable dans la disposition.");
 
@@ -253,7 +251,40 @@ public sealed class ServiceControlHandler(
         return result;
     }
 
-    public IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame) => loop.SubscribePreview(maxFps, onFrame);
+    public IDisposable SubscribePreview(int maxFps, Guid? viewId, Action<PreviewFrame> onFrame)
+    {
+        // Une vue qui n'existe pas est une erreur de la requête (le client la lit comme telle), pas un aperçu muet.
+        if (viewId is { } id && !loop.Layout.Views.Any(v => v.Id == id)) throw new InvalidOperationException("Cette vue n'existe pas.");
+
+        return loop.SubscribePreview(maxFps, viewId, onFrame);
+    }
+
+    // ---- Vues ----
+
+    /// <summary>Levé après chaque changement de vue affichée, que ce soit le clavier, la fenêtre de réglage ou un rechargement.</summary>
+    public event Action<Guid>? ViewChanged
+    {
+        add => loop.ViewChanged += value;
+        remove => loop.ViewChanged -= value;
+    }
+
+    public Task<bool> ShowViewAsync(Guid viewId, CancellationToken ct)
+    {
+        // Le sens du glissement est celui du déplacement dans la liste des vues (vers la droite quand la vue demandée vient après).
+        var views = loop.Layout.Views;
+        var target = views.ToList().FindIndex(v => v.Id == viewId);
+        if (target < 0) return Task.FromResult(false);
+
+        var current = views.ToList().FindIndex(v => v.Id == loop.CurrentViewId);
+        return Task.FromResult(loop.ShowView(viewId, Math.Sign(target - current)));
+    }
+
+    // ---- Raccourcis ----
+
+    public Task<ShortcutKeyState> TestShortcutKeysAsync(string keys, CancellationToken ct) =>
+        hotkeys is null
+            ? throw new InvalidOperationException("Les raccourcis ne sont pas disponibles pour l'instant.")
+            : hotkeys.TestAsync(keys).WaitAsync(ct);
 
     // ---- Mises à jour ----
 
@@ -304,8 +335,11 @@ public sealed class ServiceControlHandler(
             manifest?.Version ?? entry.Approval?.Version, Enum.Parse<LinkCommunityState>(entry.State.ToString()), entry.Message,
             manifest?.Permissions ?? [], community.GrantedTo(entry), entry.FromDevFolder,
             UpdateVersion: update?.Version, UpdateNotes: update?.Notes,
-            DevFolderPath: entry.FromDevFolder ? entry.Directory : null);
+            DevFolderPath: entry.FromDevFolder ? entry.Directory : null, Shortcuts: ToShortcutInfos(manifest?.Shortcuts));
     }
+
+    private static List<ModuleShortcutInfo> ToShortcutInfos(IEnumerable<ModuleShortcut>? shortcuts) =>
+        [.. (shortcuts ?? []).Select(s => new ModuleShortcutInfo(s.Id, s.Name, s.Keys))];
 
     public PackageInfo InspectPackage(string path) => ToPackageInfo(community.Inspect(path));
 
@@ -317,7 +351,7 @@ public sealed class ServiceControlHandler(
         var manifest = inspection.Manifest;
         return new PackageInfo(
             manifest?.Id, manifest?.Name, manifest?.Author, manifest?.Version, manifest?.Description, manifest?.Permissions ?? [],
-            inspection.Errors, inspection.Conflict, inspection.Installed?.Version);
+            inspection.Errors, inspection.Conflict, inspection.Installed?.Version, ToShortcutInfos(manifest?.Shortcuts));
     }
 
     public Task<ActionResult> InstallPackageAsync(string path, IReadOnlyList<ModulePermission> granted, CancellationToken ct) =>

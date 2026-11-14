@@ -2,8 +2,69 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Trofeo.Core.Layout;
 using Trofeo.ModuleKit;
+using Trofeo.Settings.Services;
 
 namespace Trofeo.Settings.ViewModels;
+
+/// <summary>
+/// Un onglet de vue de l'onglet Disposition. Le point vert (<see cref="IsOnScreen"/>) marque la vue que le service affiche sur l'écran,
+/// qui n'est pas forcément la vue choisie (<see cref="IsSelected"/>).
+/// </summary>
+public sealed partial class ViewTabItem(Guid id, string name, LayoutTabViewModel owner) : ObservableObject
+{
+    public Guid Id { get; } = id;
+
+    /// <summary>Le nom de la vue, nettoyé (il peut venir d'une disposition partagée).</summary>
+    public string Name { get; } = name;
+
+    /// <summary>La vue est sur l'écran en ce moment : le point vert.</summary>
+    [ObservableProperty] private bool _isOnScreen;
+
+    /// <summary>La vue est celle que montrent l'éditeur et l'aperçu.</summary>
+    [ObservableProperty] private bool _isSelected;
+
+    /// <summary>Le nom est en cours de saisie (menu « Renommer »).</summary>
+    [ObservableProperty] private bool _isRenaming;
+
+    /// <summary>Le nom tel qu'on le tape.</summary>
+    [ObservableProperty] private string _editName = name;
+
+    public string OnScreenText => Texts.LayoutViewOnScreen;
+
+    /// <summary>Le menu de l'onglet ne sert que service relié (sans lui, rien ne s'enregistre).</summary>
+    public bool CanEdit => owner.CanEdit;
+
+    /// <summary>« Supprimer » n'est pas proposé pour la dernière vue.</summary>
+    public bool CanDelete => owner.CanEdit && owner.CanDeleteView;
+
+    internal void RefreshAvailability()
+    {
+        OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanDelete));
+    }
+
+    /// <summary>Le texte d'une vue, sans ce qui peut tromper l'œil ; vide : le nom de la première vue, pour qu'un onglet ne soit jamais muet.</summary>
+    public static string Clean(string? name) => UntrustedText.Line(name) is { Length: > 0 } cleaned ? cleaned : LayoutView.FirstViewName;
+
+    [RelayCommand]
+    private void Rename()
+    {
+        EditName = Name;
+        IsRenaming = true;
+    }
+
+    [RelayCommand]
+    private Task CommitRename() => IsRenaming ? owner.RenameViewAsync(this, EditName) : Task.CompletedTask;
+
+    [RelayCommand]
+    private void CancelRename() => IsRenaming = false;
+
+    [RelayCommand]
+    private Task Duplicate() => owner.DuplicateViewAsync(this);
+
+    [RelayCommand]
+    private Task Delete() => owner.DeleteViewAsync(this);
+}
 
 /// <summary>Un module placé sur l'écran, tel que la colonne « Sur l'écran » et le damier le montrent.</summary>
 public sealed partial class PlacedModuleItem(ModulePlacement placement, string name, bool isCommunity = false) : ObservableObject

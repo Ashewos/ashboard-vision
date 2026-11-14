@@ -16,7 +16,7 @@ Cette documentation est écrite pour quelqu'un qui découvre. Elle suppose seule
 
 1. [Démarrer](demarrer.md) : installer le SDK, créer un module avec une commande, le voir sur l'écran.
 2. [Le contrat](contrat.md) : ce qu'un module doit faire, et ce que le logiciel fait pour lui.
-3. [Dessiner](dessin.md), puis [les réglages](reglages.md) et [les permissions](permissions.md), selon ce que ton module fait.
+3. [Dessiner](dessin.md), puis [les réglages](reglages.md), [les permissions](permissions.md) et [les raccourcis](raccourcis.md), selon ce que ton module fait.
 4. [Tester](tests.md), avec les tests rapides et avec le banc d'essai `ashboard-module check`.
 5. [Publier](publier.md) sur GitHub, avec `ashboard-module pack`.
 
@@ -29,6 +29,7 @@ Cette documentation est écrite pour quelqu'un qui découvre. Elle suppose seule
 | [Les permissions](permissions.md) | Réseau local, Internet, Cet ordinateur, Capteurs, Musique en cours. |
 | [Dessiner](dessin.md) | La case, le thème, le texte, les images, l'animation. |
 | [Les réglages](reglages.md) | Les champs du formulaire, les secrets, les ports, les boutons. |
+| [Les raccourcis](raccourcis.md) | Déclarer une action au clavier, la recevoir, la tester. |
 | [Tester](tests.md) | Les tests xUnit sans réseau, et le banc d'essai. |
 | [Publier](publier.md) | Fabriquer le `.avmod`, la version GitHub, les mises à jour. |
 | [La compatibilité](compatibilite.md) | Pourquoi ton module ancien continue de marcher. |
@@ -40,13 +41,13 @@ Le dépôt contient trois vrais modules, avec leurs tests. Les extraits de cette
 
 | Module | Dossier | Ce qu'il montre |
 |---|---|---|
-| Démo | [`examples/Demo`](../../examples/Demo) | Une animation sans réseau ni permission : le dessin, le thème, `IsAnimating`. |
-| Dépôt GitHub | [`examples/GitHubRepo`](../../examples/GitHubRepo) | Internet, un secret facultatif, une actualisation régulière, les états. |
+| Démo | [`examples/Demo`](../../examples/Demo) | Une animation sans réseau ni permission : le dessin, le thème, `IsAnimating`, un raccourci avec une touche proposée. |
+| Dépôt GitHub | [`examples/GitHubRepo`](../../examples/GitHubRepo) | Internet, un secret facultatif, une actualisation régulière, les états, un raccourci sans touche. |
 | Serveur Minecraft | [`examples/Minecraft`](../../examples/Minecraft) | « Cet ordinateur » et un port choisi par l'utilisateur, une image, les pannes. |
 
 ## Ce que la première version ne fait pas
 
-- Un module **affiche** : il ne lance pas d'action depuis l'écran et n'a pas de raccourci clavier.
+- Un module **affiche** : l'écran n'a ni souris ni écran tactile. Il peut déclarer des [raccourcis clavier](raccourcis.md) (SDK 1.1), mais il ne voit jamais le clavier : c'est le logiciel qui lui dit qu'un raccourci a été utilisé.
 - Un module n'a pas accès aux fichiers de l'utilisateur.
 - Les modules sont écrits en C# (.NET). D'autres langages pourront venir plus tard.
 - Il n'y a pas de boutique : tu publies ton fichier où tu veux, en pratique dans les versions GitHub de ton dépôt.
@@ -54,4 +55,4 @@ Le dépôt contient trois vrais modules, avec leurs tests. Les extraits de cette
 
 ## Version
 
-Cette documentation décrit le **SDK 1.0**. Les numéros du SDK ne suivent pas ceux du logiciel. Voir [la compatibilité](compatibilite.md).
+Cette documentation décrit le **SDK 1.1** (la 1.0 plus les [raccourcis](raccourcis.md)). Les numéros du SDK ne suivent pas ceux du logiciel. Voir [la compatibilité](compatibilite.md).

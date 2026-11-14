@@ -10,7 +10,7 @@ public sealed class LayoutTransferTests
 {
     private static DashboardLayout Sample() => DashboardLayout.Default with
     {
-        Shortcuts = [new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab)],
+        Shortcuts = [new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextTab)],
         Appearance = new AppearanceSettings("pixel", PanelOpacity: 0.4f),
         Shelf =
         [
@@ -31,16 +31,16 @@ public sealed class LayoutTransferTests
         Assert.Null(result.Error);
         var back = result.Layout!;
         Assert.Equal(layout.Rotation, back.Rotation);
-        Assert.Equal(layout.Placements.Select(p => (p.InstanceId, p.TypeId, p.Column, p.Row, p.Columns, p.Rows, p.TextSize)),
-            back.Placements.Select(p => (p.InstanceId, p.TypeId, p.Column, p.Row, p.Columns, p.Rows, p.TextSize)));
+        Assert.Equal(layout.Views[0].Placements.Select(p => (p.InstanceId, p.TypeId, p.Column, p.Row, p.Columns, p.Rows, p.TextSize)),
+            back.Views[0].Placements.Select(p => (p.InstanceId, p.TypeId, p.Column, p.Row, p.Columns, p.Rows, p.TextSize)));
         Assert.Equal(layout.Shortcuts, back.Shortcuts);
         Assert.Equal(layout.Appearance, back.Appearance);
         Assert.Equal(layout.MaxFps, back.MaxFps);
         Assert.Equal(layout.Shelf![0].InstanceId, back.Shelf![0].InstanceId);
         Assert.Equal("pc", back.Shelf[0].Settings.GetProperty("source").GetString());
         Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(
-            System.Text.Json.Nodes.JsonNode.Parse(layout.Placements[0].Settings.GetRawText()),
-            System.Text.Json.Nodes.JsonNode.Parse(back.Placements[0].Settings.GetRawText())));
+            System.Text.Json.Nodes.JsonNode.Parse(layout.Views[0].Placements[0].Settings.GetRawText()),
+            System.Text.Json.Nodes.JsonNode.Parse(back.Views[0].Placements[0].Settings.GetRawText())));
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class LayoutTransferTests
     [Fact]
     public void Import_InvalidLayout_GivesSameReasonAsTryLoad()
     {
-        var overlapping = new DashboardLayout(180,
+        var overlapping = DashboardLayout.SingleView(180,
         [
             new ModulePlacement(Guid.NewGuid(), "clock", 0, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone()),
             new ModulePlacement(Guid.NewGuid(), "network", 2, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone()),

@@ -50,6 +50,24 @@ public interface IServiceLink : IAsyncDisposable
     void SetPreviewPaused(bool paused);
 
     /// <summary>
+    /// La vue qui est sur l'écran en ce moment (le service l'annonce à chaque changement, ceux du clavier compris) ; <c>null</c> tant
+    /// qu'on ne la connaît pas. <see cref="Changed"/> est levé quand elle change.
+    /// </summary>
+    Guid? ShownViewId { get; }
+
+    /// <summary>
+    /// Choisit la vue que montre l'aperçu (<see cref="FrameReceived"/>) : une vue précise, affichée ou non, ou <c>null</c> pour la vue
+    /// affichée. Sans effet si c'est déjà celle de l'aperçu. Une vue que le service ne connaît pas laisse l'aperçu sur la vue affichée.
+    /// </summary>
+    void SetPreviewView(Guid? viewId);
+
+    /// <summary>La vue que l'aperçu demande en ce moment (<c>null</c> : la vue affichée). Retombe sur <c>null</c> si le service refuse la vue demandée.</summary>
+    Guid? PreviewViewId { get; }
+
+    /// <summary>Affiche une vue sur l'écran. Faux si le service ne la connaît pas.</summary>
+    Task<bool> ShowViewAsync(Guid viewId);
+
+    /// <summary>
     /// Les demandes au service. Liaison absente ou fermée (fermeture de la fenêtre comprise) : <see cref="ControlException"/>
     /// avec un message en français, jamais <see cref="ObjectDisposedException"/> ni <see cref="OperationCanceledException"/>.
     /// </summary>
@@ -71,6 +89,13 @@ public interface IServiceLink : IAsyncDisposable
     /// refusée, installation déjà lancée…) ; un retour en arrière demande <paramref name="confirmDowngrade"/>.
     /// </summary>
     Task<ActionResult> InstallUpdateAsync(bool confirmDowngrade);
+
+    /// <summary>
+    /// Le service essaie d'enregistrer ces touches auprès de Windows, puis les relâche : <see cref="ShortcutKeyState.TakenByAnotherProgram"/>
+    /// si une autre application les tient. Une combinaison que le service tient lui-même rend <see cref="ShortcutKeyState.Free"/> (les
+    /// conflits entre raccourcis du logiciel sont vérifiés par la fenêtre). Liaison coupée : <see cref="ControlException"/>.
+    /// </summary>
+    Task<ShortcutKeyState> TestShortcutKeysAsync(string keys);
 
     // ---- Modules complémentaires ----
 

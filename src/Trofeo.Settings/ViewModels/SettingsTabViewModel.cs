@@ -485,7 +485,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
         bool TouchesASecret(string typeId) =>
             catalog is null || (catalog.TryGetValue(typeId, out var type) && type.Schema.Fields.Any(field => field is SecretField or PortField));
 
-        var local = current.Placements.Concat(current.Shelf ?? []).ToList();
+        var local = current.AllPlacements.Concat(current.Shelf ?? []).ToList();
         var taken = new Dictionary<string, int>(); // combien d'instances de chaque type ont déjà repris les réglages locaux
         var keptTypes = new List<string>();
         var empty = JsonDocument.Parse("{}").RootElement.Clone();
@@ -505,7 +505,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
 
         var protectedLayout = imported with
         {
-            Placements = [.. imported.Placements.Select(Protect)],
+            Views = [.. imported.Views.Select(v => v with { Placements = [.. v.Placements.Select(Protect)] })],
             Shelf = imported.Shelf is null ? null : [.. imported.Shelf.Select(Protect)],
         };
         var names = keptTypes.Select(id => catalog?.GetValueOrDefault(id)?.Label() ?? id).ToList();
@@ -519,13 +519,13 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
             return null; // sans le catalogue du service, il le dira au rechargement
         var types = known.GroupBy(t => t.TypeId).ToDictionary(g => g.Key, g => g.First());
 
-        foreach (var placement in layout.Placements.Concat(layout.Shelf ?? []))
+        foreach (var placement in layout.AllPlacements.Concat(layout.Shelf ?? []))
         {
             if (!types.ContainsKey(placement.TypeId))
                 return string.Format(Texts.ShareUnknownType, UntrustedText.Line(placement.TypeId)); // le type vient d'un fichier reçu d'un tiers
         }
 
-        foreach (var placement in layout.Placements)
+        foreach (var placement in layout.AllPlacements)
         {
             var type = types[placement.TypeId];
             if (placement.Columns < type.MinSize.Columns || placement.Rows < type.MinSize.Rows)

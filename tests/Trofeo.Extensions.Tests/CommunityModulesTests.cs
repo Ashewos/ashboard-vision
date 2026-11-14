@@ -206,6 +206,17 @@ public sealed class CommunityModulesTests : IAsyncLifetime
     // --- Installation -----------------------------------------------------------------------------------------------------------
 
     [WindowsHostFact]
+    public async Task SendShortcut_UnknownModuleOrNoHostRunning_ReturnsFalse()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package());
+
+        Assert.False(rig.Community.SendShortcut("nobody.here", "refresh", [Guid.NewGuid()])); // aucun module de ce nom
+        Assert.False(rig.Community.SendShortcut("alex.demo", "refresh", [Guid.NewGuid()])); // installé, mais aucune case : aucun hôte
+        Assert.Equal(0, rig.Launcher.Count);
+    }
+
+    [WindowsHostFact]
     public async Task Install_ValidPackage_IsReadyAndRegistered()
     {
         var rig = NewRig();

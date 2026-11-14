@@ -10,6 +10,7 @@
 [AshboardVision.Sdk] AshboardVision.Sdk.CommunityModule :: method protected void Invalidate()
 [AshboardVision.Sdk] AshboardVision.Sdk.CommunityModule :: method protected void SetStatus(Trofeo.ModuleKit.ModuleHealth health, string? message = null)
 [AshboardVision.Sdk] AshboardVision.Sdk.CommunityModule :: method public abstract void Render(SkiaSharp.SKCanvas canvas, Trofeo.ModuleKit.ModuleRenderContext ctx)
+[AshboardVision.Sdk] AshboardVision.Sdk.CommunityModule :: method public virtual System.Threading.Tasks.Task OnShortcutAsync(string shortcutId, System.Threading.CancellationToken ct)
 [AshboardVision.Sdk] AshboardVision.Sdk.CommunityModule :: method public virtual System.Threading.Tasks.Task StartAsync(System.Threading.CancellationToken ct)
 [AshboardVision.Sdk] AshboardVision.Sdk.CommunityModule :: method public virtual System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Trofeo.ModuleKit.LookupResult>> LookupAsync(string fieldKey, string query, System.Threading.CancellationToken ct)
 [AshboardVision.Sdk] AshboardVision.Sdk.CommunityModule :: method public virtual System.Threading.Tasks.Task<Trofeo.ModuleKit.ActionResult> RunActionAsync(string actionKey, System.Threading.CancellationToken ct)

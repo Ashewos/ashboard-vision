@@ -249,6 +249,50 @@
     <value>Damier de l'écran</value>
     <comment>Nom accessible du damier posé sur la bande.</comment>
   </data>
+  <data name="LayoutNewView" xml:space="preserve">
+    <value>+ Nouvelle vue</value>
+    <comment>Onglet qui ajoute une vue.</comment>
+  </data>
+  <data name="LayoutViewRename" xml:space="preserve">
+    <value>Renommer</value>
+    <comment>Menu d'un onglet de vue : renomme la vue.</comment>
+  </data>
+  <data name="LayoutViewDuplicate" xml:space="preserve">
+    <value>Dupliquer</value>
+    <comment>Menu d'un onglet de vue : copie la vue et ses modules.</comment>
+  </data>
+  <data name="LayoutViewDelete" xml:space="preserve">
+    <value>Supprimer</value>
+    <comment>Menu d'un onglet de vue, et bouton de confirmation de la suppression.</comment>
+  </data>
+  <data name="LayoutFollowView" xml:space="preserve">
+    <value>L'écran suit la vue choisie</value>
+    <comment>Case à cocher près des onglets de vues.</comment>
+  </data>
+  <data name="LayoutViewDeleteConfirm" xml:space="preserve">
+    <value>Supprimer la vue « {0} » ? Ses modules vont dans « Retirés ».</value>
+    <comment>{0} : le nom de la vue. Confirmation avant de supprimer une vue qui a des modules.</comment>
+  </data>
+  <data name="LayoutTooManyViews" xml:space="preserve">
+    <value>9 vues au plus.</value>
+    <comment>Refus d'ajouter ou de dupliquer une dixième vue.</comment>
+  </data>
+  <data name="LayoutCaseName" xml:space="preserve">
+    <value>Nom de la case</value>
+    <comment>Champ du nom d'une case, dans son panneau de réglage.</comment>
+  </data>
+  <data name="LayoutViewsName" xml:space="preserve">
+    <value>Vues</value>
+    <comment>Nom accessible de la rangée d'onglets de vues.</comment>
+  </data>
+  <data name="LayoutViewOnScreen" xml:space="preserve">
+    <value>Affichée sur l'écran</value>
+    <comment>Info-bulle du point vert de la vue qui est sur l'écran.</comment>
+  </data>
+  <data name="LayoutViewMenu" xml:space="preserve">
+    <value>Actions de la vue</value>
+    <comment>Nom accessible du bouton qui ouvre le menu d'un onglet de vue.</comment>
+  </data>
   <data name="AppearanceTheme" xml:space="preserve">
     <value>Thème</value>
     <comment>Titre de la section des thèmes.</comment>
@@ -373,6 +417,14 @@
     <value>Assombrit un panneau quand le fond derrière lui est trop clair pour lire le texte.</value>
     <comment>Explication sous l'interrupteur.</comment>
   </data>
+  <data name="AppearanceAnimateViewSwitch" xml:space="preserve">
+    <value>Animer le passage entre les vues</value>
+    <comment>Titre de l'interrupteur du glissement d'une vue à l'autre.</comment>
+  </data>
+  <data name="AppearanceAnimateViewSwitchHelp" xml:space="preserve">
+    <value>Les vues glissent l'une vers l'autre, avec un léger flou de mouvement. Coupé, la nouvelle vue s'affiche d'un coup.</value>
+    <comment>Explication sous l'interrupteur.</comment>
+  </data>
   <data name="AppearancePickFailed" xml:space="preserve">
     <value>Le sélecteur de fichier n'a pas pu s'ouvrir : {0}</value>
     <comment>{0} : la cause. Le sélecteur de fichier de Windows a échoué.</comment>
@@ -485,6 +537,18 @@
     <value>Onglet suivant</value>
     <comment>Action d'un raccourci.</comment>
   </data>
+  <data name="ShortcutPreviousView" xml:space="preserve">
+    <value>Vue précédente</value>
+    <comment>Action d'un raccourci.</comment>
+  </data>
+  <data name="ShortcutNextView" xml:space="preserve">
+    <value>Vue suivante</value>
+    <comment>Action d'un raccourci.</comment>
+  </data>
+  <data name="ShortcutSelectView" xml:space="preserve">
+    <value>Vue n° {0}</value>
+    <comment>{0} : le rang de la vue, à partir de 1.</comment>
+  </data>
   <data name="ShortcutSelect" xml:space="preserve">
     <value>Aller à l'onglet {0}</value>
     <comment>{0} : le rang de l'onglet, à partir de 1.</comment>
@@ -504,6 +568,10 @@
   <data name="ShortcutTargetGone" xml:space="preserve">
     <value>Un module qui n'est plus là</value>
     <comment>Module visé : l'instance n'est plus sur l'écran.</comment>
+  </data>
+  <data name="ShortcutTargetInView" xml:space="preserve">
+    <value>{0} — {1}</value>
+    <comment>Module visé quand l'écran a plusieurs vues. {0} : le nom de la case ou du module. {1} : le nom de la vue.</comment>
   </data>
   <data name="ShortcutEdit" xml:space="preserve">
     <value>Modifier</value>
@@ -526,8 +594,8 @@
     <comment>Pendant la capture d'une combinaison.</comment>
   </data>
   <data name="ShortcutDuplicate" xml:space="preserve">
-    <value>{0} sert déjà à « {1} ».</value>
-    <comment>{0} : les touches (Ctrl+Alt+Right). {1} : l'action qui les a déjà.</comment>
+    <value>Déjà pris par « {0} ».</value>
+    <comment>{0} : l'action qui a déjà ces touches (Vue suivante).</comment>
   </data>
   <data name="ShortcutNeedsAltOrWin" xml:space="preserve">
     <value>Ajoute Alt ou Win : une lettre ou un chiffre seul avec Ctrl ou Maj gênerait la saisie partout.</value>
@@ -964,6 +1032,26 @@
   <data name="DialogNewPermissions" xml:space="preserve">
     <value>Cette version demande de nouvelles permissions. Elles ne sont pas cochées : coche celles que tu acceptes.</value>
     <comment>Mise à jour qui déclare une permission de plus.</comment>
+  </data>
+  <data name="DialogShortcutsTitle" xml:space="preserve">
+    <value>Raccourcis proposés</value>
+    <comment>Titre de la section des raccourcis que le module propose, dans la boîte d'installation ou de mise à jour.</comment>
+  </data>
+  <data name="DialogShortcutsHint" xml:space="preserve">
+    <value>Ce ne sont pas des permissions : tu peux les changer ou les retirer dans l'onglet Raccourcis.</value>
+    <comment>Sous le titre des raccourcis proposés par un module.</comment>
+  </data>
+  <data name="ShortcutKeyTakenBy" xml:space="preserve">
+    <value>Touche déjà prise par « {0} ».</value>
+    <comment>Une touche proposée est déjà celle d'une autre action du logiciel. {0} : cette action.</comment>
+  </data>
+  <data name="ShortcutKeyTakenElsewhere" xml:space="preserve">
+    <value>Touche déjà prise par un autre logiciel.</value>
+    <comment>Windows refuse la touche : une autre application la tient.</comment>
+  </data>
+  <data name="ShortcutTargetAllCases" xml:space="preserve">
+    <value>Toutes les cases du module</value>
+    <comment>Module visé par le raccourci d'un module complémentaire : toutes ses cases de la vue affichée.</comment>
   </data>
   <data name="DialogNotes" xml:space="preserve">
     <value>Nouveautés</value>

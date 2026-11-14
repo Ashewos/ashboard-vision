@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Threading.Channels;
 using AshboardVision.Sdk;
 using SkiaSharp;
 using Trofeo.Extensions.Protocol;
@@ -15,10 +16,23 @@ namespace Trofeo.ModuleHost;
 /// qu'il est animé, au plus <see cref="HostContext.MaxFps"/> fois par seconde, dans un tampon que le service a fini de
 /// copier (<see cref="FrameDone"/>) : un tampon qui attend son accusé n'est jamais écrit. Sans demande ni animation, la boucle dort.
 /// </para>
+/// <para>
+/// <b>Visibilité.</b> Une instance cachée (<see cref="SetVisible"/>) tourne comme les autres (démarrage, minuteries du module) mais
+/// n'est jamais dessinée : pour la boucle, c'est « rien à faire ». Une demande de dessin faite pendant ce temps reste en attente et
+/// part dès que l'instance redevient visible.
+/// </para>
+/// <para>
+/// <b>Raccourcis.</b> Un raccourci (<see cref="DeliverShortcut"/>) est livré à <c>OnShortcutAsync</c> du module, un à la fois et dans l'ordre, sur un
+/// fil du pool (jamais celui qui dessine), cachée ou non. La file est bornée à <see cref="MaxPendingShortcuts"/> : devant un module lent, les appuis
+/// en trop sont jetés (et comptés au journal), jamais accumulés.
+/// </para>
 /// </summary>
 internal sealed class InstanceRenderer : IAsyncDisposable
 {
     private const string ModuleError = "Erreur du module";
+
+    /// <summary>Le nombre de raccourcis qui peuvent attendre un module lent ; au-delà, les suivants sont jetés.</summary>
+    internal const int MaxPendingShortcuts = 8;
     private static readonly TimeSpan CloseWait = TimeSpan.FromSeconds(5);
     private static readonly JsonElement EmptySettings = JsonDocument.Parse("{}").RootElement.Clone();
 
@@ -34,16 +48,24 @@ internal sealed class InstanceRenderer : IAsyncDisposable
     private readonly SKSurface[] _surfaces = new SKSurface[2];
     private readonly CancellationTokenSource _closing = new();
     private readonly SemaphoreSlim _wake = new(0, 1);
-    private readonly object _gate = new(); // _dirty, _busy, _lastBuffer, _lastFrame, _cooldownUntil
+    private readonly object _gate = new(); // _dirty, _visible, _busy, _lastBuffer, _lastFrame, _cooldownUntil
     private readonly object _statusGate = new(); // l'état et son envoi
     private readonly bool[] _busy = new bool[2];
+    private readonly Channel<string> _shortcuts = Channel.CreateBounded<string>(new BoundedChannelOptions(MaxPendingShortcuts)
+    {
+        SingleReader = true,
+        FullMode = BoundedChannelFullMode.Wait, // TryWrite renvoie faux quand la file est pleine (DropWrite, lui, répondrait vrai)
+    });
     private bool _dirty = true;
+    private bool _visible = true;
     private int _lastBuffer = 1;
     private long _lastFrame = Stopwatch.GetTimestamp() - 10 * Stopwatch.Frequency;
     private long _cooldownUntil;
     private CommunityModule? _module;
     private Task? _start;
     private Task? _loop;
+    private Task? _shortcutLoop;
+    private int _droppedShortcuts;
     private int _closed;
 
     // L'état de la case : celui que le module a dit, sauf erreur (une exception de sa part l'emporte jusqu'à son prochain
@@ -109,6 +131,29 @@ internal sealed class InstanceRenderer : IAsyncDisposable
         Wake();
     }
 
+    /// <summary>La case est cachée ou redevient visible (une instance est visible à son ouverture). Cachée, elle n'est plus dessinée.</summary>
+    public void SetVisible(bool visible)
+    {
+        lock (_gate)
+        {
+            _visible = visible;
+        }
+
+        Wake();
+    }
+
+    /// <summary>
+    /// Un raccourci à livrer au module. Rend la main aussitôt : le module l'appelle à son rythme, dans l'ordre. File pleine (module lent) : le
+    /// raccourci est jeté. Avant la fin de <c>StartAsync</c>, il attend dans la file ; si le démarrage échoue, il n'est jamais livré.
+    /// </summary>
+    public void DeliverShortcut(string shortcutId)
+    {
+        if (!_shortcuts.Writer.TryWrite(shortcutId))
+        {
+            Interlocked.Increment(ref _droppedShortcuts);
+        }
+    }
+
     /// <summary>Redessine (le thème a changé).</summary>
     public void Redraw() => Invalidate();
 
@@ -123,6 +168,7 @@ internal sealed class InstanceRenderer : IAsyncDisposable
         }
 
         _closing.Cancel();
+        _shortcuts.Writer.TryComplete();
         Wake();
 
         var ended = true;
@@ -136,6 +182,11 @@ internal sealed class InstanceRenderer : IAsyncDisposable
             if (_loop is not null)
             {
                 await _loop.WaitAsync(CloseWait).ConfigureAwait(false);
+            }
+
+            if (_shortcutLoop is not null)
+            {
+                await _shortcutLoop.WaitAsync(CloseWait).ConfigureAwait(false);
             }
         }
         catch (TimeoutException)
@@ -213,7 +264,44 @@ internal sealed class InstanceRenderer : IAsyncDisposable
         }
 
         _loop = Task.Run(() => LoopAsync(_closing.Token));
+        _shortcutLoop = Task.Run(() => ShortcutLoopAsync(_closing.Token));
         Wake();
+    }
+
+    /// <summary>Livre les raccourcis au module, un à la fois. Une panne du module est journalisée : elle ne met pas la case en erreur et n'arrête rien.</summary>
+    private async Task ShortcutLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var shortcutId in _shortcuts.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                try
+                {
+                    await _module!.OnShortcutAsync(shortcutId, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    if (!ModuleGuard.CrashIfFatal(ex))
+                    {
+                        _log.Error($"Exception dans OnShortcutAsync (raccourci « {shortcutId} ») : {ex}");
+                    }
+                }
+
+                var dropped = Interlocked.Exchange(ref _droppedShortcuts, 0);
+                if (dropped > 0)
+                {
+                    _log.Host("warn", $"{dropped} raccourci(s) ignoré(s) : le module répond trop lentement (trop de raccourcis en attente, {MaxPendingShortcuts} au plus).");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // fermeture de l'instance
+        }
     }
 
     private async Task LoopAsync(CancellationToken ct)
@@ -231,9 +319,9 @@ internal sealed class InstanceRenderer : IAsyncDisposable
                     lock (_gate)
                     {
                         buffer = FreeBuffer();
-                        if (buffer < 0 || !(_dirty || animating))
+                        if (!_visible || buffer < 0 || !(_dirty || animating))
                         {
-                            break; // rien à faire : un événement (demande, accusé, nouveau plafond) réveillera la boucle
+                            break; // rien à faire (cachée comprise) : un événement (demande, accusé, nouveau plafond, retour de la case) réveillera la boucle
                         }
 
                         due = Math.Max(_lastFrame + (Stopwatch.Frequency / Math.Max(1, _host.MaxFps)), _cooldownUntil);
@@ -249,6 +337,11 @@ internal sealed class InstanceRenderer : IAsyncDisposable
 
                     lock (_gate)
                     {
+                        if (!_visible)
+                        {
+                            continue; // cachée pendant l'attente : on relit l'état, la demande reste en attente
+                        }
+
                         _dirty = false; // une demande faite pendant le dessin en réclame un autre
                         _busy[buffer] = true;
                         _lastBuffer = buffer;

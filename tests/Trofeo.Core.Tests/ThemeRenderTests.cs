@@ -51,21 +51,21 @@ public class ThemeRenderTests
     {
         var definition = Themes.Find(id)!;
         var layout = DashboardLayout.Default;
-        var modules = layout.Placements.ToDictionary(p => p.InstanceId, _ => (IModule)TextAndBar());
+        var modules = layout.Views[0].Placements.ToDictionary(p => p.InstanceId, _ => (IModule)TextAndBar());
         using var background = BackgroundFactory.Create(null, definition);
 
         using var first = new FrameComposer();
         using var second = new FrameComposer();
-        using var a = first.Compose(layout, modules, definition, background, DateTimeOffset.UnixEpoch);
-        using var b = second.Compose(layout, modules, definition, background, DateTimeOffset.UnixEpoch);
-        using var c = first.Compose(layout, modules, definition, background, DateTimeOffset.UnixEpoch); // même composeur, flou en cache
+        using var a = first.Compose(layout.Views[0].Placements, modules, definition, background, DateTimeOffset.UnixEpoch);
+        using var b = second.Compose(layout.Views[0].Placements, modules, definition, background, DateTimeOffset.UnixEpoch);
+        using var c = first.Compose(layout.Views[0].Placements, modules, definition, background, DateTimeOffset.UnixEpoch); // même composeur, flou en cache
 
         var expected = Png(a);
         Assert.Equal(expected, Png(b));
         Assert.Equal(expected, Png(c));
 
         // Le module a bien dessiné : sans lui l'image serait autre (le test ne compare pas deux images vides).
-        using var empty = first.Compose(layout, new Dictionary<Guid, IModule>(), definition, background, DateTimeOffset.UnixEpoch);
+        using var empty = first.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule>(), definition, background, DateTimeOffset.UnixEpoch);
         Assert.NotEqual(expected, Png(empty));
     }
 }

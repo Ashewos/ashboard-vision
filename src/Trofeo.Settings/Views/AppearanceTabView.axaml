@@ -53,6 +53,18 @@
                        Text="{Binding OpacityWarning}" IsVisible="{Binding HasOpacityWarning}" />
           </StackPanel>
 
+          <!-- Le glissement d'une vue à l'autre. -->
+          <Border Height="1" Background="{DynamicResource Line}" />
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,24,0">
+              <TextBlock Classes="name" Text="{x:Static t:Texts.AppearanceAnimateViewSwitch}" />
+              <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.AppearanceAnimateViewSwitchHelp}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1" Name="AnimateViewSwitchSwitch" OnContent="" OffContent="" VerticalAlignment="Center"
+                          AutomationProperties.Name="{x:Static t:Texts.AppearanceAnimateViewSwitch}"
+                          IsChecked="{Binding IsAnimateViewSwitchOn}" />
+          </Grid>
+
         </StackPanel>
       </Border>
 

@@ -7,10 +7,10 @@ public class CompatibilityTests
     private static readonly IReadOnlySet<int> Majors = new HashSet<int> { 1 };
 
     [Fact]
-    public void Current_IsOnePointZero_AndMajorOneIsSupported()
+    public void Current_IsOnePointOne_AndMajorOneIsSupported()
     {
-        Assert.Equal(new SdkVersion(1, 0), Compatibility.Current);
-        Assert.Equal("1.0", Compatibility.Current.ToString());
+        Assert.Equal(new SdkVersion(1, 1), Compatibility.Current);
+        Assert.Equal("1.1", Compatibility.Current.ToString());
         Assert.Equal([1], Compatibility.SupportedMajors.ToArray());
     }
 
@@ -26,7 +26,7 @@ public class CompatibilityTests
     public void Check_NewerMinorRequired_NeedsNewerApp()
     {
         Assert.Equal(CompatibilityKind.NeedsNewerApp, Compatibility.Check(new SdkVersion(1, 6), new SdkVersion(1, 5), Majors));
-        Assert.Equal(CompatibilityKind.NeedsNewerApp, Compatibility.Check(new SdkVersion(1, 1)));
+        Assert.Equal(CompatibilityKind.NeedsNewerApp, Compatibility.Check(new SdkVersion(1, 2)));
     }
 
     [Fact]

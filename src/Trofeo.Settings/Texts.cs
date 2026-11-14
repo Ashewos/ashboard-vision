@@ -145,6 +145,28 @@ public static class Texts
     public static string LayoutHealthOffline => Get();
     /// <summary>Nom accessible du damier posé sur la bande.</summary>
     public static string LayoutGridName => Get();
+    /// <summary>Onglet qui ajoute une vue.</summary>
+    public static string LayoutNewView => Get();
+    /// <summary>Menu d'un onglet de vue : renomme la vue.</summary>
+    public static string LayoutViewRename => Get();
+    /// <summary>Menu d'un onglet de vue : copie la vue et ses modules.</summary>
+    public static string LayoutViewDuplicate => Get();
+    /// <summary>Menu d'un onglet de vue, et bouton de confirmation de la suppression.</summary>
+    public static string LayoutViewDelete => Get();
+    /// <summary>Case à cocher près des onglets de vues.</summary>
+    public static string LayoutFollowView => Get();
+    /// <summary>{0} : le nom de la vue. Confirmation avant de supprimer une vue qui a des modules.</summary>
+    public static string LayoutViewDeleteConfirm => Get();
+    /// <summary>Refus d'ajouter ou de dupliquer une dixième vue.</summary>
+    public static string LayoutTooManyViews => Get();
+    /// <summary>Champ du nom d'une case, dans son panneau de réglage.</summary>
+    public static string LayoutCaseName => Get();
+    /// <summary>Nom accessible de la rangée d'onglets de vues.</summary>
+    public static string LayoutViewsName => Get();
+    /// <summary>Info-bulle du point vert de la vue qui est sur l'écran.</summary>
+    public static string LayoutViewOnScreen => Get();
+    /// <summary>Nom accessible du bouton qui ouvre le menu d'un onglet de vue.</summary>
+    public static string LayoutViewMenu => Get();
     /// <summary>Titre de la section des thèmes.</summary>
     public static string AppearanceTheme => Get();
     /// <summary>Nom du thème Classique.</summary>
@@ -207,6 +229,10 @@ public static class Texts
     public static string AppearanceLegibility => Get();
     /// <summary>Explication sous l'interrupteur.</summary>
     public static string AppearanceLegibilityHelp => Get();
+    /// <summary>Titre de l'interrupteur du glissement d'une vue à l'autre.</summary>
+    public static string AppearanceAnimateViewSwitch => Get();
+    /// <summary>Explication sous l'interrupteur.</summary>
+    public static string AppearanceAnimateViewSwitchHelp => Get();
     /// <summary>{0} : la cause. Le sélecteur de fichier de Windows a échoué.</summary>
     public static string AppearancePickFailed => Get();
     /// <summary>Colonne de droite de l'onglet Modules sans module choisi.</summary>
@@ -263,6 +289,12 @@ public static class Texts
     public static string ShortcutPrevious => Get();
     /// <summary>Action d'un raccourci.</summary>
     public static string ShortcutNext => Get();
+    /// <summary>Action d'un raccourci.</summary>
+    public static string ShortcutPreviousView => Get();
+    /// <summary>Action d'un raccourci.</summary>
+    public static string ShortcutNextView => Get();
+    /// <summary>{0} : le rang de la vue, à partir de 1.</summary>
+    public static string ShortcutSelectView => Get();
     /// <summary>{0} : le rang de l'onglet, à partir de 1.</summary>
     public static string ShortcutSelect => Get();
     /// <summary>Nom accessible de la liste des actions d'un nouveau raccourci.</summary>
@@ -273,6 +305,8 @@ public static class Texts
     public static string ShortcutTargetFirst => Get();
     /// <summary>Module visé : l'instance n'est plus sur l'écran.</summary>
     public static string ShortcutTargetGone => Get();
+    /// <summary>Module visé quand l'écran a plusieurs vues. {0} : le nom de la case ou du module. {1} : le nom de la vue.</summary>
+    public static string ShortcutTargetInView => Get();
     /// <summary>Bouton : change les touches d'un raccourci.</summary>
     public static string ShortcutEdit => Get();
     /// <summary>Bouton : retire un raccourci.</summary>
@@ -283,7 +317,7 @@ public static class Texts
     public static string ShortcutReset => Get();
     /// <summary>Pendant la capture d'une combinaison.</summary>
     public static string ShortcutCapture => Get();
-    /// <summary>{0} : les touches (Ctrl+Alt+Right). {1} : l'action qui les a déjà.</summary>
+    /// <summary>{0} : l'action qui a déjà ces touches (Vue suivante).</summary>
     public static string ShortcutDuplicate => Get();
     /// <summary>Une lettre ou un chiffre avec Ctrl ou Maj seulement est refusé : il faut Alt ou Win.</summary>
     public static string ShortcutNeedsAltOrWin => Get();
@@ -503,6 +537,16 @@ public static class Texts
     public static string DialogNoPermissions => Get();
     /// <summary>Mise à jour qui déclare une permission de plus.</summary>
     public static string DialogNewPermissions => Get();
+    /// <summary>Titre de la section des raccourcis que le module propose, dans la boîte d'installation ou de mise à jour.</summary>
+    public static string DialogShortcutsTitle => Get();
+    /// <summary>Sous le titre des raccourcis proposés par un module.</summary>
+    public static string DialogShortcutsHint => Get();
+    /// <summary>Une touche proposée est déjà celle d'une autre action du logiciel. {0} : cette action.</summary>
+    public static string ShortcutKeyTakenBy => Get();
+    /// <summary>Windows refuse la touche : une autre application la tient.</summary>
+    public static string ShortcutKeyTakenElsewhere => Get();
+    /// <summary>Module visé par le raccourci d'un module complémentaire : toutes ses cases de la vue affichée.</summary>
+    public static string ShortcutTargetAllCases => Get();
     /// <summary>Titre des notes d'une version.</summary>
     public static string DialogNotes => Get();
     /// <summary>Pendant que le service télécharge et vérifie la mise à jour. {0} : la version.</summary>

@@ -12,7 +12,7 @@
         WindowStartupLocation="CenterScreen">
 
   <Panel>
-  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" IsEnabled="{Binding !SettingsTab.Community.HasDialog}">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" IsEnabled="{Binding !SettingsTab.Community.HasDialog}">
 
     <!-- Le mode développeur est allumé : un bandeau le rappelle en haut de la fenêtre, dans tous les onglets. -->
     <Border Name="DeveloperBanner" Grid.Row="0" Background="{DynamicResource Raised}" BorderBrush="{DynamicResource Amber}" BorderThickness="0,0,0,2"
@@ -48,8 +48,13 @@
       </Grid>
     </Border>
 
+    <!-- Les vues, au-dessus de la bande : dans l'onglet Disposition, la bande est l'éditeur de la vue choisie. -->
+    <Panel Grid.Row="2" Margin="24,16,24,0" IsVisible="{Binding IsGridVisible}">
+      <views:ViewTabsBar Name="ViewTabs" DataContext="{Binding LayoutTab}" />
+    </Panel>
+
     <!-- L'écran en direct, sur toute la largeur et dans tous les onglets. -->
-    <Grid Grid.Row="2" Margin="24,20,24,0">
+    <Grid Grid.Row="3" Margin="24,20,24,0">
       <controls:ScreenStrip Name="Strip"
                             AutomationProperties.Name="{x:Static t:Texts.StripName}"
                             Source="{Binding PreviewImage}" Rotation="{Binding PreviewRotation}" />
@@ -59,7 +64,7 @@
     </Grid>
 
     <!-- Une ligne Amber sous la bande, dans tous les onglets : le message de la dernière modification, les avertissements hors apparence. -->
-    <StackPanel Grid.Row="3" Margin="24,12,24,0" Spacing="8" IsVisible="{Binding HasSaveMessage}">
+    <StackPanel Grid.Row="4" Margin="24,12,24,0" Spacing="8" IsVisible="{Binding HasSaveMessage}">
       <TextBlock Name="SaveMessage" Classes="warning" TextWrapping="Wrap" Text="{Binding SaveMessage}" />
       <!-- layout.json ne se lit pas : repartir de la disposition par défaut (le fichier est d'abord copié en .avant-reglages). -->
       <Button Name="ResetLayout" HorizontalAlignment="Left" Content="{x:Static t:Texts.ResetLayout}"
@@ -67,7 +72,7 @@
     </StackPanel>
 
     <!-- Le contenu de l'onglet choisi, l'assistant de première ouverture (tant qu'il n'est pas terminé), ou le panneau « service arrêté ». -->
-    <Grid Grid.Row="4" Margin="24,16,24,24">
+    <Grid Grid.Row="5" Margin="24,16,24,24">
       <ContentControl Name="TabContent" Content="{Binding SelectedTab}" IsVisible="{Binding ShowsTabContent}" />
       <Panel Name="FirstRunHost" IsVisible="{Binding ShowsFirstRun}">
         <views:FirstRunView DataContext="{Binding FirstRun}" />

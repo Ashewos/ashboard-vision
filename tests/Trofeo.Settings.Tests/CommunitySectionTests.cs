@@ -273,20 +273,45 @@ public sealed partial class CommunitySectionTests
         using var fixture = new CommunityFixture().WithModules(Module());
         await fixture.Section.RefreshAsync();
         var row = fixture.Section.Modules.Single();
-        Assert.Contains(fixture.Document.Current.Placements, p => p.TypeId == "alex.demo");
+        Assert.Contains(fixture.Document.Current.Views[0].Placements, p => p.TypeId == "alex.demo");
         var reloads = fixture.Link.ReloadCount;
 
         await row.ConfirmUninstallCommand.ExecuteAsync(null);
 
         Assert.Contains("uninstall alex.demo", fixture.Link.ModuleCalls);
         // Les cases placées et rangées du module ont disparu de la disposition, en mémoire comme dans le fichier.
-        Assert.DoesNotContain(fixture.Document.Current.Placements, p => p.TypeId == "alex.demo");
+        Assert.DoesNotContain(fixture.Document.Current.Views[0].Placements, p => p.TypeId == "alex.demo");
         Assert.DoesNotContain(fixture.Document.Current.Shelf ?? [], p => p.TypeId == "alex.demo");
-        Assert.DoesNotContain(fixture.Store.Load().Placements, p => p.TypeId == "alex.demo");
+        Assert.DoesNotContain(fixture.Store.Load().Views[0].Placements, p => p.TypeId == "alex.demo");
         Assert.DoesNotContain(fixture.Store.Load().Shelf ?? [], p => p.TypeId == "alex.demo");
         // Les autres modules n'ont pas bougé, et le service a rechargé la disposition.
-        Assert.Contains(fixture.Document.Current.Placements, p => p.TypeId == "claudecode");
+        Assert.Contains(fixture.Document.Current.Views[0].Placements, p => p.TypeId == "claudecode");
         Assert.Equal(reloads + 1, fixture.Link.ReloadCount);
+    }
+
+    [Fact]
+    public async Task Section_Uninstall_RemovesTheBindingsTargetingItsCases_InTheSameUndoableStep()
+    {
+        var claude = WithDemo().Views[0].Placements.First(p => p.TypeId == "claudecode");
+        var layout = WithDemo() with
+        {
+            Shortcuts =
+            [
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+A", Trofeo.Core.Shortcuts.ShortcutCommand.NextTab, 0, DemoId),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+B", Trofeo.Core.Shortcuts.ShortcutCommand.NextTab, 0, DemoShelfId),
+                new Trofeo.Core.Shortcuts.ShortcutBinding("Ctrl+Alt+Shift+C", Trofeo.Core.Shortcuts.ShortcutCommand.NextTab, 0, claude.InstanceId),
+            ],
+        };
+        using var fixture = new CommunityFixture(layout).WithModules(Module());
+        await fixture.Section.RefreshAsync();
+
+        await fixture.Section.Modules.Single().ConfirmUninstallCommand.ExecuteAsync(null);
+
+        Assert.Equal(["Ctrl+Alt+Shift+C"], fixture.Document.Current.Shortcuts!.Select(b => b.Keys));
+
+        await fixture.Session.UndoAsync();
+        Assert.Equal(["Ctrl+Alt+Shift+A", "Ctrl+Alt+Shift+B", "Ctrl+Alt+Shift+C"], fixture.Document.Current.Shortcuts!.Select(b => b.Keys));
+        Assert.Contains(fixture.Document.Current.Views[0].Placements, p => p.InstanceId == DemoId);
     }
 
     [Fact]
@@ -330,7 +355,7 @@ public sealed partial class CommunitySectionTests
         await fixture.Section.Modules.Single().ConfirmUninstallCommand.ExecuteAsync(null);
 
         Assert.Equal("Le dossier du module est utilisé par un autre programme.", fixture.Section.Message);
-        Assert.Contains(fixture.Document.Current.Placements, p => p.TypeId == "alex.demo");
+        Assert.Contains(fixture.Document.Current.Views[0].Placements, p => p.TypeId == "alex.demo");
         Assert.Equal(reloads, fixture.Link.ReloadCount);
     }
 

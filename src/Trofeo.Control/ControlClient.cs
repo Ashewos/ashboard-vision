@@ -65,6 +65,12 @@ public sealed class ControlClient : IAsyncDisposable
     /// <summary>Une image d'aperçu est arrivée. Appelé depuis le fil de lecture : à garder court.</summary>
     public event Action<PreviewFrame>? FrameReceived;
 
+    /// <summary>
+    /// La vue affichée sur l'écran a changé (le service l'annonce à chaque changement : clavier, fenêtre de réglage ou rechargement).
+    /// Appelé depuis le fil de lecture : à garder court.
+    /// </summary>
+    public event Action<Guid>? ViewShown;
+
     /// <summary>La connexion s'est coupée (le service s'est arrêté, par exemple). Pas déclenché par <see cref="DisposeAsync"/>.</summary>
     public event Action? Disconnected;
 
@@ -148,8 +154,28 @@ public sealed class ControlClient : IAsyncDisposable
         ?? throw Incomplete();
 
     /// <summary>S'abonne aux images de l'écran (<see cref="FrameReceived"/>), au plus <paramref name="maxFps"/> par seconde ; 0 : arrêt.</summary>
-    public async Task SubscribePreviewAsync(int maxFps, CancellationToken ct) =>
-        await SendAsync(new Request(NextId(), MessageTypes.Preview) { MaxFps = maxFps }, DefaultTimeout, ct).ConfigureAwait(false);
+    public Task SubscribePreviewAsync(int maxFps, CancellationToken ct) => SubscribePreviewAsync(maxFps, null, ct);
+
+    /// <summary>
+    /// Comme <see cref="SubscribePreviewAsync(int, CancellationToken)"/> pour la vue <paramref name="viewId"/>, affichée ou non
+    /// (<c>null</c> : la vue affichée). Une vue qui n'existe pas lève <see cref="ControlException"/>.
+    /// </summary>
+    public async Task SubscribePreviewAsync(int maxFps, Guid? viewId, CancellationToken ct) =>
+        await SendAsync(new Request(NextId(), MessageTypes.Preview) { MaxFps = maxFps, ViewId = viewId }, DefaultTimeout, ct).ConfigureAwait(false);
+
+    /// <summary>Affiche une vue sur l'écran. Faux si elle n'existe pas ; vrai, sans rien faire, si elle est déjà affichée.</summary>
+    public async Task<bool> ShowViewAsync(Guid viewId, CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.ShowView) { ViewId = viewId }, DefaultTimeout, ct).ConfigureAwait(false)).Shown
+        ?? throw Incomplete();
+
+    /// <summary>
+    /// Demande au service si cette combinaison de touches est libre (il essaie de l'enregistrer auprès de Windows puis la relâche). Une
+    /// combinaison que le service utilise lui-même rend <see cref="ShortcutKeyState.Free"/>. Si le service n'a pas de raccourcis, lève
+    /// <see cref="ControlException"/>.
+    /// </summary>
+    public async Task<ShortcutKeyState> TestShortcutKeysAsync(string keys, CancellationToken ct) =>
+        (await SendAsync(new Request(NextId(), MessageTypes.TestShortcutKeys) { Keys = keys }, DefaultTimeout, ct).ConfigureAwait(false)).KeyState
+        ?? throw Incomplete();
 
     // ---- Modules complémentaires ----
 
@@ -297,7 +323,9 @@ public sealed class ControlClient : IAsyncDisposable
                 else
                 {
                     var response = ReadResponse(frame.Value.Payload);
-                    if (response is not null && _pending.TryRemove(response.ReplyTo, out var waiting))
+                    if (response is { Type: MessageTypes.ViewShown, ViewId: { } shown })
+                        RaiseViewShown(shown); // une annonce du service, pas la réponse à une requête
+                    else if (response is not null && _pending.TryRemove(response.ReplyTo, out var waiting))
                         waiting.TrySetResult(response);
                 }
             }
@@ -355,6 +383,12 @@ public sealed class ControlClient : IAsyncDisposable
     {
         try { FrameReceived?.Invoke(frame); }
         catch { /* un abonné défaillant ne doit pas couper la lecture */ }
+    }
+
+    private void RaiseViewShown(Guid viewId)
+    {
+        try { ViewShown?.Invoke(viewId); }
+        catch { /* idem */ }
     }
 
     private void RaiseDisconnected()

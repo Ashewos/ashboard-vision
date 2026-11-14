@@ -7,7 +7,7 @@ Question simple : **si j'écris mon module aujourd'hui, marchera-t-il encore dan
 | Numéro | Exemple | Où il est écrit |
 |---|---|---|
 | La version **d'Ashboard Vision** (le logiciel) | `1.0.0` | Les versions GitHub du logiciel (les quatre paquets `.nupkg` du SDK y sont joints, voir [Démarrer](demarrer.md#installer-le-sdk)). |
-| La version **du SDK** | `1.0` (paquet `1.0.0`) | `"sdk": "1.0"` dans ton manifeste, et la version du paquet `AshboardVision.Sdk` dans ton `.csproj`. |
+| La version **du SDK** | `1.0` (paquet `1.1.0`) | `"sdk": "1.0"` dans ton manifeste (la plus ancienne version dont ton module a besoin), et la version du paquet `AshboardVision.Sdk` dans ton `.csproj`. |
 | La version **de ton module** | `1.2.3` | `"version"` dans ton manifeste. |
 
 Le SDK est numéroté **à part du logiciel**. Il ne change que quand ce qu'il offre aux modules change.
@@ -19,14 +19,16 @@ Le SDK est numéroté **à part du logiciel**. Il ne change que quand ce qu'il o
 3. **Un module qui demande une version plus récente que celle du logiciel est refusé**, avec ce message : « Ce module demande une version plus récente d'Ashboard Vision : mets à jour le logiciel. »
 4. **Quand le premier chiffre change (2.0)**, le logiciel continue de parler l'ancienne version pendant une période de transition. Un module n'est refusé qu'après, avec ce message : « Ce module a été écrit pour une ancienne version du SDK qu'Ashboard Vision ne prend plus en charge : demande à son auteur de le mettre à jour. »
 
-Aujourd'hui, le logiciel parle le **SDK 1.0** et n'accepte que la **version majeure 1**.
+Aujourd'hui, le logiciel parle le **SDK 1.1** et n'accepte que la **version majeure 1**. Le SDK 1.1 a ajouté les [raccourcis](raccourcis.md) à la 1.0 ; un module écrit pour la 1.0 tourne sans changement.
 
 ### Des exemples
 
 | Ton module demande | Le logiciel parle | Résultat |
 |---|---|---|
 | `1.0` | `1.0` | Il tourne. |
+| `1.0` | `1.1` | Il tourne : le logiciel sait tout ce que la 1.0 savait. |
 | `1.0` | `1.5` | Il tourne : le logiciel sait faire tout ce que la 1.0 savait. |
+| `1.1` (il déclare des raccourcis) | `1.0` | Refusé : il demande plus que ce que ce logiciel plus ancien sait faire. |
 | `1.2` | `1.5` | Il tourne. |
 | `1.3` | `1.0` | Refusé : « Ce module demande une version plus récente d'Ashboard Vision… ». L'utilisateur met le logiciel à jour. |
 | `2.0` | `1.x` | Refusé de la même façon. |
@@ -38,13 +40,14 @@ Le banc d'essai (`ashboard-module check`) applique la même règle : il te dit t
 ## Ce que tu dois faire
 
 - **Garde `"sdk"` au plus bas.** Écris la version la plus ancienne qui a tout ce dont tu te sers. Plus elle est basse, plus d'utilisateurs ont un logiciel assez récent.
-- **Ne change `"sdk"` que si tu utilises quelque chose de plus récent.** Si le SDK 1.1 ajoute un champ de réglage et que tu l'utilises, mets `"sdk": "1.1"`. Sinon, laisse `1.0`.
-- **Le modèle fixe le paquet à la version exacte `1.0.0`.** Quand un SDK 1.x plus récent sort, tu changes ce numéro à la main dans ton `.csproj` **et** le champ `"sdk"` du manifeste, ensemble.
+- **Ne change `"sdk"` que si tu utilises quelque chose de plus récent.** Si tu te sers de ce que le SDK 1.1 ajoute (les [raccourcis](raccourcis.md) : `OnShortcutAsync` et `shortcuts` dans le manifeste), mets `"sdk": "1.1"`. Sinon, laisse `1.0`. Le manifeste est même refusé si tu déclares des raccourcis en demandant moins que la 1.1.
+- **Ne confonds pas la version du paquet et le champ `"sdk"`.** Le modèle de projet fixe le paquet `AshboardVision.Sdk` à `1.1.0` (la version que tu compiles) mais garde `"sdk": "1.0"` dans son manifeste : ton module n'a besoin de la 1.1 que le jour où il s'en sert. Un module compilé contre le paquet 1.1.0 sans utiliser ses nouveautés reste ainsi ouvert aux logiciels qui ne parlent que la 1.0.
+- **Le modèle fixe le paquet à la version exacte `1.1.0`.** Quand un SDK 1.x plus récent sort, tu changes ce numéro à la main dans ton `.csproj` ; le champ `"sdk"` du manifeste ne change que si tu te sers de ce que la nouvelle version apporte.
 
 *Le modèle : `templates/AshboardVision.Sdk.Templates/content/ashboard-module/MonModule/MonModule.csproj`.*
 
 ```xml
-<PackageReference Include="AshboardVision.Sdk" Version="1.0.0" />
+<PackageReference Include="AshboardVision.Sdk" Version="1.1.0" />
 ```
 
 Tu n'as **pas** besoin de recompiler un module ancien quand le logiciel est mis à jour.
@@ -57,7 +60,7 @@ Tu n'as **pas** besoin de recompiler un module ancien quand le logiciel est mis 
 
 ## Les types réservés
 
-Certains types publics de `Trofeo.ModuleKit` ne font **pas** partie du contrat : `IModule`, `IModuleFactory`, `ICommandableModule`, `ModuleContext`, `ModuleDescriptor`, `ModuleCommand`, `ModuleCommandKind`, `ModuleStatus`, `IConfigurableModuleFactory`, `IModuleNotices`, `SettingsDocument`, `CertificatePinning` et `ModulePermissions`. Ils sont publics parce que les modules d'origine d'Ashboard Vision s'en servent.
+Certains types publics de `Trofeo.ModuleKit` ne font **pas** partie du contrat : `IModule`, `IModuleFactory`, `ICommandableModule`, `IHideableModule`, `ModuleContext`, `ModuleDescriptor`, `ModuleCommand`, `ModuleCommandKind`, `ModuleStatus`, `IConfigurableModuleFactory`, `IModuleNotices`, `SettingsDocument`, `CertificatePinning` et `ModulePermissions`. Ils sont publics parce que les modules d'origine d'Ashboard Vision s'en servent.
 
 Un module qui les utilise n'a **aucune garantie de compatibilité** : ils peuvent changer dans une version mineure. Voir aussi [le contrat](contrat.md#ce-qui-ne-fait-pas-partie-du-contrat).
 

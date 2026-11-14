@@ -34,8 +34,26 @@ public sealed record FrameInfo(int FramesSent, double RenderMs, double SendMs);
 
 public sealed record SensorInfo(bool PawnIoInstalled, bool HelperInstalled, bool HelperConnected);
 
+/// <summary>
+/// L'état du service. <paramref name="CurrentViewId"/> est la vue affichée sur l'écran en ce moment ;
+/// <paramref name="RefusedShortcutKeys"/> les touches que Windows a refusées au dernier enregistrement des raccourcis (écrites comme
+/// dans la disposition, par exemple « Ctrl+Alt+Right ») ; vide si tout est enregistré.
+/// </summary>
 public sealed record ServiceStatus(ScreenInfo Screen, bool Emulated, IReadOnlyList<ModuleState> Modules,
-    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors);
+    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors, Guid CurrentViewId, IReadOnlyList<string> RefusedShortcutKeys);
+
+/// <summary>Ce que le service répond quand on lui demande si une combinaison de touches est libre (<see cref="IControlHandler.TestShortcutKeysAsync"/>).</summary>
+public enum ShortcutKeyState
+{
+    /// <summary>Windows l'accepte (ou le service l'a déjà enregistrée lui-même : les conflits internes sont vérifiés par la fenêtre).</summary>
+    Free,
+
+    /// <summary>Les touches ne se lisent pas (voir <c>ShortcutKeys.TryParse</c>).</summary>
+    Unreadable,
+
+    /// <summary>Une autre application a déjà pris cette combinaison.</summary>
+    TakenByAnotherProgram,
+}
 
 public sealed record Reloaded(bool Applied, string? Error, IReadOnlyList<string> Warnings);
 
@@ -57,6 +75,12 @@ public enum LinkUpdateChannel { Stable, Beta }
 public sealed record UpdateInfo(
     LinkUpdateState State, string? Version, bool IsDowngrade, int? Percent, string? Message, LinkUpdateChannel Channel, bool WaitForNextStable);
 
+/// <summary>
+/// Un raccourci qu'un module complémentaire déclare dans son manifeste : son identifiant, son nom lisible (une donnée non fiable, que
+/// la fenêtre nettoie) et les touches qu'il propose par défaut (<c>null</c> : aucune), écrites comme dans la disposition.
+/// </summary>
+public sealed record ModuleShortcutInfo(string Id, string Name, string? Keys);
+
 /// <summary>Où en est un module complémentaire, tel que la fenêtre de réglage le connaît (miroir de l'état du service).</summary>
 public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, TooOld, Invalid, Unavailable, SetAside }
 
@@ -66,22 +90,25 @@ public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, T
 /// mise à jour trouvée sur GitHub (<c>null</c> : aucune). Les permissions qu'elle apporte ne se connaissent qu'après sa préparation
 /// (<see cref="ModuleUpdatePreparation"/>), qui télécharge le paquet. <paramref name="DevFolderPath"/> est le dossier de travail d'un module
 /// du mode développeur (le même texte que dans <see cref="CommunityOverview.DevFolders"/>) ; <c>null</c> pour un module installé.
+/// <paramref name="Shortcuts"/> sont les raccourcis que son manifeste déclare (<c>null</c> : le service ne les a pas dits).
 /// </summary>
 public sealed record CommunityModuleInfo(
     string Id, string Name, string Author, string Description, string? Version, LinkCommunityState State, string? Message,
     IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted, bool FromDevFolder,
-    string? UpdateVersion, string? UpdateNotes, string? DevFolderPath = null);
+    string? UpdateVersion, string? UpdateNotes, string? DevFolderPath = null, IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null);
 
 /// <summary>
 /// Ce que le service a lu dans le paquet d'une mise à jour qu'il vient de télécharger et de vérifier (clic sur « Mettre à jour »). Si
 /// <paramref name="Ok"/> est faux, <paramref name="Message"/> dit pourquoi (en français, à montrer tel quel) et le reste est vide. Sinon
 /// le fichier est gardé par le service : l'installation (<see cref="IControlHandler.InstallModuleUpdateAsync"/>) installe celui-là, sans
 /// rien retélécharger, et <see cref="IControlHandler.CancelModuleUpdate"/> l'abandonne. <paramref name="Declared"/> est tout ce que la
-/// nouvelle version déclare, <paramref name="NewPermissions"/> ce qu'elle déclare en plus de la version installée.
+/// nouvelle version déclare, <paramref name="NewPermissions"/> ce qu'elle déclare en plus de la version installée et
+/// <paramref name="Shortcuts"/> les raccourcis que son manifeste déclare (<c>null</c> : non dits).
 /// </summary>
 public sealed record ModuleUpdatePreparation(
     bool Ok, string? Message, string? Version, string? Notes,
-    IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> NewPermissions);
+    IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> NewPermissions,
+    IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null);
 
 /// <summary>
 /// Les modules complémentaires et leurs réglages généraux : le dossier des modules, le mode développeur et ses dossiers, et
@@ -93,11 +120,12 @@ public sealed record CommunityOverview(
 /// <summary>
 /// Ce que le service a vu dans un paquet <c>.avmod</c> avant d'y écrire quoi que ce soit. <paramref name="Errors"/> dit, en français,
 /// ce qui empêche l'installation (vide : elle est possible) ; <paramref name="Conflict"/> signale un identifiant déjà pris par un autre
-/// dépôt ; <paramref name="InstalledVersion"/> est la version déjà installée de ce module (une mise à jour, donc).
+/// dépôt ; <paramref name="InstalledVersion"/> est la version déjà installée de ce module (une mise à jour, donc) ;
+/// <paramref name="Shortcuts"/> les raccourcis que son manifeste déclare (<c>null</c> : non dits).
 /// </summary>
 public sealed record PackageInfo(
     string? Id, string? Name, string? Author, string? Version, string? Description, IReadOnlyList<ModulePermission> Declared,
-    IReadOnlyList<string> Errors, string? Conflict, string? InstalledVersion);
+    IReadOnlyList<string> Errors, string? Conflict, string? InstalledVersion, IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null);
 
 /// <summary>
 /// Ce que consomme un module : le service lui-même, un module d'origine ou un module complémentaire (<paramref name="IsCommunity"/>).
@@ -133,8 +161,33 @@ public interface IControlHandler
     /// <summary>
     /// <paramref name="onFrame"/> est appelé depuis le fil d'affichage : il ne doit jamais bloquer.
     /// Le tableau d'octets d'une image n'est plus modifié après l'appel (il est écrit plus tard, sur un autre fil).
+    /// <paramref name="viewId"/> : la vue à montrer, affichée ou non (<c>null</c> : celle qui est affichée) ; une vue qui n'existe
+    /// pas lève <see cref="InvalidOperationException"/>.
     /// </summary>
-    IDisposable SubscribePreview(int maxFps, Action<PreviewFrame> onFrame);
+    IDisposable SubscribePreview(int maxFps, Guid? viewId, Action<PreviewFrame> onFrame);
+
+    // ---- Vues ----
+
+    /// <summary>
+    /// Levé après chaque changement de la vue affichée sur l'écran (raccourci clavier, fenêtre de réglage ou rechargement), avec la
+    /// nouvelle vue. Peut l'être depuis n'importe quel fil : un abonné ne doit pas bloquer.
+    /// </summary>
+    event Action<Guid>? ViewChanged;
+
+    /// <summary>
+    /// Affiche la vue <paramref name="viewId"/> sur l'écran (avec le glissement, dont le sens se déduit de l'ordre des vues). Faux
+    /// si cette vue n'existe pas ; vrai, sans rien faire, si elle est déjà affichée.
+    /// </summary>
+    Task<bool> ShowViewAsync(Guid viewId, CancellationToken ct);
+
+    // ---- Raccourcis ----
+
+    /// <summary>
+    /// Essaie d'enregistrer <paramref name="keys"/> auprès de Windows puis la relâche aussitôt : la combinaison est-elle libre ? Une
+    /// combinaison que le service a lui-même enregistrée rend <see cref="ShortcutKeyState.Free"/>. Lève une exception si le service
+    /// n'a pas de raccourcis (la fenêtre des raccourcis est indisponible).
+    /// </summary>
+    Task<ShortcutKeyState> TestShortcutKeysAsync(string keys, CancellationToken ct);
 
     // ---- Modules complémentaires ----
 
@@ -221,6 +274,9 @@ internal static class MessageTypes
     public const string Lookup = "lookup";
     public const string Action = "action";
     public const string Preview = "preview";
+    public const string ShowView = "showView";
+    public const string ViewShown = "viewShown";
+    public const string TestShortcutKeys = "testShortcutKeys";
     public const string GetUpdate = "getUpdate";
     public const string CheckUpdates = "checkUpdates";
     public const string SetUpdatePreferences = "setUpdatePreferences";
@@ -256,6 +312,7 @@ internal sealed record Request(int Id, string Type)
     public Guid? InstanceId { get; init; }
     public string? ActionKey { get; init; }
     public int? MaxFps { get; init; }
+    public Guid? ViewId { get; init; }
     public LinkUpdateChannel? Channel { get; init; }
     public bool? WaitForNextStable { get; init; }
     public bool? ConfirmDowngrade { get; init; }
@@ -263,6 +320,7 @@ internal sealed record Request(int Id, string Type)
     public string? Path { get; init; }
     public IReadOnlyList<ModulePermission>? Granted { get; init; }
     public bool? On { get; init; }
+    public string? Keys { get; init; }
 }
 
 /// <summary>Réponse JSON : <see cref="ReplyTo"/> reprend l'identifiant de la requête ; type « error » pour un échec.</summary>
@@ -273,6 +331,9 @@ internal sealed record Response(int ReplyTo, string Type)
     public ServiceStatus? Status { get; init; }
     public Reloaded? Reloaded { get; init; }
     public bool? Restarted { get; init; }
+    public bool? Shown { get; init; }
+    public Guid? ViewId { get; init; }
+    public ShortcutKeyState? KeyState { get; init; }
     public IReadOnlyList<LookupResult>? Results { get; init; }
     public ActionResult? Action { get; init; }
     public UpdateInfo? Update { get; init; }

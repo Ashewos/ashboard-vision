@@ -17,27 +17,28 @@ public sealed record EditResult(DashboardLayout Layout, PlacementError Error, Gu
 
 /// <summary>
 /// Règles d'édition de la disposition sur le damier : déplacer, redimensionner, ajouter, retirer. Chaque opération
-/// construit la disposition candidate puis la fait valider par <see cref="LayoutValidator"/> ; aucune ne modifie
-/// la disposition reçue. Un identifiant inconnu est refusé avec <see cref="PlacementError.UnknownType"/>.
+/// vise une vue (son identifiant est le deuxième paramètre), construit la disposition candidate puis la fait valider
+/// par <see cref="LayoutValidator"/> ; aucune ne modifie la disposition reçue. Un identifiant inconnu (case ou vue) est
+/// refusé avec <see cref="PlacementError.UnknownType"/>.
 /// </summary>
 public sealed class LayoutEditor(IReadOnlyDictionary<string, ModuleDescriptor> types)
 {
-    public EditResult Move(DashboardLayout layout, Guid id, int column, int row)
+    public EditResult Move(DashboardLayout layout, Guid viewId, Guid id, int column, int row)
     {
-        if (Find(layout, id) is not { } index) return Refuse(layout, PlacementError.UnknownType);
+        if (Locate(layout, viewId, id) is not var (view, index)) return Refuse(layout, PlacementError.UnknownType);
 
-        return Replace(layout, index, layout.Placements[index] with { Column = column, Row = row });
+        return Replace(layout, view, index, view.Placements[index] with { Column = column, Row = row });
     }
 
     /// <summary>
     /// Déplace le ou les bords nommés de <c>delta</c> cases : à gauche et en haut, un delta négatif agrandit (l'index
     /// de colonne ou de rangée recule) ; à droite et en bas, un delta positif agrandit. Les coins combinent les deux axes.
     /// </summary>
-    public EditResult Resize(DashboardLayout layout, Guid id, ResizeEdge edge, int deltaColumns, int deltaRows)
+    public EditResult Resize(DashboardLayout layout, Guid viewId, Guid id, ResizeEdge edge, int deltaColumns, int deltaRows)
     {
-        if (Find(layout, id) is not { } index) return Refuse(layout, PlacementError.UnknownType);
+        if (Locate(layout, viewId, id) is not var (view, index)) return Refuse(layout, PlacementError.UnknownType);
 
-        var p = layout.Placements[index];
+        var p = view.Placements[index];
         long column = p.Column, row = p.Row, columns = p.Columns, rows = p.Rows;
 
         if (edge is ResizeEdge.Left or ResizeEdge.TopLeft or ResizeEdge.BottomLeft)
@@ -63,7 +64,7 @@ public sealed class LayoutEditor(IReadOnlyDictionary<string, ModuleDescriptor> t
         if (Math.Max(Math.Max(column, row), Math.Max(columns, rows)) > int.MaxValue || Math.Min(column, row) < int.MinValue)
             return Refuse(layout, PlacementError.OutOfBounds);
 
-        return Replace(layout, index, p with
+        return Replace(layout, view, index, p with
         {
             Column = (int)column, Row = (int)row, Columns = (int)columns, Rows = (int)rows,
         });
@@ -74,27 +75,28 @@ public sealed class LayoutEditor(IReadOnlyDictionary<string, ModuleDescriptor> t
     /// la gauche ou vers le haut, juste assez pour tenir. Un préréglage que le type n'offre pas est refusé
     /// (<see cref="PlacementError.UnknownType"/>).
     /// </summary>
-    public EditResult ApplyPreset(DashboardLayout layout, Guid id, SizePreset preset)
+    public EditResult ApplyPreset(DashboardLayout layout, Guid viewId, Guid id, SizePreset preset)
     {
-        if (Find(layout, id) is not { } index) return Refuse(layout, PlacementError.UnknownType);
+        if (Locate(layout, viewId, id) is not var (view, index)) return Refuse(layout, PlacementError.UnknownType);
 
-        var p = layout.Placements[index];
+        var p = view.Placements[index];
         if (!types.TryGetValue(p.TypeId, out var descriptor) || !descriptor.Presets.TryGetValue(preset, out var size))
             return Refuse(layout, PlacementError.UnknownType);
 
         var column = Math.Max(0, Math.Min(p.Column, GridGeometry.Columns - size.Columns));
         var row = Math.Max(0, Math.Min(p.Row, GridGeometry.Rows - size.Rows));
-        return Replace(layout, index, p with { Column = column, Row = row, Columns = size.Columns, Rows = size.Rows });
+        return Replace(layout, view, index, p with { Column = column, Row = row, Columns = size.Columns, Rows = size.Rows });
     }
 
     /// <summary>
-    /// Reprend le dernier module retiré de ce type (identifiant, réglages, taille de texte ; <c>newId</c> est alors
+    /// Ajoute à la vue <c>viewId</c>. Reprend le dernier module retiré de ce type (identifiant, réglages, taille de texte ; <c>newId</c> est alors
     /// ignoré), sinon en crée un avec <c>newId</c> et des réglages <c>{}</c>. Essaie la taille Idéal, puis Compact, puis
     /// la taille minimum ; pour chacune, la première place libre, rangée par rangée puis colonne par colonne.
     /// </summary>
-    public EditResult Add(DashboardLayout layout, string typeId, Guid newId)
+    public EditResult Add(DashboardLayout layout, Guid viewId, string typeId, Guid newId)
     {
         if (!types.TryGetValue(typeId, out var descriptor)) return Refuse(layout, PlacementError.UnknownType);
+        if (FindView(layout, viewId) is not { } view) return Refuse(layout, PlacementError.UnknownType);
 
         var shelf = layout.Shelf ?? [];
         var shelvedIndex = -1;
@@ -112,11 +114,10 @@ public sealed class LayoutEditor(IReadOnlyDictionary<string, ModuleDescriptor> t
                 for (var column = 0; column <= GridGeometry.Columns - size.Columns; column++)
                 {
                     var candidate = template with { Column = column, Row = row, Columns = size.Columns, Rows = size.Rows };
-                    if (LayoutValidator.Check(layout, candidate, types) != PlacementError.None) continue;
+                    if (LayoutValidator.Check(view.Placements, candidate, types) != PlacementError.None) continue;
 
-                    return new EditResult(layout with
+                    return new EditResult(layout.WithPlacements(viewId, [.. view.Placements, candidate]) with
                     {
-                        Placements = [.. layout.Placements, candidate],
                         Shelf = shelvedIndex >= 0 ? shelf.Where((_, i) => i != shelvedIndex).ToList() : layout.Shelf,
                     }, PlacementError.None);
                 }
@@ -126,15 +127,14 @@ public sealed class LayoutEditor(IReadOnlyDictionary<string, ModuleDescriptor> t
         return Refuse(layout, PlacementError.NoRoom);
     }
 
-    /// <summary>Retire le module de l'écran ; il va à la fin de <see cref="DashboardLayout.Shelf"/> avec ses réglages.</summary>
-    public EditResult Remove(DashboardLayout layout, Guid id)
+    /// <summary>Retire le module de la vue <c>viewId</c> ; il va à la fin de <see cref="DashboardLayout.Shelf"/> avec ses réglages.</summary>
+    public EditResult Remove(DashboardLayout layout, Guid viewId, Guid id)
     {
-        if (Find(layout, id) is not { } index) return Refuse(layout, PlacementError.UnknownType);
+        if (Locate(layout, viewId, id) is not var (view, index)) return Refuse(layout, PlacementError.UnknownType);
 
-        return new EditResult(layout with
+        return new EditResult(layout.WithPlacements(viewId, view.Placements.Where((_, i) => i != index).ToList()) with
         {
-            Placements = layout.Placements.Where((_, i) => i != index).ToList(),
-            Shelf = [.. layout.Shelf ?? [], layout.Placements[index]],
+            Shelf = [.. layout.Shelf ?? [], view.Placements[index]],
         }, PlacementError.None);
     }
 
@@ -152,6 +152,13 @@ public sealed class LayoutEditor(IReadOnlyDictionary<string, ModuleDescriptor> t
     public EditResult SetTextSize(DashboardLayout layout, Guid id, TextSize size) =>
         Update(layout, id, p => p with { TextSize = size });
 
+    /// <summary>
+    /// Donne un nom à une case placée (dans n'importe quelle vue) ou retirée. Un nom vide ou fait d'espaces vaut
+    /// <c>null</c> (pas de nom) ; au-delà de <see cref="LayoutView.MaxNameLength"/> caractères, il est coupé.
+    /// </summary>
+    public EditResult SetName(DashboardLayout layout, Guid id, string? name) =>
+        Update(layout, id, p => p with { Name = ViewEditor.CleanName(name) });
+
     /// <summary>Change les réglages d'un module placé ou retiré.</summary>
     public EditResult SetSettings(DashboardLayout layout, Guid id, JsonElement settings)
     {
@@ -159,13 +166,17 @@ public sealed class LayoutEditor(IReadOnlyDictionary<string, ModuleDescriptor> t
         return Update(layout, id, p => p with { Settings = copy });
     }
 
+    /// <summary>Change une case placée dans n'importe quelle vue, sinon une case de l'étagère (les identifiants sont uniques).</summary>
     private static EditResult Update(DashboardLayout layout, Guid id, Func<ModulePlacement, ModulePlacement> change)
     {
-        if (Find(layout, id) is { } index)
+        foreach (var view in layout.Views)
         {
-            var placements = layout.Placements.ToList();
+            var index = IndexOf(view.Placements, id);
+            if (index < 0) continue;
+
+            var placements = view.Placements.ToList();
             placements[index] = change(placements[index]);
-            return new EditResult(layout with { Placements = placements }, PlacementError.None);
+            return new EditResult(layout.WithPlacements(view.Id, placements), PlacementError.None);
         }
 
         var shelf = layout.Shelf ?? [];
@@ -177,21 +188,21 @@ public sealed class LayoutEditor(IReadOnlyDictionary<string, ModuleDescriptor> t
         return new EditResult(layout with { Shelf = updated }, PlacementError.None);
     }
 
-    /// <summary>Valide le candidat à la place de l'instance <paramref name="index"/> ; refuse en nommant le premier module gênant.</summary>
-    private EditResult Replace(DashboardLayout layout, int index, ModulePlacement candidate)
+    /// <summary>Valide le candidat à la place de l'instance <paramref name="index"/> de la vue ; refuse en nommant le premier module gênant.</summary>
+    private EditResult Replace(DashboardLayout layout, LayoutView view, int index, ModulePlacement candidate)
     {
-        var error = LayoutValidator.Check(layout, candidate, types);
-        if (error == PlacementError.Overlap) return Refuse(layout, error, FirstBlocker(layout, candidate));
+        var error = LayoutValidator.Check(view.Placements, candidate, types);
+        if (error == PlacementError.Overlap) return Refuse(layout, error, FirstBlocker(view.Placements, candidate));
         if (error != PlacementError.None) return Refuse(layout, error);
 
-        var placements = layout.Placements.ToList();
+        var placements = view.Placements.ToList();
         placements[index] = candidate;
-        return new EditResult(layout with { Placements = placements }, PlacementError.None);
+        return new EditResult(layout.WithPlacements(view.Id, placements), PlacementError.None);
     }
 
-    private static Guid? FirstBlocker(DashboardLayout layout, ModulePlacement candidate)
+    private static Guid? FirstBlocker(IReadOnlyList<ModulePlacement> viewPlacements, ModulePlacement candidate)
     {
-        foreach (var other in layout.Placements)
+        foreach (var other in viewPlacements)
             if (other.InstanceId != candidate.InstanceId && LayoutValidator.Intersects(candidate, other))
                 return other.InstanceId;
         return null;
@@ -214,10 +225,15 @@ public sealed class LayoutEditor(IReadOnlyDictionary<string, ModuleDescriptor> t
         }
     }
 
-    private static int? Find(DashboardLayout layout, Guid id)
+    private static LayoutView? FindView(DashboardLayout layout, Guid viewId) =>
+        layout.Views.FirstOrDefault(v => v.Id == viewId);
+
+    /// <summary>La vue et la position de la case dans cette vue ; <c>null</c> si la vue ou la case n'existe pas.</summary>
+    private static (LayoutView View, int Index)? Locate(DashboardLayout layout, Guid viewId, Guid id)
     {
-        var index = IndexOf(layout.Placements, id);
-        return index < 0 ? null : index;
+        if (FindView(layout, viewId) is not { } view) return null;
+        var index = IndexOf(view.Placements, id);
+        return index < 0 ? null : (view, index);
     }
 
     private static int IndexOf(IReadOnlyList<ModulePlacement> list, Guid id)

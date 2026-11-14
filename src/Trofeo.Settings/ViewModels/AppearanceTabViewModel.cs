@@ -7,8 +7,8 @@ using Trofeo.Settings.Services;
 namespace Trofeo.Settings.ViewModels;
 
 /// <summary>
-/// L'onglet Personnalisation : le thème, la transparence des panneaux, la police, le fond de l'écran et la garde de
-/// lisibilité. Chaque changement est une modification de l'apparence enregistrée par <see cref="EditSession"/> (le même
+/// L'onglet Personnalisation : le thème, la transparence des panneaux, la police, le fond de l'écran, la garde de
+/// lisibilité et le glissement entre les vues. Chaque changement est une modification de l'apparence enregistrée par <see cref="EditSession"/> (le même
 /// historique que la disposition, donc Ctrl+Z l'annule) ; rien d'autre du fichier n'est touché. Les avertissements du
 /// rechargement s'affichent sous le réglage concerné. Tout se passe sur le fil de l'interface.
 /// </summary>
@@ -308,6 +308,22 @@ public sealed partial class AppearanceTabViewModel : TabViewModel, IDisposable
     }
 
     public Task SetLegibilityAsync(bool on) => EditAsync(a => a with { Legibility = on });
+
+    // ---- Passage entre les vues ----
+
+    /// <summary>Allumé par défaut : les vues glissent l'une vers l'autre quand l'écran change de vue.</summary>
+    public bool IsAnimateViewSwitchOn
+    {
+        get => Appearance.AnimateViewSwitch;
+        set
+        {
+            if (_refreshing || value == IsAnimateViewSwitchOn)
+                return;
+            _ = SetAnimateViewSwitchAsync(value);
+        }
+    }
+
+    public Task SetAnimateViewSwitchAsync(bool on) => EditAsync(a => a with { AnimateViewSwitch = on });
 
     // ---- Avertissements du rechargement, sous le réglage concerné ----
 

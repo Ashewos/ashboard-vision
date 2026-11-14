@@ -229,7 +229,8 @@ static class Program
             + $"{(theme.LegibilityGuard ? "" : ", garde de lisibilité coupée")}.");
 
         // La boucle devient propriétaire du fond et le libère après elle.
-        using var loop = new DisplayLoop(layout, registry, screen, scheduler, TimeProvider.System, theme, config.Background);
+        var viewStore = new DisplayedViewStore(Path.Combine(AppPaths.SettingsDir, "vue-affichee.json"), TimeProvider.System);
+        using var loop = new DisplayLoop(layout, registry, screen, scheduler, TimeProvider.System, theme, config.Background, viewStore);
         using var cts = new CancellationTokenSource();
         loop.Start(cts.Token);
 
@@ -256,7 +257,7 @@ static class Program
             // le serveur de contrôle, le routeur (qui retire les raccourcis) puis la fenêtre sont libérés avant elle,
             // plus rien ne peut atteindre une boucle libérée.
             using var tray = new TrayIcon(screen, updates); // d'abord : installe le contexte de synchronisation de l'interface
-            using var hotkeys = StartHotkeys(layout, loop, SynchronizationContext.Current);
+            using var hotkeys = StartHotkeys(layout, loop, community, SynchronizationContext.Current);
 
             var meter = new ProcessMeter(SampleProcess, TimeProvider.System, Environment.ProcessorCount);
             using var handler = new ServiceControlHandler(
@@ -306,28 +307,25 @@ static class Program
     }
 
     /// <summary>
-    /// Crée la fenêtre des raccourcis (toujours : un rechargement peut ajouter un module commandable) et enregistre ceux de
-    /// la disposition si un module accepte les commandes. Une panne ici n'arrête pas le service : il tourne sans
-    /// raccourcis (<c>null</c>). Libérer le résultat retire les raccourcis puis détruit la fenêtre.
+    /// Crée la fenêtre des raccourcis et enregistre ceux de la disposition (les raccourcis de vue comme ceux d'onglet : une
+    /// commande d'onglet sans module visé dans la vue affichée ne fait rien). Une panne ici n'arrête pas le service : il tourne
+    /// sans raccourcis (<c>null</c>). Libérer le résultat retire les raccourcis puis détruit la fenêtre.
     /// </summary>
-    private static HotkeyScope? StartHotkeys(DashboardLayout layout, DisplayLoop loop, SynchronizationContext? ui)
+    private static HotkeyScope? StartHotkeys(DashboardLayout layout, DisplayLoop loop, ICommunityShortcuts community, SynchronizationContext? ui)
     {
         HotkeyWindow? window = null;
         HotkeyRouter? router = null;
         try
         {
-            // Sans module commandable, un raccourci ne servirait à rien et prendrait une combinaison à d'autres applications.
-            var commandable = loop.FindCommandTarget(null) is not null;
-            if (!commandable) Trace.TraceInformation("Aucun module de la disposition n'accepte les commandes : pas de raccourcis clavier pour l'instant.");
-
             window = new HotkeyWindow();
-            router = new HotkeyRouter(window, commandable ? layout.Shortcuts ?? ShortcutDefaults.All : [], loop.FindCommandTarget);
+            router = new HotkeyRouter(
+                window, layout.Shortcuts ?? ShortcutDefaults.All, loop.FindCommandTarget, loop, community, loop.FindCommunityCases);
             window.Hotkey += router.OnHotkey;
             router.RegisterAll();
 
             IHotkeyHost? host = null;
             if (ui is null) Trace.TraceWarning("Pas de contexte d'interface : les raccourcis ne suivront pas les rechargements.");
-            else host = new UiHotkeyHost(ui, router, loop);
+            else host = new UiHotkeyHost(ui, router);
             return new HotkeyScope(router, window, host);
         }
         catch (Exception ex)
@@ -506,7 +504,7 @@ static class Program
         }
 
         var layout = store.Load();
-        Trace.TraceInformation($"Disposition chargée : {layout.Placements.Count} module(s), rotation {layout.Rotation}°.");
+        Trace.TraceInformation($"Disposition chargée : {layout.AllPlacements.Count()} module(s) en {layout.Views.Count} vue(s), rotation {layout.Rotation}°.");
         return layout;
     }
 

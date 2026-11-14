@@ -31,8 +31,8 @@ public sealed class AddFlyoutTests : IDisposable
         var tab = new LayoutTabViewModel(fixture.Link, fixture.Session);
         _disposables.Add(tab);
         // De la place : un seul module sur l'écran.
-        var first = fixture.Document.Current.Placements[0];
-        await fixture.Session.ApplyAsync(layout => layout with { Placements = [first] });
+        var first = fixture.Document.Current.Views[0].Placements[0];
+        await fixture.Session.ApplyAsync(layout => layout.WithPlacements(layout.Views[0].Id, [first]));
         Dispatcher.UIThread.RunJobs();
 
         var view = new LayoutTabView { DataContext = tab };
@@ -48,7 +48,7 @@ public sealed class AddFlyoutTests : IDisposable
 
         // Le vrai clic : Button.OnClick lève Click (qui referme la liste) puis exécute la commande.
         typeof(Button).GetMethod("OnClick", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(item, null);
-        for (var i = 0; i < 20 && fixture.Document.Current.Placements.Count == 1; i++)
+        for (var i = 0; i < 20 && fixture.Document.Current.Views[0].Placements.Count == 1; i++)
         {
             Dispatcher.UIThread.RunJobs();
             await Task.Delay(20);
@@ -56,8 +56,8 @@ public sealed class AddFlyoutTests : IDisposable
         Dispatcher.UIThread.RunJobs();
 
         Assert.Null(tab.RefusalText);
-        Assert.Equal(2, fixture.Document.Current.Placements.Count);
-        Assert.Equal(typeId, fixture.Document.Current.Placements[1].TypeId);
+        Assert.Equal(2, fixture.Document.Current.Views[0].Placements.Count);
+        Assert.Equal(typeId, fixture.Document.Current.Views[0].Placements[1].TypeId);
         Assert.False(add.Flyout.IsOpen);
     }
 }

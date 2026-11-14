@@ -59,19 +59,19 @@ public sealed class ModulesFixture : IDisposable
     public static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
     /// <summary>Change les réglages d'un module (placé ou retiré) avant l'ouverture.</summary>
-    public static Func<DashboardLayout, DashboardLayout> WithSettings(Guid id, string json) => layout => layout with
+    public static Func<DashboardLayout, DashboardLayout> WithSettings(Guid id, string json) => layout => layout.WithPlacements(
+        layout.Views[0].Id, [.. layout.Views[0].Placements.Select(p => p.InstanceId == id ? p with { Settings = Json(json) } : p)]) with
     {
-        Placements = [.. layout.Placements.Select(p => p.InstanceId == id ? p with { Settings = Json(json) } : p)],
         Shelf = [.. (layout.Shelf ?? []).Select(p => p.InstanceId == id ? p with { Settings = Json(json) } : p)],
     };
 
     /// <summary>Les réglages de l'instance dans la disposition en mémoire.</summary>
     public JsonElement SettingsOf(Guid id) =>
-        Document.Current.Placements.Concat(Document.Current.Shelf ?? []).Single(p => p.InstanceId == id).Settings;
+        Document.Current.Views[0].Placements.Concat(Document.Current.Shelf ?? []).Single(p => p.InstanceId == id).Settings;
 
     /// <summary>Les réglages de l'instance relus dans le fichier.</summary>
     public JsonElement SettingsOnDisk(Guid id) =>
-        Store.Load().Placements.Concat(Store.Load().Shelf ?? []).Single(p => p.InstanceId == id).Settings;
+        Store.Load().Views[0].Placements.Concat(Store.Load().Shelf ?? []).Single(p => p.InstanceId == id).Settings;
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 }

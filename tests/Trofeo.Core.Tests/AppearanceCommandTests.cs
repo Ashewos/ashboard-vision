@@ -27,13 +27,13 @@ public sealed class AppearanceCommandTests : IDisposable
 
     private string LayoutPath => Path.Combine(_dir, "layout.json");
 
-    private static DashboardLayout SampleLayout() => new(
+    private static DashboardLayout SampleLayout() => DashboardLayout.SingleView(
         180,
         [
             new ModulePlacement(Guid.NewGuid(), "clock", 0, 0, 4, 2, TextSize.Large, JsonDocument.Parse("""{"format":"12h"}""").RootElement.Clone()),
             new ModulePlacement(Guid.NewGuid(), "network", 4, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone()),
         ],
-        [new ShortcutBinding("Ctrl+Alt+Right", ModuleCommandKind.NextTab), new ShortcutBinding("Ctrl+Shift+F5", ModuleCommandKind.SelectTab, 4, Guid.NewGuid())]);
+        [new ShortcutBinding("Ctrl+Alt+Right", ShortcutCommand.NextTab), new ShortcutBinding("Ctrl+Shift+F5", ShortcutCommand.SelectTab, 4, Guid.NewGuid())]);
 
     private int Run(params string[] args) =>
         AppearanceCommand.Run(LayoutPath, args, new FakeFonts("Segoe UI", "Arial"), _out, _err);
@@ -52,10 +52,10 @@ public sealed class AppearanceCommandTests : IDisposable
         var loaded = Reload();
         Assert.Equal(original.Rotation, loaded.Rotation);
         Assert.Equal(original.Shortcuts, loaded.Shortcuts);
-        Assert.Equal(original.Placements.Count, loaded.Placements.Count);
-        for (var i = 0; i < original.Placements.Count; i++)
+        Assert.Equal(original.Views[0].Placements.Count, loaded.Views[0].Placements.Count);
+        for (var i = 0; i < original.Views[0].Placements.Count; i++)
         {
-            var (before, after) = (original.Placements[i], loaded.Placements[i]);
+            var (before, after) = (original.Views[0].Placements[i], loaded.Views[0].Placements[i]);
             Assert.Equal(
                 (before.InstanceId, before.TypeId, before.Column, before.Row, before.Columns, before.Rows, before.TextSize),
                 (after.InstanceId, after.TypeId, after.Column, after.Row, after.Columns, after.Rows, after.TextSize));
@@ -87,7 +87,7 @@ public sealed class AppearanceCommandTests : IDisposable
 
         var loaded = Reload();
         Assert.Equal("pixel", loaded.Appearance!.Theme);
-        Assert.Equal(DashboardLayout.Default.Placements.Count, loaded.Placements.Count);
+        Assert.Equal(DashboardLayout.Default.Views[0].Placements.Count, loaded.Views[0].Placements.Count);
     }
 
     [Theory]
@@ -130,7 +130,7 @@ public sealed class AppearanceCommandTests : IDisposable
         var appearance = Reload().Appearance!;
         Assert.Equal(expected, appearance.Legibility);
         Assert.Equal(0.2f, appearance.PanelOpacity); // les autres réglages sont gardés
-        Assert.Equal(original.Placements.Count, Reload().Placements.Count);
+        Assert.Equal(original.Views[0].Placements.Count, Reload().Views[0].Placements.Count);
     }
 
     [Fact]

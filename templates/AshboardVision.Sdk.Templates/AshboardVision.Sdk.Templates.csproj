@@ -2,14 +2,14 @@
 
   <!-- Le modèle de projet « dotnet new ashboard-module » : un module de la communauté prêt à construire, avec son projet de tests. Un paquet NuGet
        local « AshboardVision.Sdk.Templates » (jamais poussé sur nuget.org : joint aux versions GitHub et posé par l'installateur, comme le SDK ;
-       voir la conception, 5.6). Même ligne de numéros que le SDK : 1.0.0.
+       voir la conception, 5.6). Même ligne de numéros que le SDK : 1.1.0.
        Ce projet ne compile rien : il ne fait que ranger le dossier « content » dans le paquet. Les .cs et .csproj du modèle sont des textes à
        copier, avec leurs mots-clés (MonModule…) : ils ne sont ni construits ni testés avec la solution du dépôt. C'est le test
        tests/AshboardVision.Sdk.Tests/TemplateTests.cs qui crée un module à partir du modèle, puis le construit, le teste et le vérifie. -->
   <PropertyGroup>
     <PackageType>Template</PackageType>
     <PackageId>AshboardVision.Sdk.Templates</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>Ashewos</Authors>
     <Title>Modèle de module pour Ashboard Vision</Title>
     <Description>Le modèle « dotnet new ashboard-module » : un module de la communauté d'Ashboard Vision, prêt à construire, avec son manifeste et son projet de tests.</Description>

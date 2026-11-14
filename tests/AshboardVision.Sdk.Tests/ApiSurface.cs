@@ -37,6 +37,7 @@ internal static class ApiSurface
         ["Trofeo.ModuleKit.ICommandableModule"] = "Commandes (raccourcis clavier) des modules d'origine.",
         ["Trofeo.ModuleKit.ModuleContext"] = "Contexte de création des modules d'origine ; le SDK a ModuleServices.",
         ["Trofeo.ModuleKit.ModuleDescriptor"] = "Descripteur des modules d'origine ; un module de la communauté a son manifeste.",
+        ["Trofeo.ModuleKit.IHideableModule"] = "Case cachée ou affichée des modules en processus (vues multiples) ; un module de la communauté ne connaît pas les vues, l'hôte ne le dessine simplement pas.",
         ["Trofeo.ModuleKit.ModuleCommand"] = "Commande des modules d'origine (raccourcis clavier).",
         ["Trofeo.ModuleKit.ModuleCommandKind"] = "Genre de ModuleCommand.",
         ["Trofeo.ModuleKit.ModuleStatus"] = "État des modules d'origine ; le SDK a SetStatus et ModuleHealth.",

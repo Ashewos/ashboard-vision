@@ -2,7 +2,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using AshboardVision.Sdk;
+using Trofeo.Core.Shortcuts;
 using Trofeo.Distribution;
+using Trofeo.Extensions.Service;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Extensions;
@@ -22,6 +24,9 @@ public static partial class ManifestReader
     private const int MaxNameLength = 40;
     private const int MaxAuthorLength = 40;
     private const int MaxDescriptionLength = 300;
+    private const int MaxShortcuts = 10;
+    private const int MaxShortcutIdLength = 40;
+    private const int MaxShortcutKeysLength = 60;
     private const int GridColumns = 16;
     private const int GridRows = 4;
 
@@ -36,6 +41,13 @@ public static partial class ManifestReader
         RespectNullableAnnotations = true,
         RespectRequiredConstructorParameters = true,
     };
+
+    // Un identifiant de raccourci voyage dans la disposition et sur le canal de l'hôte : lettres, chiffres, point, tiret et soulignement.
+    [GeneratedRegex(@"^[A-Za-z0-9_][A-Za-z0-9_.-]*\z", RegexOptions.CultureInvariant)]
+    private static partial Regex ShortcutIdPattern();
+
+    /// <summary>La version du SDK à partir de laquelle un module peut déclarer des raccourcis.</summary>
+    private static readonly SdkVersion MinSdkForShortcuts = new(1, 1);
 
     [GeneratedRegex(@"^[a-z0-9]+(-[a-z0-9]+)*\.[a-z0-9]+(-[a-z0-9]+)*\z", RegexOptions.CultureInvariant)]
     private static partial Regex IdPattern();
@@ -143,6 +155,13 @@ public static partial class ManifestReader
 
             var presets = ReadPresets(root, errors);
             var settings = ReadSettings(root, errors);
+            var shortcuts = ReadShortcuts(root, errors);
+
+            if (shortcuts.Count > 0 && sdkText is not null && SdkVersion.TryParse(sdkText, out var requiredSdk)
+                && requiredSdk.CompareTo(MinSdkForShortcuts) < 0)
+            {
+                errors.Add("Ce module déclare des raccourcis : il doit demander le SDK 1.1 au moins.");
+            }
 
             if (permissions.Contains(ModulePermission.ThisComputer) && !settings.Fields.Any(field => field is PortField))
             {
@@ -156,7 +175,10 @@ public static partial class ManifestReader
 
             var manifest = new ModuleManifest(
                 id!, name!, description!, author!, version!, sdk, entry!, permissions, repository,
-                minSize!.Value, presets, settings, icon);
+                minSize!.Value, presets, settings, icon)
+            {
+                Shortcuts = shortcuts,
+            };
             return new ManifestReadResult(manifest, []);
         }
     }
@@ -171,30 +193,32 @@ public static partial class ManifestReader
     private static ManifestReadResult Refused(string error) => new(null, [error]);
 
     /// <summary>Un texte obligatoire ; <c>null</c> (avec une erreur) s'il manque, n'est pas un texte, est vide ou trop long.</summary>
-    private static string? ReadText(JsonElement root, string property, List<string> errors, int maxLength, bool blankAllowed = false)
+    private static string? ReadText(JsonElement root, string property, List<string> errors, int maxLength, bool blankAllowed = false, string? prefix = null)
     {
+        // Pour le champ d'un élément de tableau, le chemin complet (« shortcuts.name ») dit où est le problème.
+        var path = prefix is null ? property : $"{prefix}.{property}";
         if (!root.TryGetProperty(property, out var element) || element.ValueKind == JsonValueKind.Null)
         {
-            errors.Add($"\"{property}\" : champ obligatoire.");
+            errors.Add($"\"{path}\" : champ obligatoire.");
             return null;
         }
 
         if (element.ValueKind != JsonValueKind.String)
         {
-            errors.Add($"\"{property}\" : doit être un texte.");
+            errors.Add($"\"{path}\" : doit être un texte.");
             return null;
         }
 
         var text = element.GetString()!;
         if (!blankAllowed && string.IsNullOrWhiteSpace(text))
         {
-            errors.Add($"\"{property}\" : ne peut pas être vide.");
+            errors.Add($"\"{path}\" : ne peut pas être vide.");
             return null;
         }
 
         if (text.Length > maxLength)
         {
-            errors.Add($"\"{property}\" : {maxLength} caractères au plus.");
+            errors.Add($"\"{path}\" : {maxLength} caractères au plus.");
             return null;
         }
 
@@ -202,14 +226,14 @@ public static partial class ManifestReader
     }
 
     /// <summary>Un texte facultatif ; absent ou <c>null</c> : <c>null</c> sans erreur.</summary>
-    private static string? ReadOptionalText(JsonElement root, string property, List<string> errors, int maxLength)
+    private static string? ReadOptionalText(JsonElement root, string property, List<string> errors, int maxLength, string? prefix = null)
     {
         if (!root.TryGetProperty(property, out var element) || element.ValueKind == JsonValueKind.Null)
         {
             return null;
         }
 
-        return ReadText(root, property, errors, maxLength);
+        return ReadText(root, property, errors, maxLength, prefix: prefix);
     }
 
     /// <summary>Un nom de fichier seul (ni dossier, ni lecteur) qui finit par <paramref name="extension"/>.</summary>
@@ -300,6 +324,81 @@ public static partial class ManifestReader
             {
                 result[preset.Value] = size;
             }
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<ModuleShortcut> ReadShortcuts(JsonElement root, List<string> errors)
+    {
+        if (!root.TryGetProperty("shortcuts", out var element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return [];
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            errors.Add("\"shortcuts\" : doit être un tableau de raccourcis.");
+            return [];
+        }
+
+        if (element.GetArrayLength() > MaxShortcuts)
+        {
+            errors.Add($"\"shortcuts\" : {MaxShortcuts} raccourcis au plus.");
+            return [];
+        }
+
+        var result = new List<ModuleShortcut>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in element.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                errors.Add("\"shortcuts\" : chaque raccourci doit être un objet avec un id, un name et, facultativement, des keys.");
+                continue;
+            }
+
+            var id = ReadText(item, "id", errors, MaxShortcutIdLength, prefix: "shortcuts");
+            if (id is not null && !ShortcutIdPattern().IsMatch(id))
+            {
+                errors.Add($"\"shortcuts.id\" : « {HostText.Clean(id, MaxShortcutIdLength)} » ne doit contenir que des lettres, des chiffres, des points, des tirets et des soulignements.");
+                id = null;
+            }
+
+            // Un nom est du texte affiché : sans caractère de contrôle ni de sens d'écriture, et coupé comme le nom du module.
+            var rawName = ReadText(item, "name", errors, MaxNameLength * 4, prefix: "shortcuts");
+            string? name = null;
+            if (rawName is not null)
+            {
+                name = HostText.Clean(rawName, MaxNameLength);
+                if (name.Length == 0)
+                {
+                    errors.Add("\"shortcuts.name\" : ne peut pas être vide.");
+                    name = null;
+                }
+            }
+
+            var keys = ReadOptionalText(item, "keys", errors, MaxShortcutKeysLength, prefix: "shortcuts");
+            var keysReadable = true;
+            if (keys is not null && !ShortcutKeys.TryParse(keys, out _, out _))
+            {
+                errors.Add($"\"shortcuts.keys\" : les touches « {HostText.Clean(keys, MaxShortcutKeysLength)} » sont illisibles (exemple : Ctrl+Alt+Shift+R).");
+                keysReadable = false;
+            }
+
+            if (id is null || name is null || !keysReadable)
+            {
+                continue;
+            }
+
+            if (!ids.Add(id))
+            {
+                errors.Add($"Raccourci \"{id}\" : cet identifiant est utilisé par plusieurs raccourcis.");
+                continue;
+            }
+
+            // Les touches sont gardées sous leur forme canonique : un retour à la ligne ou des espaces du manifeste ne vont pas plus loin.
+            result.Add(new ModuleShortcut(id, name, keys is null ? null : ShortcutKeys.Normalize(keys)));
         }
 
         return result;

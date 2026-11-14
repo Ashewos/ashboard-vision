@@ -44,7 +44,7 @@ public sealed class GridOverlayTests : IDisposable
     private LayoutDocument Document(params ModulePlacement[] placements)
     {
         var store = new LayoutStore(Path.Combine(_dir, "layout.json"));
-        store.Save(new DashboardLayout(180, placements));
+        store.Save(DashboardLayout.SingleView(180, placements));
         var document = new LayoutDocument(store, _link);
         document.Load();
         return document;
