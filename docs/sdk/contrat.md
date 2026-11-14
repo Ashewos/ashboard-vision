@@ -187,7 +187,7 @@ Voici celui du module « Dépôt GitHub ».
   "name": "Dépôt GitHub",
   "description": "Affiche les étoiles, la dernière version et les téléchargements d'un dépôt GitHub.",
   "author": "Ashewos",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "sdk": "1.1",
   "entry": "GitHubRepo.dll",
   "permissions": ["internet"],
