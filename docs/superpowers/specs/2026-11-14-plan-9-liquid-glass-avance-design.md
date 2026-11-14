@@ -208,7 +208,7 @@ Le programme `FS_GLASS` de liquidglass, avec son flou séparé, est adapté en S
 |---|---|---|
 | **Clair** (par défaut) | Le verre clair d'iOS | flou 0,1 ; réfraction 0,69 ; franges 0,05 ; bords 0,3 ; reflets 0,4 ; Fresnel 1 ; saturation 0,2 ; luminosité 0,05 ; ombre 0,25 |
 | **Givré** | Plus flou, déformation douce | flou 0,6 ; réfraction 0,4 ; franges 0,02 ; bords 0,25 ; reflets 0,25 ; Fresnel 0,8 ; saturation 0,3 ; teinte 0,1 ; luminosité 0,08 |
-| **Prisme** | Franges et reflets marqués | flou 0,15 ; réfraction 0,9 ; franges 0,35 ; bords 0,5 ; reflets 0,8 ; Fresnel 1,2 |
+| **Prisme** | Franges et reflets marqués | flou 0,15 ; réfraction 0,9 ; franges 0,25 (la démo borne ce réglage à 0,3) ; bords 0,5 ; reflets 0,8 ; Fresnel 1,2 |
 | **Discret** | Tout en douceur | flou 0,3 ; réfraction 0,3 ; franges 0 ; bords 0,1 ; reflets 0,1 ; Fresnel 0,5 |
 
   Les valeurs non citées gardent celles d'origine, sauf le rayon des angles (30). Bouger un curseur fait passer la sélection sur « Personnalisé ». Choisir un préréglage remplace les 17 valeurs.
