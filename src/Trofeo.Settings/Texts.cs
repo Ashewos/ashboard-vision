@@ -160,7 +160,9 @@ public static class Texts
     /// <summary>Refus d'ajouter ou de dupliquer une dixième vue.</summary>
     public static string LayoutTooManyViews => Get();
     /// <summary>Champ du nom d'une case, dans son panneau de réglage.</summary>
-    public static string LayoutCaseName => Get();
+    public static string CaseRename => Get();
+    public static string ModulesGroupCount => Get();
+    public static string ModulesGroupCountOne => Get();
     /// <summary>Nom accessible de la rangée d'onglets de vues.</summary>
     public static string LayoutViewsName => Get();
     /// <summary>Info-bulle du point vert de la vue qui est sur l'écran.</summary>

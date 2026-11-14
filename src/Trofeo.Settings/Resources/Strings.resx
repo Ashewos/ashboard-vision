@@ -277,9 +277,17 @@
     <value>9 vues au plus.</value>
     <comment>Refus d'ajouter ou de dupliquer une dixième vue.</comment>
   </data>
-  <data name="LayoutCaseName" xml:space="preserve">
-    <value>Nom de la case</value>
-    <comment>Champ du nom d'une case, dans son panneau de réglage.</comment>
+  <data name="ModulesGroupCount" xml:space="preserve">
+    <value>{0} modules</value>
+    <comment>Onglet Modules, en-tête du dossier d'une vue : nombre de cases (deux ou plus).</comment>
+  </data>
+  <data name="ModulesGroupCountOne" xml:space="preserve">
+    <value>{0} module</value>
+    <comment>Onglet Modules, en-tête du dossier d'une vue : aucune ou une seule case (singulier).</comment>
+  </data>
+  <data name="CaseRename" xml:space="preserve">
+    <value>Renommer la case</value>
+    <comment>Infobulle et nom accessible du crayon à côté du nom d'une case (onglets Disposition et Modules).</comment>
   </data>
   <data name="LayoutViewsName" xml:space="preserve">
     <value>Vues</value>

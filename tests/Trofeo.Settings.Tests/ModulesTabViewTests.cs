@@ -107,7 +107,7 @@ public sealed class ModulesTabViewTests : IDisposable
 
         Assert.Equal(5, Named<ListBox>("PlacedList").ItemCount);
         Assert.Equal(1, Named<ListBox>("ShelvedList").ItemCount);
-        Assert.Equal("Heure, date et météo", Named<TextBlock>("ModuleName").Text);
+        Assert.Equal("Heure, date et météo", Named<TextBlock>("CaseTitle").Text);
         Assert.Equal("En ligne", Named<TextBlock>("Health").Text);
     }
 

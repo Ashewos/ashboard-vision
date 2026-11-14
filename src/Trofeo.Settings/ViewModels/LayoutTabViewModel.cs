@@ -40,13 +40,13 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     private Guid? _shownView;
     private bool _isActive = true;
     private Guid? _pendingDeleteViewId;
-    private string? _caseNameDraft;
 
     /// <param name="preferences">Les préférences de la fenêtre (« L'écran suit la vue choisie » s'y garde) ; sans elles, les valeurs par défaut, non écrites.</param>
     public LayoutTabViewModel(IServiceLink link, EditSession session, PreferencesStore? preferences = null) : base(Texts.TabLayout)
     {
         _link = link;
         _session = session;
+        CaseTitle = new CaseNameEditor((id, name) => EditAsync((editor, layout) => editor.SetName(layout, id, name)));
         _preferences = preferences ?? new PreferencesStore(new EditorPreferences());
         _document = session.Document;
         _link.Changed += OnLinkChanged;
@@ -164,7 +164,7 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     private static readonly string[] SelectionProperties =
     [
         nameof(SelectedId), nameof(SelectedItem), nameof(HasSelection), nameof(HasNoSelection), nameof(SelectedName),
-        nameof(SelectedCells), nameof(SelectedPixels), nameof(SelectedMinimum), nameof(CaseName),
+        nameof(SelectedCells), nameof(SelectedPixels), nameof(SelectedMinimum),
         nameof(IsPresetCompact), nameof(IsPresetIdeal), nameof(IsPresetLarge),
         nameof(HasPresetCompact), nameof(HasPresetIdeal), nameof(HasPresetLarge),
         nameof(IsTextSmall), nameof(IsTextNormal), nameof(IsTextLarge), nameof(Spacing),
@@ -175,8 +175,6 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     {
         if (id is { } wanted && Placed.All(p => p.Id != wanted))
             id = null;
-        if (id != _selectedId)
-            _caseNameDraft = null; // le brouillon d'un nom ne passe pas d'une case à l'autre
         _selectedId = id;
         _selectedItem = id is { } chosen ? Placed.FirstOrDefault(p => p.Id == chosen) : null;
         RaiseSelection();
@@ -186,6 +184,9 @@ public sealed partial class LayoutTabViewModel : TabViewModel, IDisposable
     {
         foreach (var name in SelectionProperties)
             OnPropertyChanged(name);
+        // Le titre de la case : son nom donné, le nom du module dessous, le crayon (une saisie en cours sur une autre case est abandonnée).
+        var placement = SelectedPlacement;
+        CaseTitle.Show(placement?.InstanceId, placement?.Name, placement is { } p ? NameOf(p.TypeId) : "", CanEdit);
     }
 
     // ---- Les glissements ----

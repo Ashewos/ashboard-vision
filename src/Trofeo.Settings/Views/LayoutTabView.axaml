@@ -4,6 +4,7 @@
              xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
              xmlns:mk="clr-namespace:Trofeo.ModuleKit;assembly=Trofeo.ModuleKit"
              xmlns:controls="clr-namespace:Trofeo.Settings.Controls"
+             xmlns:views="clr-namespace:Trofeo.Settings.Views"
              x:Class="Trofeo.Settings.Views.LayoutTabView"
              x:DataType="vm:LayoutTabViewModel">
 
@@ -102,19 +103,12 @@
 
             <StackPanel Spacing="20" IsVisible="{Binding HasSelection}">
               <StackPanel Spacing="6">
-                <TextBlock Classes="heading" Text="{Binding SelectedName}" TextTrimming="CharacterEllipsis" />
+                <views:CaseNameHeader DataContext="{Binding CaseTitle}" />
                 <StackPanel Orientation="Horizontal" Spacing="24">
                   <TextBlock Classes="number lead" Text="{Binding SelectedCells}" />
                   <TextBlock Classes="number lead" Text="{Binding SelectedPixels}" />
                   <TextBlock Classes="number lead muted" Text="{Binding SelectedMinimum}" />
                 </StackPanel>
-              </StackPanel>
-
-              <StackPanel Spacing="8">
-                <TextBlock Classes="section" Text="{x:Static t:Texts.LayoutCaseName}" />
-                <TextBox Name="CaseNameBox" HorizontalAlignment="Left" Width="320" Text="{Binding CaseName}"
-                         MaxLength="{x:Static vm:LayoutTabViewModel.NameMaxLength}"
-                         AutomationProperties.Name="{x:Static t:Texts.LayoutCaseName}" KeyDown="OnCaseNameKeyDown" LostFocus="OnCaseNameLostFocus" />
               </StackPanel>
 
               <WrapPanel Orientation="Horizontal">

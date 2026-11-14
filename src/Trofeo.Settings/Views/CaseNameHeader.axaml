@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
+             x:Class="Trofeo.Settings.Views.CaseNameHeader"
+             x:DataType="vm:CaseNameEditor">
+
+  <!-- Le titre de la case : son nom (ou celui du module) et un crayon pour la renommer ; le nom du module en petit dessous. -->
+  <StackPanel Spacing="2">
+    <Grid ColumnDefinitions="Auto,Auto" HorizontalAlignment="Left">
+      <TextBlock Grid.Column="0" Name="CaseTitle" Classes="heading" Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                 VerticalAlignment="Center" IsVisible="{Binding ShowsTitle}" />
+      <TextBox Grid.Column="0" Name="CaseNameBox" Classes="heading" Width="320" Text="{Binding EditName}"
+               MaxLength="{x:Static vm:CaseNameEditor.MaxLength}" VerticalAlignment="Center" IsVisible="{Binding IsRenaming}"
+               AutomationProperties.Name="{x:Static vm:CaseNameEditor.RenameLabel}"
+               KeyDown="OnNameKeyDown" LostFocus="OnNameLostFocus" />
+      <Button Grid.Column="1" Name="RenameButton" Classes="pencil" Margin="8,0,0,0" VerticalAlignment="Center"
+              Command="{Binding StartRenameCommand}" IsVisible="{Binding ShowsPencil}"
+              ToolTip.Tip="{x:Static vm:CaseNameEditor.RenameLabel}" AutomationProperties.Name="{x:Static vm:CaseNameEditor.RenameLabel}">
+        <!-- Un crayon dessiné (aucune police d'icônes dans la fenêtre). -->
+        <Path Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round"
+              Stroke="{Binding $parent[Button].Foreground}"
+              Data="M 11,2 L 14,5 L 5,14 L 1.5,14.5 L 2,11 Z M 9,4 L 12,7" />
+      </Button>
+    </Grid>
+    <TextBlock Name="OfficialName" Classes="muted" Text="{Binding OfficialName}" TextTrimming="CharacterEllipsis"
+               IsVisible="{Binding HasCustomName}" />
+  </StackPanel>
+</UserControl>

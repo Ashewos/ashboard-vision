@@ -1096,6 +1096,21 @@ internal static class Program
             var menu = window.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "TabMenu" && b.IsVisible);
             menu.Flyout!.ShowAt(menu);
         }, layout: layout, preferences: preferences);
+
+        // Le crayon à côté du nom de la case : la saisie remplace le titre.
+        Render(folder, scratch, "disposition-vues-renommer.png", 1440, 900, jpeg, Connected, (_, model) =>
+        {
+            Arrange(model);
+            model.LayoutTab.CaseTitle.StartRename();
+        }, layout: layout, preferences: preferences);
+
+        // L'onglet Modules avec plusieurs vues : un dossier par vue (« Réunion » replié), le nom donné à la case et celui du module dessous.
+        Render(folder, scratch, "modules-vues.png", 1440, 900, jpeg, Connected, (_, model) =>
+        {
+            model.SelectedTab = model.ModulesTab;
+            model.ModulesTab.Groups[2].ToggleCommand.Execute(null);
+            model.ModulesTab.Select(monitoring);
+        }, layout: layout, preferences: preferences);
     }
     private static readonly Guid ClaudeId = new("3c1d9f5e-7a2b-4e8c-9b1f-6d2a0e4c8b17");
     private static readonly Guid MonitoringId = new("246ac06d-eec2-4d64-9930-24b64603a03b");

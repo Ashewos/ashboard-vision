@@ -543,42 +543,74 @@ public sealed class LayoutViewsTabTests : IDisposable
     }
 
     [Fact]
-    public async Task CaseName_IsEditedInTheCasePanel()
+    public async Task CaseName_IsRenamedWithThePencil_AndTheModuleNameShowsUnder()
     {
         _link.ShownViewId = ViewB;
         var tab = Open(ThreeViews());
         tab.Select(MonitoringId);
-        Assert.Equal("", tab.CaseName);
+        var title = tab.CaseTitle;
+        Assert.Equal(tab.SelectedName, title.Title); // sans nom : le nom du module
+        Assert.False(title.HasCustomName);
+        Assert.True(title.ShowsPencil);
 
-        tab.CaseName = "  Ma machine  ";
-        await tab.CommitCaseNameAsync();
+        title.StartRename();
+        Assert.True(title.IsRenaming);
+        Assert.False(title.ShowsPencil);
+        Assert.Equal(tab.SelectedName, title.EditName); // le champ part du nom actuel
+        title.EditName = "  Ma machine  ";
+        await title.CommitAsync();
 
+        Assert.False(title.IsRenaming);
         Assert.Equal("Ma machine", _document.Current.Views[1].Placements.Single(p => p.InstanceId == MonitoringId).Name);
-        Assert.Equal("Ma machine", tab.CaseName);
+        Assert.Equal("Ma machine", title.Title);
+        Assert.True(title.HasCustomName);
+        Assert.Equal(tab.SelectedName, title.OfficialName);
         Assert.Equal(["Débit du haut", "Ma machine"], tab.Placed.Select(p => p.Name));
         Assert.Equal(MonitoringId, tab.SelectedId); // la case reste choisie
 
         await tab.UndoAsync();
         Assert.Null(_document.Current.Views[1].Placements.Single(p => p.InstanceId == MonitoringId).Name);
+        Assert.False(tab.CaseTitle.HasCustomName);
     }
 
     [Fact]
-    public async Task CaseName_TooLongIsCut_AndEmptyRemovesIt()
+    public async Task CaseName_TooLongIsCut_AndEmptyOrTheModuleNameRemovesIt()
     {
         _link.ShownViewId = ViewB;
         var tab = Open(ThreeViews());
         tab.Select(NetworkId);
-        Assert.Equal("Débit du haut", tab.CaseName);
-        Assert.Equal(30, LayoutTabViewModel.NameMaxLength);
+        Assert.Equal("Débit du haut", tab.CaseTitle.Title);
+        Assert.Equal("Réseau", tab.CaseTitle.OfficialName);
+        Assert.Equal(30, CaseNameEditor.MaxLength);
 
-        tab.CaseName = new string('x', 45);
-        await tab.CommitCaseNameAsync();
+        await Rename(tab, new string('x', 45));
         Assert.Equal(30, _document.Current.Views[1].Placements[0].Name!.Length);
 
-        tab.CaseName = "";
-        await tab.CommitCaseNameAsync();
+        await Rename(tab, "");
         Assert.Null(_document.Current.Views[1].Placements[0].Name);
         Assert.Equal("Réseau", tab.Placed[0].Name); // sans nom : le nom du module
+
+        await Rename(tab, "Mon réseau");
+        await Rename(tab, "Réseau"); // le nom du module : la case n'a plus de nom à elle
+        Assert.Null(_document.Current.Views[1].Placements[0].Name);
+    }
+
+    [Fact]
+    public async Task CaseName_Unchanged_WritesNothing_AndEscapeDropsTheDraft()
+    {
+        _link.ShownViewId = ViewB;
+        var tab = Open(ThreeViews());
+        tab.Select(NetworkId);
+
+        await Rename(tab, "Débit du haut");
+        Assert.False(tab.CanUndo); // rien d'écrit : pas de pas d'annulation
+
+        tab.CaseTitle.StartRename();
+        tab.CaseTitle.EditName = "abandonné";
+        tab.CaseTitle.Cancel();
+        await tab.CaseTitle.CommitAsync();
+        Assert.Equal("Débit du haut", _document.Current.Views[1].Placements[0].Name);
+        Assert.False(tab.CaseTitle.IsRenaming);
     }
 
     [Fact]
@@ -587,13 +619,22 @@ public sealed class LayoutViewsTabTests : IDisposable
         _link.ShownViewId = ViewB;
         var tab = Open(ThreeViews());
         tab.Select(MonitoringId);
-        tab.CaseName = "pas validé";
+        tab.CaseTitle.StartRename();
+        tab.CaseTitle.EditName = "pas validé";
 
         tab.Select(NetworkId);
-        await tab.CommitCaseNameAsync();
+        Assert.False(tab.CaseTitle.IsRenaming);
+        await tab.CaseTitle.CommitAsync();
 
-        Assert.Equal("Débit du haut", tab.CaseName);
+        Assert.Equal("Débit du haut", tab.CaseTitle.Title);
         Assert.Null(_document.Current.Views[1].Placements.Single(p => p.InstanceId == MonitoringId).Name);
+    }
+
+    private static async Task Rename(LayoutTabViewModel tab, string name)
+    {
+        tab.CaseTitle.StartRename();
+        tab.CaseTitle.EditName = name;
+        await tab.CaseTitle.CommitAsync();
     }
 
     [Fact]
@@ -692,12 +733,18 @@ public sealed class LayoutViewsTabTests : IDisposable
         Assert.Equal([true, false, false], dots); // le point vert est sur la vue de l'écran, pas sur la vue choisie
         Assert.True(items[1].IsSelected);
 
-        // Le nom d'une case se tape dans son panneau et se valide sur Entrée.
+        // Le crayon à côté du nom de la case ouvre la saisie à sa place ; Entrée la valide.
         tab.Select(MonitoringId);
         Dispatcher.UIThread.RunJobs();
+        var pencil = view.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "RenameButton");
+        Assert.True(pencil.IsEffectivelyVisible);
+        pencil.Command!.Execute(null);
+        Dispatcher.UIThread.RunJobs();
         var box = view.GetVisualDescendants().OfType<TextBox>().Single(b => b.Name == "CaseNameBox");
+        Assert.True(box.IsEffectivelyVisible);
+        Assert.False(pencil.IsEffectivelyVisible);
+        Assert.True(box.IsFocused, "la saisie n'a pas pris le focus");
         Assert.Equal(30, box.MaxLength);
-        box.Focus();
         box.Text = "Ma machine";
         _window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
         for (var i = 0; i < 20 && _document.Current.Views[1].Placements[1].Name is null; i++)
@@ -707,6 +754,12 @@ public sealed class LayoutViewsTabTests : IDisposable
         }
 
         Assert.Equal("Ma machine", _document.Current.Views[1].Placements[1].Name);
+
+        // Le nom du module s'écrit en petit sous le nom donné à la case.
+        Dispatcher.UIThread.RunJobs();
+        var official = view.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "OfficialName");
+        Assert.True(official.IsEffectivelyVisible);
+        Assert.Equal(tab.SelectedName, official.Text);
     }
 
     [AvaloniaFact]

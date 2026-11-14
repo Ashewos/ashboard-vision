@@ -250,27 +250,11 @@ public sealed partial class LayoutTabViewModel
 
     // ---- Le nom de la case choisie ----
 
-    /// <summary>Le nom de la case choisie, tel qu'on le tape (brouillon tant qu'il n'est pas validé) ; vide : pas de nom.</summary>
-    public string CaseName
-    {
-        get => _caseNameDraft ?? SelectedPlacement?.Name ?? "";
-        set => _caseNameDraft = value;
-    }
+    /// <summary>Le titre de la case choisie : son nom (ou celui du module), le nom du module dessous, et le crayon pour la renommer.</summary>
+    public CaseNameEditor CaseTitle { get; }
 
     /// <summary>Longueur au plus du nom d'une case ou d'une vue.</summary>
     public static int NameMaxLength => LayoutView.MaxNameLength;
-
-    /// <summary>Entrée ou perte du focus : le nom tapé est enregistré, en une seule modification (un pas d'annulation).</summary>
-    public async Task CommitCaseNameAsync()
-    {
-        var draft = _caseNameDraft;
-        _caseNameDraft = null;
-        if (draft is null || SelectedId is not { } id)
-            return;
-
-        await EditAsync((editor, layout) => editor.SetName(layout, id, draft)).ConfigureAwait(true);
-        OnPropertyChanged(nameof(CaseName));
-    }
     /// <summary>« Supprimer » est proposé tant qu'il reste plus d'une vue.</summary>
     public bool CanDeleteView => ViewTabs.Count > 1;
 

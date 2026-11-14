@@ -3,12 +3,21 @@ using Trofeo.ModuleKit;
 
 namespace Trofeo.Settings.ViewModels;
 
-/// <summary>Une ligne de la liste de l'onglet Modules : un module placé ou retiré, avec le point d'état du service.</summary>
-public sealed partial class ModuleListItem(Guid id, string typeId, string name, bool isPlaced, bool isCommunity = false) : ObservableObject
+/// <summary>
+/// Une ligne de la liste de l'onglet Modules : un module placé ou retiré, avec le point d'état du service. <paramref name="name"/>
+/// est le nom affiché (celui donné à la case, sinon celui du module) ; <paramref name="typeName"/> celui du module.
+/// </summary>
+public sealed partial class ModuleListItem(Guid id, string typeId, string name, bool isPlaced, bool isCommunity = false, string? typeName = null, string? customName = null) : ObservableObject
 {
     public Guid Id { get; } = id;
     public string TypeId { get; } = typeId;
     public string Name { get; } = name;
+
+    /// <summary>Le nom du module (nettoyé), même quand la case a un nom à elle.</summary>
+    public string TypeName { get; } = typeName ?? name;
+
+    /// <summary>Le nom donné à la case, tel qu'il est dans la disposition (brut) ; <c>null</c> : pas de nom.</summary>
+    public string? CustomName { get; } = customName;
 
     /// <summary>Le module vient de la communauté : un point d'exclamation jaune le signale dans la liste.</summary>
     public bool IsCommunity { get; } = isCommunity;
@@ -38,5 +47,6 @@ public sealed partial class ModuleListItem(Guid id, string typeId, string name, 
     };
 
     /// <summary>Même module, même nom, même rang : seule la santé a pu changer.</summary>
-    internal bool SameShape(ModuleListItem other) => Id == other.Id && Name == other.Name && IsPlaced == other.IsPlaced && IsCommunity == other.IsCommunity;
+    internal bool SameShape(ModuleListItem other) =>
+        Id == other.Id && Name == other.Name && TypeName == other.TypeName && CustomName == other.CustomName && IsPlaced == other.IsPlaced && IsCommunity == other.IsCommunity;
 }

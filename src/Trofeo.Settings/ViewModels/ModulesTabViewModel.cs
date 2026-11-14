@@ -9,7 +9,8 @@ using Trofeo.Settings.ViewModels.Fields;
 namespace Trofeo.Settings.ViewModels;
 
 /// <summary>
-/// L'onglet Modules : à gauche les modules placés puis les retirés, chacun avec son point d'état ; à droite, pour le
+/// L'onglet Modules : à gauche les modules placés (rangés par vue, en dossiers, quand il y en a plusieurs) puis les retirés,
+/// chacun avec son point d'état et le nom donné à sa case ; à droite, pour le
 /// module choisi, son état en mots, les messages du module (<c>ActionMessage</c>, remarques) en <c>Amber</c>, puis le
 /// formulaire tiré du schéma de son type (<see cref="ModuleForm"/>). La fenêtre ne connaît aucun module : tout vient du
 /// schéma annoncé par le service. Les réglages passent par <see cref="EditSession"/> (le même historique que les autres
@@ -40,6 +41,7 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
         _session = session;
         _secrets = secrets;
         _time = time ?? TimeProvider.System;
+        CaseTitle = new CaseNameEditor(RenameAsync);
         _link.Changed += OnLinkChanged;
         _session.Changed += Refresh;
         Refresh();
@@ -51,8 +53,14 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
         _session.Changed -= Refresh;
     }
 
-    /// <summary>Les modules sur l'écran, dans l'ordre du fichier.</summary>
+    /// <summary>Les modules sur l'écran, toutes vues confondues, dans l'ordre du fichier.</summary>
     public ObservableCollection<ModuleListItem> Placed { get; } = [];
+
+    /// <summary>Les mêmes, rangés par vue : un dossier par vue (sans en-tête s'il n'y a qu'une vue).</summary>
+    public ObservableCollection<ModuleGroupItem> Groups { get; } = [];
+
+    /// <summary>Le titre du module choisi : le nom de sa case, le nom du module dessous, et le crayon pour la renommer.</summary>
+    public CaseNameEditor CaseTitle { get; }
 
     /// <summary>Les modules retirés de l'écran.</summary>
     public ObservableCollection<ModuleListItem> Shelved { get; } = [];
@@ -144,6 +152,13 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
     /// <summary>Le type du module choisi n'a rien à régler : « Ce module n'a rien à régler. ».</summary>
     public bool HasNoSchema => Selected is not null && SelectedType is { Schema.Fields.Count: 0 };
 
+    /// <summary>Une ligne a été choisie dans la liste d'un dossier (ignoré pendant que les listes se refont).</summary>
+    internal void SelectFromList(Guid id)
+    {
+        if (!_refreshing)
+            Select(id);
+    }
+
     /// <summary>Choisit un module de l'une des deux listes. Le texte encore tapé du module quitté est écrit d'abord.</summary>
     public void Select(Guid? id)
     {
@@ -196,8 +211,9 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
                 _types.TryAdd(type.TypeId, type);
 
             var layout = _session.Document.Current;
-            Fill(Placed, [.. layout.AllPlacements.Select(p => new ModuleListItem(p.InstanceId, p.TypeId, NameOf(p.TypeId), isPlaced: true, IsCommunityType(p.TypeId)))]);
-            Fill(Shelved, [.. (layout.Shelf ?? []).Select(p => new ModuleListItem(p.InstanceId, p.TypeId, NameOf(p.TypeId), isPlaced: false, IsCommunityType(p.TypeId)))]);
+            Fill(Placed, [.. layout.AllPlacements.Select(p => Item(p, isPlaced: true))]);
+            Fill(Shelved, [.. (layout.Shelf ?? []).Select(p => Item(p, isPlaced: false))]);
+            FillGroups(layout);
 
             // Le module choisi n'existe plus (oublié) ou rien n'est choisi encore : le premier module de l'écran.
             if (_selectedId is not { } id || Find(id) is null)
@@ -224,6 +240,60 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
             target.Add(item);
     }
 
+    private ModuleListItem Item(ModulePlacement placement, bool isPlaced)
+    {
+        var typeName = NameOf(placement.TypeId);
+        var name = UntrustedText.Line(placement.Name) is { Length: > 0 } custom ? custom : typeName;
+        return new ModuleListItem(placement.InstanceId, placement.TypeId, name, isPlaced, IsCommunityType(placement.TypeId), typeName, placement.Name);
+    }
+
+    /// <summary>
+    /// Un dossier par vue, dans l'ordre des vues, avec les lignes de <see cref="Placed"/> (les mêmes objets : leur point d'état
+    /// suit). Un dossier garde son état ouvert ou fermé tant que sa vue existe.
+    /// </summary>
+    private void FillGroups(DashboardLayout layout)
+    {
+        var views = layout.Views;
+        var kept = Groups.ToDictionary(g => g.ViewId);
+        if (!Groups.Select(g => g.ViewId).SequenceEqual(views.Select(v => v.Id)))
+        {
+            Groups.Clear();
+            foreach (var view in views)
+                Groups.Add(kept.TryGetValue(view.Id, out var group) ? group : new ModuleGroupItem(view.Id, this));
+        }
+
+        foreach (var (group, view) in Groups.Zip(views))
+        {
+            group.Name = UntrustedText.Line(view.Name);
+            group.ShowsHeader = views.Count > 1;
+            var ids = view.Placements.Select(p => p.InstanceId).ToHashSet();
+            var items = Placed.Where(item => ids.Contains(item.Id)).ToList();
+            if (!group.Items.SequenceEqual(items)) // les mêmes objets que Placed, pas seulement la même forme
+            {
+                group.Items.Clear();
+                foreach (var item in items)
+                    group.Items.Add(item);
+            }
+            group.CountText = string.Format(group.Items.Count <= 1 ? Texts.ModulesGroupCountOne : Texts.ModulesGroupCount, group.Items.Count);
+        }
+        RefreshShownView();
+    }
+
+    /// <summary>Le point vert sur le dossier de la vue qui est sur l'écran.</summary>
+    private void RefreshShownView()
+    {
+        var shown = _link.ShownViewId;
+        foreach (var group in Groups)
+            group.IsShown = group.ViewId == shown;
+    }
+
+    /// <summary>Le crayon du titre : le nom de la case, en une modification (un pas d'annulation, comme dans Disposition).</summary>
+    private async Task RenameAsync(Guid id, string? name)
+    {
+        var editor = LayoutEditors.From(_types.Values);
+        await _session.ApplyAsync(layout => editor.SetName(layout, id, name) is { Ok: true } result ? result.Layout : null).ConfigureAwait(true);
+    }
+
     // Le nom d'un module complémentaire vient de son manifeste : une donnée non fiable, nettoyée avant d'être montrée.
     private string NameOf(string typeId) => _types.TryGetValue(typeId, out var type) ? type.Label() : typeId;
 
@@ -232,6 +302,7 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
     /// <summary>L'état de chaque module, ses messages et ses remarques : ce que le service en dit.</summary>
     private void RefreshStatus()
     {
+        RefreshShownView();
         var states = _link.Status?.Modules;
         foreach (var item in Placed)
             item.Health = states?.FirstOrDefault(s => s.InstanceId == item.Id)?.Health ?? ModuleHealth.NotConfigured; // absent de l'état : non configuré
@@ -270,6 +341,10 @@ public sealed partial class ModulesTabViewModel : TabViewModel, IDisposable
                      nameof(SelectedIsCommunity), nameof(SelectedCommunityNotice), nameof(SelectedCommunityDetails), nameof(SelectedCommunityPermissions), nameof(SelectedCommunityDescription), nameof(HasSelectedCommunityDescription),
                  })
             OnPropertyChanged(name);
+        foreach (var group in Groups)
+            group.RaiseSelection();
+        var selected = Selected;
+        CaseTitle.Show(selected?.Id, selected?.CustomName, selected?.TypeName ?? "", _knownTypes is not null);
         RefreshStatus();
     }
 

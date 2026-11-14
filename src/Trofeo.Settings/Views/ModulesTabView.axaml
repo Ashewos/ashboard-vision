@@ -3,31 +3,59 @@
              xmlns:t="clr-namespace:Trofeo.Settings"
              xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
              xmlns:controls="clr-namespace:Trofeo.Settings.Controls"
+             xmlns:views="clr-namespace:Trofeo.Settings.Views"
              x:Class="Trofeo.Settings.Views.ModulesTabView"
              x:DataType="vm:ModulesTabViewModel">
 
   <Grid ColumnDefinitions="320,16,*">
 
-    <!-- À gauche : les modules sur l'écran, puis les retirés, chacun avec son point d'état. -->
+    <!-- À gauche : les modules sur l'écran (en dossiers, un par vue, quand il y en a plusieurs), puis les retirés. -->
     <Border Grid.Column="0" Classes="panel" Padding="16">
       <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Spacing="8" Margin="0,0,8,0">
           <TextBlock Classes="section" Text="{x:Static t:Texts.LayoutOnScreen}" />
           <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.LayoutEmpty}" IsVisible="{Binding !HasPlaced}" />
-          <ListBox Name="PlacedList" Classes="modules" ItemsSource="{Binding Placed}" SelectedItem="{Binding SelectedPlaced}"
-                   AutomationProperties.Name="{x:Static t:Texts.LayoutOnScreen}">
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:ModuleListItem">
-                <Grid ColumnDefinitions="Auto,*,Auto">
-                  <Ellipse Grid.Column="0" Classes="dot" Margin="0,0,10,0" VerticalAlignment="Center"
-                           Classes.online="{Binding IsOnline}" Classes.idle="{Binding IsIdle}" Classes.refuse="{Binding IsRefuse}"
-                           AutomationProperties.Name="{Binding HealthText}" ToolTip.Tip="{Binding HealthText}" />
-                  <TextBlock Grid.Column="1" Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                  <controls:CommunityBadge Grid.Column="2" Size="16" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsCommunity}" />
-                </Grid>
+          <!-- Un dossier par vue : son en-tête (chevron, point vert si elle est sur l'écran, nom, nombre de modules) se replie
+               d'un clic. Avec une seule vue, la liste est seule, sans en-tête. -->
+          <ItemsControl Name="ViewGroups" ItemsSource="{Binding Groups}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ModuleGroupItem">
+                <StackPanel Spacing="2" Margin="0,0,0,6">
+                  <Button Name="GroupHeader" Classes="group" Command="{Binding ToggleCommand}" IsVisible="{Binding ShowsHeader}"
+                          AutomationProperties.Name="{Binding Name}">
+                    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                      <Panel Grid.Column="0" Width="12" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <Path Data="M 1,0 L 5,4 L 1,8" Stretch="None" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round"
+                              Stroke="{DynamicResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                              IsVisible="{Binding !IsExpanded}" />
+                        <Path Data="M 0,1 L 4,5 L 8,1" Stretch="None" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round"
+                              Stroke="{DynamicResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                              IsVisible="{Binding IsExpanded}" />
+                      </Panel>
+                      <Ellipse Grid.Column="1" Classes="dot online" Margin="0,0,8,0" VerticalAlignment="Center" IsVisible="{Binding IsShown}" />
+                      <TextBlock Grid.Column="2" Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="3" Classes="muted" Margin="8,0,0,0" Text="{Binding CountText}" VerticalAlignment="Center" />
+                    </Grid>
+                  </Button>
+                  <ListBox Name="PlacedList" Classes="modules" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}"
+                           IsVisible="{Binding ShowsItems}" Classes.nested="{Binding ShowsHeader}"
+                           AutomationProperties.Name="{Binding Name}">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ModuleListItem">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                          <Ellipse Grid.Column="0" Classes="dot" Margin="0,0,10,0" VerticalAlignment="Center"
+                                   Classes.online="{Binding IsOnline}" Classes.idle="{Binding IsIdle}" Classes.refuse="{Binding IsRefuse}"
+                                   AutomationProperties.Name="{Binding HealthText}" ToolTip.Tip="{Binding HealthText}" />
+                          <TextBlock Grid.Column="1" Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                          <controls:CommunityBadge Grid.Column="2" Size="16" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsCommunity}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </StackPanel>
               </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
 
           <TextBlock Classes="section" Margin="0,12,0,0" Text="{x:Static t:Texts.LayoutShelved}" IsVisible="{Binding HasShelved}" />
           <ListBox Name="ShelvedList" Classes="modules" ItemsSource="{Binding Shelved}" SelectedItem="{Binding SelectedShelved}"
@@ -57,7 +85,7 @@
 
             <!-- Le nom du module, et son état en mots. -->
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-              <TextBlock Grid.Column="0" Name="ModuleName" Classes="heading" Text="{Binding SelectedName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <views:CaseNameHeader Grid.Column="0" Name="ModuleName" DataContext="{Binding CaseTitle}" VerticalAlignment="Center" />
               <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding HasHealth}">
                 <Ellipse Classes="dot" VerticalAlignment="Center"
                          Classes.online="{Binding SelectedOnline}" Classes.idle="{Binding SelectedIdle}" Classes.refuse="{Binding SelectedRefuse}" />
