@@ -494,4 +494,165 @@ public class FrameComposerTests
             (byte)Math.Round(panel.Blue * 0.3 + ClassiqueBackground.Blue * 0.7));
         AssertClose(expected, frame.GetPixel((rect.Left + rect.Right) / 2, (rect.Top + rect.Bottom) / 2));
     }
+
+    // ---- Liquid Glass avancé (plan 9, tâche 3) ----
+
+    [Fact]
+    public void ErrorPanel_InAdvancedTheme_DrawsGlassAndMessage()
+    {
+        // Point de vigilance 5 : un module qui lève dans Render.
+        var def = GlassTesting.Advanced();
+        var id = Guid.NewGuid();
+        var layout = DashboardLayout.SingleView(0, [Place(id, 2, 1, 4, 2)]);
+        var rect = GridGeometry.ModuleRect(2, 1, 4, 2, def.Grid);
+        var junk = new FakeModule((canvas, ctx) =>
+        {
+            canvas.DrawRect(ctx.Bounds, new SKPaint { Color = SKColors.Lime });
+            throw new InvalidOperationException("raté");
+        });
+        using var background = new AuroraBackground();
+        using var composer = new FrameComposer(new RateLimitedErrorLog(TimeProvider.System, _ => { }));
+
+        using var broken = composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule> { [id] = junk }, def, background, DateTimeOffset.UnixEpoch);
+        using var clean = composer.Compose(layout.Views[0].Placements, new Dictionary<Guid, IModule>(), def, background, DateTimeOffset.UnixEpoch);
+        using var bare = composer.Compose([], new Dictionary<Guid, IModule>(), def, background, DateTimeOffset.UnixEpoch);
+
+        // Hors texte, la case est celle d'un module absent : le verre et sa teinte, sans ce que le module avait peint.
+        Assert.Equal(clean.GetPixel(rect.Left + 20, rect.Top + 20), broken.GetPixel(rect.Left + 20, rect.Top + 20));
+        Assert.Equal(clean.GetPixel(rect.Left + 3, rect.Top + 60), broken.GetPixel(rect.Left + 3, rect.Top + 60));
+        Assert.NotEqual(bare.GetPixel(rect.Left + 20, rect.Top + 20), broken.GetPixel(rect.Left + 20, rect.Top + 20));
+        // L'ombre, hors de la case, est restée.
+        Assert.Equal(clean.GetPixel(rect.Left - 3, (rect.Top + rect.Bottom) / 2), broken.GetPixel(rect.Left - 3, (rect.Top + rect.Bottom) / 2));
+        Assert.NotEqual(bare.GetPixel(rect.Left - 3, (rect.Top + rect.Bottom) / 2), broken.GetPixel(rect.Left - 3, (rect.Top + rect.Bottom) / 2));
+
+        bool foundWarning = false;
+        for (int y = rect.Top; y < rect.Bottom && !foundWarning; y++)
+            for (int x = rect.Left; x < rect.Right; x++)
+            {
+                var p = broken.GetPixel(x, y);
+                if (Math.Abs(p.Red - def.Theme.Warning.Red) < 30 && Math.Abs(p.Green - def.Theme.Warning.Green) < 30 && Math.Abs(p.Blue - def.Theme.Warning.Blue) < 30)
+                {
+                    foundWarning = true;
+                    break;
+                }
+            }
+        Assert.True(foundWarning);
+        Assert.Equal(1, composer.GlassComputations);
+    }
+
+    /// <summary>Attend que le fil à part ait annoncé <paramref name="count"/> couches.</summary>
+    private static void WaitForGlass(Func<int> ready, int count) =>
+        Assert.True(SpinWait.SpinUntil(() => ready() >= count, TimeSpan.FromSeconds(30)), $"couches prêtes : {ready()} sur {count}");
+
+    [Fact]
+    public void BackgroundMode_ShowsFallbackThenLayer()
+    {
+        var placements = GlassTesting.TwoCases();
+        var clair = GlassTesting.Advanced();
+        var prisme = GlassTesting.Advanced(GlassPresets.Prisme);
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
+        using var sync = new FrameComposer();
+        using var composer = new FrameComposer(backgroundGlass: true);
+        int ready = 0;
+        composer.GlassReady += () => Interlocked.Increment(ref ready);
+
+        // 1. Rien n'est prêt : le verre simple de Liquid Glass, sans attendre.
+        using var first = composer.Compose(placements, GlassTesting.NoModules, clair, background, GlassTesting.T0);
+        using var simple = sync.Compose(placements, GlassTesting.NoModules, clair with { Panel = Themes.LiquidGlass.Panel }, background, GlassTesting.T0);
+        Assert.True(SameBytes(simple, first));
+
+        // 2. Les couches arrivent : la même image que sans fil à part.
+        WaitForGlass(() => Volatile.Read(ref ready), 2);
+        using var second = composer.Compose(placements, GlassTesting.NoModules, clair, background, GlassTesting.T0);
+        using var expected = sync.Compose(placements, GlassTesting.NoModules, clair, background, GlassTesting.T0);
+        Assert.True(SameBytes(expected, second));
+        Assert.Equal(2, composer.GlassComputations);
+
+        // 3. Un réglage change : la couche précédente de chaque case reste à l'écran pendant le calcul.
+        using var third = composer.Compose(placements, GlassTesting.NoModules, prisme, background, GlassTesting.T0);
+        Assert.True(SameBytes(second, third));
+
+        // 4. Puis la nouvelle.
+        WaitForGlass(() => Volatile.Read(ref ready), 4);
+        using var fourth = composer.Compose(placements, GlassTesting.NoModules, prisme, background, GlassTesting.T0);
+        using var expectedPrisme = sync.Compose(placements, GlassTesting.NoModules, prisme, background, GlassTesting.T0);
+        Assert.True(SameBytes(expectedPrisme, fourth));
+        Assert.Equal(2, composer.GlassLayers);
+    }
+
+    [Fact]
+    public void BackgroundMode_RapidSettingChanges_SettleOnTheLastOnes()
+    {
+        // Un curseur qu'on bouge : chaque image demande d'autres réglages avant que les précédents soient prêts.
+        var placements = GlassTesting.TwoCases();
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
+        using var sync = new FrameComposer();
+        using var composer = new FrameComposer(backgroundGlass: true);
+        ThemeDefinition last = GlassTesting.Advanced();
+        for (int i = 0; i <= 20; i++)
+        {
+            float refraction = 0.3f + i * 0.02f;
+            last = GlassTesting.Advanced(change: s => s with { Refraction = refraction });
+            composer.Compose(placements, GlassTesting.NoModules, last, background, GlassTesting.T0).Dispose();
+            Thread.Sleep(5);
+        }
+
+        using var expected = sync.Compose(placements, GlassTesting.NoModules, last, background, GlassTesting.T0);
+        bool settled = SpinWait.SpinUntil(
+            () =>
+            {
+                using var frame = composer.Compose(placements, GlassTesting.NoModules, last, background, GlassTesting.T0);
+                return SameBytes(expected, frame);
+            },
+            TimeSpan.FromSeconds(30));
+
+        Assert.True(settled, "le verre des derniers réglages n'est jamais arrivé");
+        Assert.Equal(2, composer.GlassLayers);
+        Assert.InRange(composer.GlassComputations, 2, 2 * 21); // les demandes dépassées avant d'avoir commencé sont sautées
+    }
+
+    [Fact]
+    public void BackgroundMode_AnimatedBackground_ComputesAtOnce()
+    {
+        var placements = GlassTesting.TwoCases();
+        var theme = GlassTesting.Advanced();
+        using var background = new StubBackground(GlassTesting.Detailed());
+        using var sync = new FrameComposer();
+        using var composer = new FrameComposer(backgroundGlass: true);
+
+        using var frame = composer.Compose(placements, GlassTesting.NoModules, theme, background, GlassTesting.T0);
+        using var expected = sync.Compose(placements, GlassTesting.NoModules, theme, background, GlassTesting.T0);
+
+        Assert.True(SameBytes(expected, frame));
+        Assert.Equal(2, composer.GlassComputations);
+    }
+
+    [Fact]
+    public void BackgroundMode_DisposedWhileComputing_DoesNotThrow()
+    {
+        var placements = DashboardLayout.Default.Views[0].Placements;
+        for (int i = 0; i < 5; i++)
+        {
+            var background = new AuroraBackground();
+            var composer = new FrameComposer(backgroundGlass: true);
+            composer.Compose(placements, GlassTesting.NoModules, GlassTesting.Advanced(), background, GlassTesting.T0).Dispose();
+
+            // Comme le service : le compositeur d'abord, puis le fond, sans attendre le fil à part.
+            composer.Dispose();
+            background.Dispose();
+        }
+    }
+
+    [Fact]
+    public void BackgroundMode_ThemeLeftWhileComputing_DropsTheLateLayers()
+    {
+        var placements = GlassTesting.TwoCases();
+        using var background = new AuroraBackground();
+        using var composer = new FrameComposer(backgroundGlass: true);
+
+        composer.Compose(placements, GlassTesting.NoModules, GlassTesting.Advanced(), background, GlassTesting.T0).Dispose();
+        composer.Compose(placements, GlassTesting.NoModules, Themes.LiquidGlass, background, GlassTesting.T0).Dispose();
+
+        Assert.Equal(0, composer.GlassLayers);
+    }
 }

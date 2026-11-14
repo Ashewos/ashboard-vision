@@ -122,7 +122,15 @@ internal sealed class Backdrop : IDisposable
         int x1 = Math.Clamp((int)Math.Ceiling(rect.Right * ScaleX), x0 + 1, Width);
         int y0 = Math.Clamp((int)Math.Floor(rect.Top * ScaleY), 0, Height - 1);
         int y1 = Math.Clamp((int)Math.Ceiling(rect.Bottom * ScaleY), y0 + 1, Height);
+        return BrightestLuminance(small, x0, y0, x1, y1);
+    }
 
+    /// <summary>
+    /// Plus grande luminance relative moyenne d'une cellule (environ <see cref="CellSize"/> × <see cref="CellSize"/> px, au
+    /// moins une) de la zone [x0, x1[ × [y0, y1[ de <paramref name="small"/> (Bgra8888, opaque).
+    /// </summary>
+    internal static float BrightestLuminance(SKBitmap small, int x0, int y0, int x1, int y1)
+    {
         int columns = Math.Max(1, (int)Math.Round((x1 - x0) / (double)CellSize));
         int rows = Math.Max(1, (int)Math.Round((y1 - y0) / (double)CellSize));
 

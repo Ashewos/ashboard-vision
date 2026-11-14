@@ -57,6 +57,12 @@ internal sealed class LiquidGlassEffect : IDisposable
         ArgumentNullException.ThrowIfNull(sharp);
         ArgumentNullException.ThrowIfNull(blurred);
         ArgumentNullException.ThrowIfNull(s);
+        if (blurred.Width != sharp.Width || blurred.Height != sharp.Height)
+        {
+            throw new ArgumentException(
+                $"La scène floutée ({blurred.Width} × {blurred.Height}) n'a pas la taille de la scène nette ({sharp.Width} × {sharp.Height}).",
+                nameof(blurred));
+        }
 
         var width = Math.Max(1, (int)MathF.Ceiling(shape.Width));
         var height = Math.Max(1, (int)MathF.Ceiling(shape.Height));

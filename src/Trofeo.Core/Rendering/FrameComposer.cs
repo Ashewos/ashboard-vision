@@ -13,14 +13,40 @@ public sealed class FrameComposer : IDisposable
     private readonly RateLimitedErrorLog _errors;
     private readonly Backdrop _backdrop = new();
     private readonly PanelAlphaSmoother _alpha = new(); // opacité des panneaux sur un fond animé, par rectangle
+    private readonly bool _backgroundGlass;
+
+    // Les couches de « Liquid Glass avancé » : créées à la première image de ce thème, libérées dès qu'un autre thème est composé.
+    private LiquidGlassLayers? _glass;
 
     // Fond uni de la surcharge sans fond, gardé tant que la couleur du thème ne change pas.
     private ColorBackground? _legacyBackground;
     private SKColor _legacyColor;
 
     /// <param name="errors">Destination des échecs de rendu ; par défaut le <see cref="Trace"/>, une fois par minute et par message.</param>
-    public FrameComposer(RateLimitedErrorLog? errors = null) =>
+    /// <param name="backgroundGlass">
+    /// Vrai : sur un fond fixe, les couches de verre de « Liquid Glass avancé » se calculent sur un fil à part. En attendant, une
+    /// case garde sa couche précédente, ou à défaut le verre simple de Liquid Glass, et <see cref="GlassReady"/> prévient quand
+    /// une couche est prête. Faux : tout est calculé pendant <c>Compose</c>.
+    /// </param>
+    public FrameComposer(RateLimitedErrorLog? errors = null, bool backgroundGlass = false)
+    {
         _errors = errors ?? new RateLimitedErrorLog(TimeProvider.System);
+        _backgroundGlass = backgroundGlass;
+    }
+
+    /// <summary>
+    /// Une couche de verre calculée sur le fil à part est prête : la prochaine composition la montrera. Levé depuis ce fil.
+    /// </summary>
+    public event Action? GlassReady;
+
+    /// <summary>Combien de couches de verre ont été calculées depuis que le thème « Liquid Glass avancé » est composé (tests).</summary>
+    internal int GlassComputations => _glass?.Computations ?? 0;
+
+    /// <summary>Combien de couches d'ombre ont été calculées (tests).</summary>
+    internal int GlassShadowComputations => _glass?.ShadowComputations ?? 0;
+
+    /// <summary>Combien de cases gardent une couche de verre ou d'ombre en mémoire (tests).</summary>
+    internal int GlassLayers => _glass?.LiveLayers ?? 0;
 
     /// <summary>Combien de fois le fond flouté du verre a été recalculé (tests).</summary>
     internal int BackdropComputations => _backdrop.Computations;
@@ -47,7 +73,8 @@ public sealed class FrameComposer : IDisposable
 
     /// <summary>
     /// Peint le fond, puis pour chaque case de <paramref name="placements"/> (les cases d'une vue) son panneau (mat, verre ou pixel, selon le thème) et le rendu du
-    /// module, rogné à la forme du panneau (1920 × 462).
+    /// module, rogné à la forme du panneau (1920 × 462). En « Liquid Glass avancé », les ombres de toutes les cases passent
+    /// d'abord, puis chaque case pose son verre, sa teinte et son module.
     /// </summary>
     public SKBitmap Compose(
         IReadOnlyList<ModulePlacement> placements,
@@ -61,6 +88,18 @@ public sealed class FrameComposer : IDisposable
         {
             using var canvas = new SKCanvas(bitmap);
             DrawBackground(canvas, background);
+
+            LiquidGlassLayers? glass = null;
+            if (theme.Panel.Kind == PanelKind.LiquidGlass)
+            {
+                glass = _glass ??= NewGlassLayers();
+                glass.BeginFrame(background, theme);
+                glass.PaintShadows(canvas, [.. placements.Select(placement => ModulePlace.Rect(placement, theme))]);
+            }
+            else
+            {
+                DropGlass(); // un autre thème : aucune couche ne reste en mémoire
+            }
 
             foreach (var placement in placements)
             {
@@ -90,6 +129,7 @@ public sealed class FrameComposer : IDisposable
                 }
             }
 
+            glass?.EndFrame();
             return bitmap;
         }
         catch
@@ -101,9 +141,28 @@ public sealed class FrameComposer : IDisposable
 
     public void Dispose()
     {
+        DropGlass();
         _backdrop.Dispose();
         _legacyBackground?.Dispose();
         _legacyBackground = null;
+    }
+
+    private LiquidGlassLayers NewGlassLayers()
+    {
+        var layers = new LiquidGlassLayers(_backgroundGlass, _errors.Report);
+        layers.Ready += OnGlassReady;
+        return layers;
+    }
+
+    private void OnGlassReady() => GlassReady?.Invoke();
+
+    private void DropGlass()
+    {
+        if (_glass is null) return;
+
+        _glass.Ready -= OnGlassReady;
+        _glass.Dispose();
+        _glass = null;
     }
 
     // L'image courante du fond n'est jamais gardée : elle n'est valable que pour cette image de l'écran.
@@ -120,7 +179,18 @@ public sealed class FrameComposer : IDisposable
     /// </summary>
     private void PaintPanel(SKCanvas canvas, SKRect rect, ThemeDefinition theme, IBackground background, DateTimeOffset now)
     {
-        theme = PanelPainter.Visual(theme);
+        if (theme.Panel.Kind == PanelKind.LiquidGlass)
+        {
+            if (_glass is { } glass && glass.IsReady(rect))
+            {
+                PaintGlassPanel(canvas, rect, theme, background, now, glass);
+                return;
+            }
+
+            // Le verre de la case se calcule encore sur le fil à part : en attendant, le verre simple de Liquid Glass.
+            theme = theme with { Panel = Themes.LiquidGlass.Panel };
+        }
+
         var blurred = theme.Panel.Kind == PanelKind.Glass ? _backdrop.Get(background, theme.Panel) : null;
         if (!theme.LegibilityGuard)
         {
@@ -131,6 +201,26 @@ public sealed class FrameComposer : IDisposable
         float target = PanelPainter.TargetAlpha(theme, _backdrop.BrightestLuminance(background, rect));
         float alpha = background.IsAnimated ? _alpha.Smooth(rect, target, now) : target;
         PanelPainter.Paint(canvas, rect, theme, blurred, background.Current, alpha: alpha);
+    }
+
+    /// <summary>
+    /// Le panneau de « Liquid Glass avancé » : la couche de verre gardée en mémoire, puis la teinte, qui n'est jamais gardée
+    /// avec elle. La garde de lisibilité mesure la zone la plus claire du verre posé sur le fond (les reflets y sont déjà) ;
+    /// l'opacité est lissée sur un fond animé, comme pour les autres thèmes.
+    /// </summary>
+    private void PaintGlassPanel(
+        SKCanvas canvas, SKRect rect, ThemeDefinition theme, IBackground background, DateTimeOffset now, LiquidGlassLayers glass)
+    {
+        glass.PaintGlass(canvas, rect);
+
+        float alpha = theme.Theme.PanelOpacity;
+        if (theme.LegibilityGuard)
+        {
+            float target = PanelPainter.TargetAlpha(theme, glass.Luminance(rect));
+            alpha = background.IsAnimated ? _alpha.Smooth(rect, target, now) : target;
+        }
+
+        PanelPainter.Paint(canvas, rect, theme, null, background.Current, alpha: alpha);
     }
 
     /// <summary>Efface ce que le module a pu peindre avant d'échouer, puis affiche le message d'erreur.</summary>

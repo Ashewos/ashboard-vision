@@ -257,7 +257,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         };
         _onStatusChanged = OnStatusChanged;
         _renderErrors = new RateLimitedErrorLog(time);
-        _composer = new FrameComposer(_renderErrors);
+        _composer = NewComposer();
         _theme = theme ?? Themes.ClassiqueDefinition;
         _background = background ?? new ColorBackground(_theme.DefaultBackground.Color);
         _backgroundStart = time.GetTimestamp(); // la lecture d'un fond animé part du démarrage de la boucle
@@ -628,7 +628,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     /// Un module en place est gardé (sans être redémarré) quand son identifiant d'instance, son type et ses réglages sont les
     /// mêmes ; sa place, sa taille et la taille de son texte se lisent dans la nouvelle disposition. Sinon l'ancien est arrêté,
     /// puis le nouveau est créé et démarré ; un module disparu est arrêté. Le compositeur est recréé quand le thème ou le fond
-    /// change, et l'ancien fond est libéré après lui. Le plafond d'images vient de <see cref="DashboardLayout.MaxFps"/>
+    /// change (sauf d'un réglage de « Liquid Glass avancé » à un autre, sur le même fond), et l'ancien fond est libéré après lui. Le plafond d'images vient de <see cref="DashboardLayout.MaxFps"/>
     /// (12 par défaut), et une image est redemandée.
     /// </para>
     /// </summary>
@@ -779,20 +779,40 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         return index < 0 ? layout.Views[0].Id : layout.Views[Math.Min(index, layout.Views.Count - 1)].Id;
     }
 
+    /// <summary>
+    /// Un compositeur de la boucle. Les couches de verre de « Liquid Glass avancé » s'y calculent sur un fil à part (la boucle
+    /// ne saccade pas) ; quand l'une est prête, une image est redemandée.
+    /// </summary>
+    private FrameComposer NewComposer()
+    {
+        var composer = new FrameComposer(_renderErrors, backgroundGlass: true);
+        composer.GlassReady += _scheduler.MarkDirty; // levé depuis le fil du calcul : MarkDirty s'appelle de n'importe quel fil
+        return composer;
+    }
+
     private void ReplaceTheme(ThemeDefinition theme, IBackground background)
     {
         var backgroundChanged = !ReferenceEquals(background, _background);
         if (!backgroundChanged && Equals(theme, _theme)) return;
 
-        var oldComposer = _composer;
+        // « Liquid Glass avancé » sur le même fond (un curseur du verre qu'on bouge, un préréglage) : les compositeurs restent.
+        // Chaque case montre ainsi sa couche précédente pendant que la nouvelle se calcule, au lieu de retomber sur le verre simple.
+        var keepComposers = !backgroundChanged
+            && _theme.Panel.Kind == PanelKind.LiquidGlass && theme.Panel.Kind == PanelKind.LiquidGlass;
+
         var oldBackground = _background;
         _theme = theme;
         _background = background;
-        _composer = new FrameComposer(_renderErrors);
+        if (!keepComposers)
+        {
+            var oldComposer = _composer;
+            _composer = NewComposer();
 
-        // Le compositeur garde une copie floutée du fond : on le libère avant le fond.
-        DisposeQuietly(oldComposer);
-        DisposePreviewComposer(); // sa copie floutée du fond ne vaut plus ; il sera recréé à la prochaine demande
+            // Le compositeur garde une copie floutée du fond : on le libère avant le fond.
+            DisposeQuietly(oldComposer);
+            DisposePreviewComposer(); // sa copie floutée du fond ne vaut plus ; il sera recréé à la prochaine demande
+        }
+
         if (backgroundChanged)
         {
             DisposeQuietly(oldBackground);
@@ -1245,7 +1265,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
 
             try
             {
-                _previewComposer ??= new FrameComposer(_renderErrors);
+                _previewComposer ??= NewComposer();
                 using var bitmap = _previewComposer.Compose(view.Placements, live.Modules, _theme, _background, _time.GetLocalNow());
                 var frame = new PreviewFrame(JpegEncoder.Encode(bitmap, live.Layout.Rotation), live.Layout.Rotation);
                 foreach (var subscriber in _subscribers)
