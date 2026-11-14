@@ -3,7 +3,7 @@
   "name": "Démo",
   "description": "Une animation à 12 images par seconde qui suit le thème, pour essayer le plafond d'images et la consommation.",
   "author": "Ashewos",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "sdk": "1.1",
   "entry": "Demo.dll",
   "permissions": [],
