@@ -25,7 +25,8 @@ Première bêta de la 1.2.0 : les **vues multiples**, des **noms de cases**, et 
 
 ### Noms de cases
 
-- Chaque case peut recevoir un nom, dans son panneau de réglage (« Nom de la case »). Le nom s'affiche dans les listes de la fenêtre, par exemple quand un même module est placé deux fois. Il ne s'affiche pas sur l'écran.
+- Chaque case peut recevoir un nom : clique sur le crayon à côté de son titre, dans Disposition ou dans Modules. Le nom s'affiche partout dans la fenêtre, avec le nom du module en petit dessous. C'est pratique quand un même module est placé deux fois. Le nom ne s'affiche pas sur l'écran.
+- Avec plusieurs vues, l'onglet **Modules** range les cases en dossiers, un par vue. Un clic sur un dossier le replie.
 
 ### Raccourcis des modules complémentaires
 
