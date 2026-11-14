@@ -6,6 +6,8 @@ public static class AppearanceResolver
     /// <summary>
     /// Thème inconnu : Classique, avec un avertissement. Opacité bornée à [0, 1] ; NaN : celle du thème, avec un avertissement.
     /// <c>Legibility</c> à faux : la garde de lisibilité est coupée (<see cref="ThemeDefinition.LegibilityGuard"/>).
+    /// Thème « Liquid Glass avancé » : <c>Glass</c> donne les réglages du verre (<see cref="GlassAppearance.Resolve"/>) et leur rayon devient
+    /// celui des cases ; les autres thèmes ignorent <c>Glass</c>.
     /// Police : <see cref="FontResolver"/> ; si elle est trouvée, <c>Typeface</c> et <c>FeedTypeface</c> la prennent, et
     /// <c>TypefaceScale</c> comme <c>FeedScale</c> prennent l'agrandissement de cette police
     /// (<see cref="EmbeddedFonts.ScaleOf"/> : 1,24 pour VT323, même en Classique ; 1 pour toute autre police, du système comprise). Si elle est introuvable, le thème reste tel quel ; si c'est la police du thème elle-même, le fil la prend aussi.
@@ -17,6 +19,18 @@ public static class AppearanceResolver
         {
             warn?.Invoke($"Thème « {settings.Theme} » inconnu : thème Classique utilisé.");
             definition = Themes.ClassiqueDefinition;
+        }
+
+        if (definition.Panel.Kind == PanelKind.LiquidGlass)
+        {
+            // Le verre : un préréglage inconnu ou des valeurs hors bornes retombent sur Clair (avertissement). Le rayon du verre est
+            // celui des cases.
+            var glass = (settings.Glass ?? new GlassAppearance()).Resolve(warn);
+            definition = definition with
+            {
+                Panel = definition.Panel with { Glass = glass },
+                Theme = definition.Theme with { CornerRadius = glass.CornerRadius },
+            };
         }
 
         if (settings.PanelOpacity is { } opacity)

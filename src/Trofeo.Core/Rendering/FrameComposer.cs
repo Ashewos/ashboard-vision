@@ -120,6 +120,7 @@ public sealed class FrameComposer : IDisposable
     /// </summary>
     private void PaintPanel(SKCanvas canvas, SKRect rect, ThemeDefinition theme, IBackground background, DateTimeOffset now)
     {
+        theme = PanelPainter.Visual(theme);
         var blurred = theme.Panel.Kind == PanelKind.Glass ? _backdrop.Get(background, theme.Panel) : null;
         if (!theme.LegibilityGuard)
         {

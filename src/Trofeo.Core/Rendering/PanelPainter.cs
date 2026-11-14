@@ -25,6 +25,7 @@ internal static class PanelPainter
         SKCanvas canvas, SKRect rect, ThemeDefinition theme, SKImage? backdrop, SKImage background,
         float? backdropLuminance = null, float? alpha = null)
     {
+        theme = Visual(theme);
         var look = theme.Panel;
         float applied = alpha
             ?? TargetAlpha(theme, theme.LegibilityGuard ? backdropLuminance ?? MeasureOnce(background, rect) : 0f);
@@ -50,6 +51,7 @@ internal static class PanelPainter
     /// </summary>
     public static float TargetAlpha(ThemeDefinition theme, float backdropLuminance)
     {
+        theme = Visual(theme);
         if (!theme.LegibilityGuard) return theme.Theme.PanelOpacity;
 
         return LegibleAlpha(
@@ -58,6 +60,13 @@ internal static class PanelPainter
             theme.Theme.PanelOpacity,
             theme.Panel.Kind == PanelKind.Glass ? GlassSheenLuminance : 0f);
     }
+
+    /// <summary>
+    /// En attendant le verre adapté de liquidglass, le panneau « Liquid Glass avancé » se dessine comme Liquid Glass (même thème, mais
+    /// avec le look de celui-ci) ; les autres thèmes sont rendus tels quels.
+    /// </summary>
+    internal static ThemeDefinition Visual(ThemeDefinition theme) =>
+        theme.Panel.Kind == PanelKind.LiquidGlass ? theme with { Panel = Themes.LiquidGlass.Panel } : theme;
 
     /// <summary>Le rognage d'un module : le contour du panneau (arrondi, ou angles vifs en Pixel).</summary>
     public static void ClipToPanel(SKCanvas canvas, SKRect rect, ThemeDefinition theme)

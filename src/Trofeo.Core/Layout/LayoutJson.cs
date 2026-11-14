@@ -20,6 +20,9 @@ internal static class LayoutJson
     {
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() },
+        // « NaN » et « Infinity » s'écrivent et se lisent en texte : un réglage du verre fou se relit (puis se borne), au lieu de faire
+        // échouer l'écriture ou la lecture.
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
     /// <summary>Avertissement quand une <c>Appearance</c> illisible est abandonnée.</summary>
@@ -29,6 +32,9 @@ internal static class LayoutJson
     /// <summary>Avertissement quand <c>AnimateViewSwitch</c> n'est ni vrai ni faux : le glissement reste activé.</summary>
     internal const string AnimateViewSwitchInvalid =
         "Réglage « AnimateViewSwitch » illisible dans layout.json : passage animé entre les vues par défaut.";
+
+    /// <summary>Avertissement quand le champ <c>Glass</c> n'est pas lisible : le verre retombe sur Clair.</summary>
+    internal const string GlassInvalid = "Réglages du verre illisibles : préréglage Clair utilisé.";
 
     internal const string MaxFpsInvalid = "Plafond d'images invalide : 12 images/s utilisées.";
     internal const string ShortcutsDropped = "Raccourcis illisibles dans layout.json : raccourcis par défaut utilisés.";
@@ -322,10 +328,27 @@ internal static class LayoutJson
                 else warn(AnimateViewSwitchInvalid);
             }
 
+            // Glass aussi : un champ du mauvais type fait retomber le verre sur Clair (null), pas abandonner l'apparence.
+            GlassAppearance? glass = null;
+            if (node is JsonObject glassFields && Take(glassFields, nameof(AppearanceSettings.Glass), out var glassNode)
+                && glassNode is not null)
+            {
+                try
+                {
+                    glass = glassNode.Deserialize<GlassAppearance>(Options);
+                }
+                catch (Exception)
+                {
+                    // Mauvais type JSON, énumération inconnue... : pas de verre choisi.
+                }
+
+                if (glass is null) warn(GlassInvalid);
+            }
+
             var appearance = node.Deserialize<AppearanceSettings>(Options);
             if (appearance is not null && appearance.Theme is not null &&
                 (appearance.Background is not { } background || Enum.IsDefined(background.Kind)))
-                return appearance with { AnimateViewSwitch = animate };
+                return appearance with { AnimateViewSwitch = animate, Glass = glass };
         }
         catch (Exception)
         {

@@ -20,7 +20,7 @@ internal static class Program
                                       -fond-clair.png, et liquid-glass-gif-1..4.png (4 images d'un GIF fabriqué, à 83 ms)
           --theme <id> [--opacity x] [--font <famille>] [--background color:#hex|image:<chemin>|gif:<chemin>]
                        [--text-size small|normal|large] --png <fichier>
-                                      une image à la demande (thèmes : classique, liquid-glass, pixel)
+                                      une image à la demande (thèmes : classique, liquid-glass, pixel, liquid-glass-avance)
           --thumbnails <dossier> [--width n]
                                       une vignette par thème (<thème>.png, 480 px de large par défaut) : celles de
                                       src/Trofeo.Settings/Assets/Themes, pour les cartes de l'onglet Personnalisation
