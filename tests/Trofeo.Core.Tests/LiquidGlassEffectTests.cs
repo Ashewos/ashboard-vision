@@ -196,6 +196,14 @@ public class LiquidGlassEffectTests
             Assert.Equal(one.Bytes, many.Bytes);
         }
 
+        // Un fond qui change aussi de haut en bas : une bande mal placée y lirait d'autres pixels.
+        using var ramp = Ramp(vertical: true);
+        using (var one = SKBitmap.FromImage(single.RenderGlass(ramp, ramp, SKPoint.Empty, shape, settings)))
+        using (var many = SKBitmap.FromImage(parallel.RenderGlass(ramp, ramp, SKPoint.Empty, shape, settings)))
+        {
+            Assert.Equal(one.Bytes, many.Bytes);
+        }
+
         using var oneShadow = single.RenderShadow(shape, settings with { ShadowOpacity = 0.5f }, out var areaOne)!;
         using var manyShadow = parallel.RenderShadow(shape, settings with { ShadowOpacity = 0.5f }, out var areaMany)!;
         Assert.Equal(areaOne, areaMany);

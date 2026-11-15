@@ -586,7 +586,8 @@ internal sealed class LiquidGlassLayers : IDisposable
             blurred = slot.SceneBlurred;
         }
 
-        var effect = _pillEffect ??= new LiquidGlassEffect();
+        // Une pastille est petite (40 000 px par case au plus) : la découper coûterait plus que le calcul d'un bloc.
+        var effect = _pillEffect ??= new LiquidGlassEffect { Strips = 1 };
         var image = effect.RenderGlass(sharp, blurred, new SKPoint(area.Left, area.Top), shape, settings);
         Track(1);
         _pillComputations++;

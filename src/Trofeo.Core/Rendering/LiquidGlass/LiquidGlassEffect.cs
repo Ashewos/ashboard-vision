@@ -193,17 +193,25 @@ internal sealed class LiquidGlassEffect : IDisposable
                 throw new InvalidOperationException($"Impossible de réserver {width} × {height} pixels pour le verre.");
             }
             int rowBytes = bitmap.RowBytes;
-            Parallel.For(0, strips, new ParallelOptions { MaxDegreeOfParallelism = strips }, i =>
+            try
             {
-                int top = (int)((long)height * i / strips);
-                int bottom = (int)((long)height * (i + 1) / strips);
-                using var surface = SKSurface.Create(info.WithSize(width, bottom - top), pixels + top * rowBytes, rowBytes)
-                    ?? throw new InvalidOperationException($"Impossible de créer la bande {top}–{bottom} du verre.");
-                // La bande voit les mêmes coordonnées que l'image entière : sa première ligne est la ligne « top ».
-                surface.Canvas.Translate(0, -top);
-                using var paint = new SKPaint { Shader = shader, BlendMode = SKBlendMode.Src };
-                surface.Canvas.DrawPaint(paint);
-            });
+                Parallel.For(0, strips, new ParallelOptions { MaxDegreeOfParallelism = strips }, i =>
+                {
+                    int top = (int)((long)height * i / strips);
+                    int bottom = (int)((long)height * (i + 1) / strips);
+                    using var surface = SKSurface.Create(info.WithSize(width, bottom - top), pixels + (nint)top * rowBytes, rowBytes)
+                        ?? throw new InvalidOperationException($"Impossible de créer la bande {top}–{bottom} du verre.");
+                    // La bande voit les mêmes coordonnées que l'image entière : sa première ligne est la ligne « top ».
+                    surface.Canvas.Translate(0, -top);
+                    using var paint = new SKPaint { Shader = shader, BlendMode = SKBlendMode.Src };
+                    surface.Canvas.DrawPaint(paint);
+                });
+            }
+            catch (AggregateException e) when (e.InnerExceptions.Count == 1)
+            {
+                // Une seule bande a échoué : son erreur remonte telle quelle, comme sans découpage.
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(e.InnerExceptions[0]);
+            }
             return BackgroundSupport.Freeze(bitmap); // les pixels passent à l'image
         }
         finally
