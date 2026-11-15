@@ -2,6 +2,35 @@
 
 Les versions sont numérotées selon [SemVer](https://semver.org/lang/fr/) : les bêtas s'écrivent `1.0.0-beta.N`, les stables `1.0.0`, `1.1.0`, etc. Le texte de chaque section sert de notes à la version GitHub du même numéro.
 
+## 1.2.0-beta.2
+
+Deuxième bêta de la 1.2.0 : un quatrième thème, **Liquid Glass avancé**, dont le verre courbe vraiment le fond sur ses bords. Les vues, les noms de cases et les raccourcis de la beta.1 sont inchangés.
+
+### Le thème Liquid Glass avancé
+
+- Dans **Personnalisation**, choisis le thème « Liquid Glass avancé ». Chaque case devient une plaque de verre : le fond se courbe sur les bords (réfraction), avec un léger flou, un reflet sur l'arête, une ombre et, au besoin, des franges colorées.
+- Quatre **préréglages** : *Clair* (par défaut), *Givré* (plus flou, plus laiteux), *Prisme* (réfraction forte, franges colorées) et *Discret* (un verre à peine marqué).
+- Dans **Personnalisation**, une section **Verre** apparaît sous le fond quand ce thème est choisi. Elle propose les préréglages, et un repli « Réglages fins » avec la forme du biseau (Pilule ou Dôme) et seize curseurs en quatre groupes : verre (flou, réfraction, profondeur du biseau, rayon des angles, micro-déformation), lumière (lumière des bords, reflets, Fresnel, franges de couleur), couleur (opacité du verre, saturation, teinte froide, luminosité) et ombre (opacité, étendue, décalage). Dès que tu lâches un curseur, le verre passe sur « Personnalisé » ; choisir un préréglage rétablit ses valeurs.
+- La garde de lisibilité garde son rôle : sur un fond clair, la teinte s'assombrit pour que le texte reste lisible, sans clignoter quand le fond bouge. Tu peux la couper comme pour les autres thèmes.
+- Le verre se calcule une fois par case, puis il est gardé tant que le fond, la taille de la case et les réglages ne changent pas. Il demande tout de même plus de processeur que les autres thèmes, surtout avec un fond animé ou une vidéo.
+- Classique, Liquid Glass et Pixel ne changent pas, au pixel près.
+- Tu peux le choisir en ligne de commande : `Trofeo.HardwareCheck.exe --appearance theme=liquid-glass-avance`.
+
+### Une pastille de verre pour l'élément choisi
+
+- Dans ce thème, l'onglet choisi de Claude Code et de Codex est surligné par une **vraie pastille de verre**, pas par un simple aplat. Elle passe sous le texte, qui reste net.
+- Les modules complémentaires en profitent sans rien changer : c'est le logiciel qui dessine la pastille, jamais le module. Un module ne reçoit toujours ni les pixels du fond ni ceux d'une autre case.
+
+### SDK 1.2.0
+
+- `ModuleDrawing.DrawSelection` est public : un module complémentaire note l'élément choisi (un onglet, une ligne…), et le thème décide de la façon de le montrer. Dans les autres thèmes, le dessin est celui de d'habitude.
+- Le manifeste annonce `"sdk": "1.2"`. Un module construit avec le SDK 1.0.0 ou 1.1.0 tourne sans rien changer.
+- Les aides de test dessinent la pastille comme le logiciel, et la documentation (`docs/sdk`) décrit `DrawSelection`.
+
+### Licence
+
+- Le verre adapte l'effet de [liquidglass](https://github.com/ybouane/liquidglass) (licence MIT, « Copyright (c) ybouane »). Le texte de la licence est copié à côté du programme et cité dans le README, section « Licences tierces ».
+
 ## 1.2.0-beta.1
 
 Première bêta de la 1.2.0 : les **vues multiples**, des **noms de cases**, et des **raccourcis pour les modules complémentaires**.
