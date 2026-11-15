@@ -267,6 +267,83 @@ public class SelectionTests(ITestOutputHelper output)
         Assert.Equal(1, composer.GlassComputations);
     }
 
+    /// <summary><paramref name="count"/> pastilles de 40 × 20, sur quatre colonnes.</summary>
+    private static SKRect[] Grid(SKRect b, int count) =>
+        [.. Enumerable.Range(0, count).Select(i => SKRect.Create(b.Left + 20 + i % 4 * 50, b.Top + 20 + i / 4 * 30, 40, 20))];
+
+    [Fact]
+    public void Composer_ManyPillsInOneCase_BlurTheCaseOnce()
+    {
+        // Givre floute : toutes les pastilles d'une case partagent la même image floutée de la case.
+        var placements = GlassTesting.TwoCases();
+        var theme = GlassTesting.Advanced(GlassPresets.Givre);
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
+        using var composer = new FrameComposer();
+        var modules = new Dictionary<Guid, IModule>
+        {
+            [placements[0].InstanceId] = Selecting(b => Grid(b, 8)),
+            [placements[1].InstanceId] = Selecting(b => Grid(b, 3)),
+        };
+
+        composer.Compose(placements, modules, theme, background, GlassTesting.T0).Dispose();
+        var layers = composer.Glass!;
+        Assert.Equal(11, layers.PillComputations);
+        Assert.Equal(2, layers.PillBlurComputations); // une fois par case, pas une fois par pastille
+
+        // Après l'image, il ne reste que les couches des cases et les pastilles : ni image de la case, ni flou.
+        using var bare = new FrameComposer();
+        bare.Compose(placements, GlassTesting.NoModules, theme, background, GlassTesting.T0).Dispose();
+        Assert.Equal(bare.Glass!.LiveImages + 11, layers.LiveImages);
+
+        // Image suivante, rien n'a changé : ni pastille ni flou refaits.
+        composer.Compose(placements, modules, theme, background, GlassTesting.T0).Dispose();
+        Assert.Equal(11, layers.PillComputations);
+        Assert.Equal(2, layers.PillBlurComputations);
+
+        // Une pastille de plus dans la première case : un seul flou de plus, pour elle seule.
+        modules[placements[0].InstanceId] = Selecting(b => Grid(b, 9));
+        composer.Compose(placements, modules, theme, background, GlassTesting.T0).Dispose();
+        Assert.Equal(12, layers.PillComputations);
+        Assert.Equal(3, layers.PillBlurComputations);
+        Assert.Equal(bare.Glass!.LiveImages + 12, layers.LiveImages);
+
+        composer.Dispose();
+        Assert.Equal(0, layers.LiveImages);
+    }
+
+    [Fact]
+    public void Composer_PillsBeyondTheBudgetOfACase_AreIgnored()
+    {
+        var placement = GlassTesting.Place(0, 0, 4, 2);
+        var theme = GlassTesting.Advanced();
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
+        using var composer = new FrameComposer();
+        Assert.Equal(16, FrameComposer.MaxPillsPerCase);
+
+        using var twenty = composer.Compose([placement], For(placement, Selecting(b => Grid(b, 20))), theme, background, GlassTesting.T0);
+        Assert.Equal(16, composer.GlassPillComputations);
+
+        using var sixteen = composer.Compose([placement], For(placement, Selecting(b => Grid(b, 16))), theme, background, GlassTesting.T0);
+        Assert.True(GlassTesting.SameBytes(sixteen, twenty)); // la 17e et les suivantes n'ont rien peint
+        Assert.Equal(16, composer.GlassPillComputations);
+
+        // Un module qui change ses vingt rectangles à chaque image : toujours 16 calculs et 16 images au plus.
+        using var bare = new FrameComposer();
+        bare.Compose([placement], GlassTesting.NoModules, theme, background, GlassTesting.T0).Dispose();
+        int shift = 0;
+        var moving = For(placement, Selecting(b => [.. Grid(b, 20).Select(r => { r.Offset(shift, 0); return r; })]));
+        for (shift = 1; shift <= 3; shift++)
+        {
+            composer.Compose([placement], moving, theme, background, GlassTesting.T0).Dispose();
+            Assert.Equal(16 + 16 * shift, composer.GlassPillComputations);
+            Assert.Equal(bare.Glass!.LiveImages + 16, composer.Glass!.LiveImages);
+        }
+
+        var layers = composer.Glass!;
+        composer.Dispose();
+        Assert.Equal(0, layers.LiveImages);
+    }
+
     [Fact]
     public void Composer_PillFollowsTheSelection_AndFreesTheOldOne()
     {

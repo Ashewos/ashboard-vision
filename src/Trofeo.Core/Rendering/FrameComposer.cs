@@ -10,8 +10,11 @@ public sealed class FrameComposer : IDisposable
 {
     private const string ErrorText = "Erreur du module";
 
-    /// <summary>Combien d'éléments choisis une case peut noter par image ; les suivants sont ignorés.</summary>
-    internal const int MaxSelections = 64;
+    /// <summary>
+    /// Combien de pastilles une case peut avoir par image : les éléments choisis notés au-delà sont ignorés. Chaque pastille
+    /// coûte un calcul sur le fil de l'affichage et une image gardée : c'est le budget d'une case.
+    /// </summary>
+    internal const int MaxPillsPerCase = 16;
 
     /// <summary>Les éléments choisis qu'un module note pendant son dessin, relatifs à sa case.</summary>
     private sealed class SelectionList : ISelectionSink
@@ -20,7 +23,7 @@ public sealed class FrameComposer : IDisposable
 
         public void Add(SKRect caseLocalRect)
         {
-            if (Rects.Count < MaxSelections) Rects.Add(caseLocalRect);
+            if (Rects.Count < MaxPillsPerCase) Rects.Add(caseLocalRect);
         }
     }
 

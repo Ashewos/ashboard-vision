@@ -63,6 +63,14 @@ internal sealed class LiquidGlassLayers : IDisposable
         /// <summary>Vrai quand <see cref="Scene"/> a déjà été comparée à l'image en cours : elle vaut pour toutes ses pastilles.</summary>
         public bool SceneChecked;
         public List<Pill>? Pills;
+
+        /// <summary>
+        /// <see cref="Scene"/> en image, et sa copie floutée pour <see cref="SceneSigma"/> : faites à la première pastille à
+        /// calculer dans l'image en cours, partagées par les autres pastilles de la case, libérées à la fin de l'image.
+        /// </summary>
+        public SKImage? SceneSharp;
+        public SKImage? SceneBlurred;
+        public float SceneSigma;
     }
 
     /// <summary>Un calcul confié au fil à part. Une clé absente : cette couche-là n'est pas à refaire.</summary>
@@ -215,6 +223,7 @@ internal sealed class LiquidGlassLayers : IDisposable
     private int _computations;
     private int _shadowComputations;
     private int _pillComputations;
+    private int _pillBlurComputations;
     private int _liveImages;
     private int _workerFailures;
 
@@ -239,6 +248,9 @@ internal sealed class LiquidGlassLayers : IDisposable
 
     /// <summary>Combien de pastilles ont été calculées (tests).</summary>
     internal int PillComputations => _pillComputations;
+
+    /// <summary>Combien de fois une case a été floutée pour ses pastilles : une fois par case et par image au plus (tests).</summary>
+    internal int PillBlurComputations => _pillBlurComputations;
 
     /// <summary>
     /// Combien d'images sont en vie : couches de verre et d'ombre (posées ou en attente de l'être), pastilles, copies du fond
@@ -378,7 +390,7 @@ internal sealed class LiquidGlassLayers : IDisposable
         var kept = pills.Find(p => p.Shape == shape && p.Settings == settings);
         if (kept is null)
         {
-            kept = new Pill(shape, settings, ComputePill(slot.Scene!, slot.SceneArea, frame, shape, settings));
+            kept = new Pill(shape, settings, ComputePill(slot, frame, shape, settings));
             pills.Add(kept);
         }
         kept.Used = true;
@@ -444,6 +456,9 @@ internal sealed class LiquidGlassLayers : IDisposable
             }
             if (pills.Count == 0) DropPills(slot);
         }
+
+        // Les images de la case qui ont servi à calculer ses pastilles ne vivent que le temps de l'image.
+        foreach (var slot in _slots.Values) DropSceneImages(slot);
 
         // Sur un fond fixe, toutes les couches de l'image sont faites : la copie floutée ne sert plus.
         if (_background is { IsAnimated: false }) DropSyncBlur();
@@ -540,20 +555,62 @@ internal sealed class LiquidGlassLayers : IDisposable
         return scene;
     }
 
-    /// <summary>La pastille de <paramref name="shape"/>, qui déforme la case de <paramref name="scene"/>. Fil de l'affichage.</summary>
-    private SKImage ComputePill(byte[] scene, SKRectI area, SKPixmap frame, SKRect shape, GlassSettings settings)
+    /// <summary>
+    /// La pastille de <paramref name="shape"/>, qui déforme la case de <paramref name="slot"/>. L'image de la case et sa copie
+    /// floutée sont faites une fois pour toutes les pastilles de la case dans cette image. Fil de l'affichage.
+    /// </summary>
+    private SKImage ComputePill(Slot slot, SKPixmap frame, SKRect shape, GlassSettings settings)
     {
-        var info = new SKImageInfo(area.Width, area.Height, frame.ColorType, frame.AlphaType);
-        using var sharp = SKImage.FromPixelCopy(info, scene, area.Width * 4)
-            ?? throw new InvalidOperationException("Impossible de copier la case pour sa pastille.");
+        var area = slot.SceneArea;
+        if (slot.SceneSharp is null)
+        {
+            var info = new SKImageInfo(area.Width, area.Height, frame.ColorType, frame.AlphaType);
+            slot.SceneSharp = SKImage.FromPixelCopy(info, slot.Scene!, area.Width * 4)
+                ?? throw new InvalidOperationException("Impossible de copier la case pour sa pastille.");
+            Track(1);
+        }
+        var sharp = slot.SceneSharp;
+
         float sigma = LiquidGlassEffect.BlurSigma(settings.Blur);
-        using var blurred = sigma > 0f ? Blur(sharp, sigma) : null;
+        var blurred = sharp;
+        if (sigma > 0f)
+        {
+            if (slot.SceneBlurred is null || slot.SceneSigma != sigma)
+            {
+                DropSceneBlur(slot);
+                slot.SceneBlurred = Blur(sharp, sigma);
+                slot.SceneSigma = sigma;
+                Track(1);
+                _pillBlurComputations++;
+            }
+            blurred = slot.SceneBlurred;
+        }
 
         var effect = _pillEffect ??= new LiquidGlassEffect();
-        var image = effect.RenderGlass(sharp, blurred ?? sharp, new SKPoint(area.Left, area.Top), shape, settings);
+        var image = effect.RenderGlass(sharp, blurred, new SKPoint(area.Left, area.Top), shape, settings);
         Track(1);
         _pillComputations++;
         return image;
+    }
+
+    private void DropSceneBlur(Slot slot)
+    {
+        if (slot.SceneBlurred is null) return;
+
+        slot.SceneBlurred.Dispose();
+        slot.SceneBlurred = null;
+        Track(-1);
+    }
+
+    /// <summary>Libère l'image de la case et sa copie floutée, faites pour calculer ses pastilles.</summary>
+    private void DropSceneImages(Slot slot)
+    {
+        DropSceneBlur(slot);
+        if (slot.SceneSharp is null) return;
+
+        slot.SceneSharp.Dispose();
+        slot.SceneSharp = null;
+        Track(-1);
     }
 
     private void Drop(Pill pill)
@@ -570,6 +627,7 @@ internal sealed class LiquidGlassLayers : IDisposable
             foreach (var pill in pills) Drop(pill);
             pills.Clear();
         }
+        DropSceneImages(slot); // elles montrent les anciens pixels de la case
         slot.Scene = null;
     }
 
