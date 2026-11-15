@@ -23,8 +23,8 @@ Deuxième bêta de la 1.2.0 : un quatrième thème, **Liquid Glass avancé**, do
 
 ### SDK 1.2.0
 
-- `ModuleDrawing.DrawSelection` est public : un module complémentaire note l'élément choisi (un onglet, une ligne…), et le thème décide de la façon de le montrer. Dans les autres thèmes, le dessin est celui de d'habitude.
-- Le manifeste annonce `"sdk": "1.2"`. Un module construit avec le SDK 1.0.0 ou 1.1.0 tourne sans rien changer.
+- `ModuleDrawing.DrawSelection` est public : un module complémentaire note l'élément choisi (un onglet, une ligne…), et le thème décide de la façon de le montrer. Dans les autres thèmes, le dessin reste celui d'avant.
+- Un module qui appelle `DrawSelection` annonce `"sdk": "1.2"` dans son manifeste ; les autres gardent leur `"sdk"`. Un module construit avec le SDK 1.0.0 ou 1.1.0 tourne sans rien changer.
 - Les aides de test dessinent la pastille comme le logiciel, et la documentation (`docs/sdk`) décrit `DrawSelection`.
 
 ### Licence
