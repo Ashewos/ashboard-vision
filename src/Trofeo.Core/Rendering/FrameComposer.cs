@@ -11,10 +11,28 @@ public sealed class FrameComposer : IDisposable
     private const string ErrorText = "Erreur du module";
 
     /// <summary>
-    /// Combien de pastilles une case peut avoir par image : les éléments choisis notés au-delà sont ignorés. Chaque pastille
-    /// coûte un calcul sur le fil de l'affichage et une image gardée : c'est le budget d'une case.
+    /// Combien de pastilles une case peut avoir par image : les éléments choisis notés au-delà sont ignorés. Chaque pastille de
+    /// verre coûte un calcul sur le fil de l'affichage et une image gardée. Ce nombre ne borne pas à lui seul le coût, qui suit
+    /// la surface : voir <see cref="MaxPillAreaPerCase"/>.
     /// </summary>
     internal const int MaxPillsPerCase = 16;
+
+    /// <summary>
+    /// La surface totale, en pixels, des pastilles de verre d'une case par image. Les pastilles sont comptées dans l'ordre où le
+    /// module les note, chacune pour sa surface coupée à la case ; celle qui ferait dépasser ce qui reste du budget n'est pas
+    /// calculée en verre : elle est dessinée par <see cref="ModuleDrawing.DrawLocalSelection"/> (la pilule claire, sans calcul),
+    /// avec la même coupe et la même opacité, après les pastilles de verre de la case. Une pastille plus petite notée ensuite
+    /// peut encore tenir dans le reste.
+    /// <para>
+    /// Pourquoi : le calcul d'une pastille se fait sur le fil de l'affichage et son coût suit sa surface. Sans cette borne, un
+    /// module (de la communauté, hostile ou simplement bogué) qui note 16 rectangles de la taille de sa case, différents à
+    /// chaque image, faisait calculer 16 verres de la taille de la case par image : 347 ms par image pour une case 4 × 2,
+    /// 1 479 ms pour 8 × 4, 3 092 ms pour 16 × 4, contre 1,5 à 2 ms sans pastille (relecture finale du plan 9). Tout l'écran
+    /// tombait à 1 à 3 images par seconde. 40 000 px, c'est plusieurs onglets de Claude Code (environ 10 000 px chacun), et
+    /// moins de la moitié d'une case 4 × 2.
+    /// </para>
+    /// </summary>
+    internal const int MaxPillAreaPerCase = 40_000;
 
     /// <summary>Les éléments choisis qu'un module note pendant son dessin, relatifs à sa case.</summary>
     private sealed class SelectionList : ISelectionSink
@@ -228,7 +246,8 @@ public sealed class FrameComposer : IDisposable
     /// <summary>
     /// Peint les pastilles notées (décalées de <paramref name="offset"/>, qui les ramène à l'écran), puis rejoue l'enregistrement par-dessus,
     /// rogné à la forme du panneau : les pastilles passent sous tout ce que le module dessine. Une pastille qui échoue ne prive pas le
-    /// module de son dessin.
+    /// module de son dessin. Les pastilles de verre se partagent le budget de surface de la case (<see cref="MaxPillAreaPerCase"/>) ;
+    /// au-delà, la pilule claire. Ce chemin sert aux modules natifs, à ceux de la communauté et aux aides de test du SDK.
     /// </summary>
     private void PaintSelectionsThenPicture(
         SKCanvas canvas, SKPixmap pixels, string typeId, Guid instanceId, SKRect rect, ThemeDefinition theme, SKPoint offset,
@@ -237,11 +256,30 @@ public sealed class FrameComposer : IDisposable
         int saved = canvas.Save();
         try
         {
+            long budget = MaxPillAreaPerCase; // ce qui reste de verre à cette case, pour cette image
+            List<(SKRect Pill, float Opacity)>? overBudget = null;
             foreach (var (local, opacity) in selections.Rects)
             {
                 var pill = local;
                 pill.Offset(offset.X, offset.Y);
-                PaintSelection(canvas, pixels, rect, pill, opacity, theme);
+                if (!(opacity > 0f)) continue; // invisible : ni dessin ni budget
+
+                long area = PillArea(rect, pill);
+                if (area > budget)
+                {
+                    (overBudget ??= []).Add((pill, opacity));
+                    continue;
+                }
+
+                budget -= area;
+                PaintSelection(canvas, pixels, rect, pill, opacity, theme, glass: true);
+            }
+
+            // Les pilules claires passent après les pastilles de verre : le verre déforme la case nue, et reste gardé en mémoire
+            // d'une image à l'autre même si ces pilules changent.
+            foreach (var (pill, opacity) in overBudget ?? [])
+            {
+                PaintSelection(canvas, pixels, rect, pill, opacity, theme, glass: false);
             }
         }
         catch (Exception ex)
@@ -340,8 +378,11 @@ public sealed class FrameComposer : IDisposable
     /// La pastille d'un élément choisi, coupée à la case : en verre avec « Liquid Glass avancé », sinon (le drapeau sur un thème
     /// d'un autre panneau) la pilule claire de <see cref="ModuleDrawing.DrawLocalSelection"/>. Une <paramref name="opacity"/> inférieure à 1
     /// (l'image du module est voilée) pose la pastille dans un calque de cette opacité ; à 1, le chemin est celui d'avant.
+    /// <paramref name="glass"/> faux (le budget de surface de la case est dépassé, voir <see cref="MaxPillAreaPerCase"/>) : la
+    /// pilule claire aussi, sans aucun calcul de verre, avec la même coupe et le même calque d'opacité.
     /// </summary>
-    private void PaintSelection(SKCanvas canvas, SKPixmap pixels, SKRect rect, SKRect pill, float opacity, ThemeDefinition theme)
+    private void PaintSelection(
+        SKCanvas canvas, SKPixmap pixels, SKRect rect, SKRect pill, float opacity, ThemeDefinition theme, bool glass)
     {
         if (opacity < 1f)
         {
@@ -351,7 +392,7 @@ public sealed class FrameComposer : IDisposable
             int layer = canvas.SaveLayer(rect, veil);
             try
             {
-                PaintSelection(canvas, pixels, rect, pill, 1f, theme);
+                PaintSelection(canvas, pixels, rect, pill, 1f, theme, glass);
             }
             finally
             {
@@ -361,9 +402,9 @@ public sealed class FrameComposer : IDisposable
             return;
         }
 
-        if (theme.Panel.Kind == PanelKind.LiquidGlass && _glass is { } glass)
+        if (glass && theme.Panel.Kind == PanelKind.LiquidGlass && _glass is { } layers)
         {
-            glass.PaintPill(canvas, pixels, rect, pill);
+            layers.PaintPill(canvas, pixels, rect, pill);
             return;
         }
 
@@ -374,6 +415,21 @@ public sealed class FrameComposer : IDisposable
         PanelPainter.ClipToPanel(canvas, rect, theme);
         ModuleDrawing.DrawLocalSelection(canvas, shape, theme.Theme);
         canvas.Restore();
+    }
+
+    /// <summary>
+    /// La surface, en pixels, de la pastille coupée à la case, calée sur les pixels comme le fait
+    /// <see cref="LiquidGlassLayers.PaintPill"/>. 0 pour une pastille vide, hors de la case ou qui n'est pas faite de nombres
+    /// finis : elle ne coûte rien, <c>PaintPill</c> l'ignore.
+    /// </summary>
+    private static long PillArea(SKRect rect, SKRect pill)
+    {
+        static SKRect Snap(SKRect r) => new(MathF.Round(r.Left), MathF.Round(r.Top), MathF.Round(r.Right), MathF.Round(r.Bottom));
+
+        var shape = SKRect.Intersect(Snap(pill), Snap(rect));
+        if (!(shape.Width > 0f) || !(shape.Height > 0f)) return 0; // vide, ou pas un nombre
+
+        return (long)Math.Ceiling((double)shape.Width * shape.Height);
     }
 
     private LiquidGlassLayers NewGlassLayers()

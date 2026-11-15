@@ -344,6 +344,128 @@ public class SelectionTests(ITestOutputHelper output)
         Assert.Equal(0, layers.LiveImages);
     }
 
+    // ---- Le budget de surface (décision R12) ----
+
+    /// <summary>Ce que le compositeur doit peindre pour une pastille hors budget : la pilule claire, coupée à la case, sur <paramref name="frame"/>.</summary>
+    private static void DrawLocalPills(SKBitmap frame, SKRect bounds, ThemeDefinition theme, IEnumerable<SKRect> pills, float opacity = 1f)
+    {
+        using var canvas = new SKCanvas(frame);
+        foreach (var pill in pills)
+        {
+            using var veil = new SKPaint { Color = SKColors.White.WithAlpha((byte)Math.Round(opacity * 255f)) };
+            if (opacity < 1f) canvas.SaveLayer(bounds, veil); else canvas.Save();
+            canvas.Save();
+            PanelPainter.ClipToPanel(canvas, bounds, theme);
+            ModuleDrawing.DrawLocalSelection(canvas, SKRect.Intersect(pill, bounds), theme.Theme);
+            canvas.Restore();
+            canvas.Restore();
+        }
+    }
+
+    /// <summary>Seize rectangles de la taille de la case (ou presque), différents à chaque <paramref name="shift"/>.</summary>
+    private static SKRect[] CaseSized(SKRect b, int shift) =>
+        [.. Enumerable.Range(0, 16).Select(i => new SKRect(b.Left - 50 + i + shift, b.Top - 50, b.Right + 50, b.Bottom + 50 - i))];
+
+    [Fact]
+    public void Composer_CaseSizedPills_AreNeverComputedAsGlass()
+    {
+        // Relecture finale : 16 pastilles de la taille d'une case 4 × 2, changeantes, coûtaient 347 ms par image sur le fil de l'affichage.
+        var placement = GlassTesting.Place(0, 0, 4, 2);
+        var theme = GlassTesting.Advanced();
+        var bounds = RectOf(placement, theme);
+        Assert.True(bounds.Width * bounds.Height > FrameComposer.MaxPillAreaPerCase, "la case doit dépasser le budget");
+        Assert.Equal(40_000, FrameComposer.MaxPillAreaPerCase);
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
+        using var composer = new FrameComposer();
+        using var none = composer.Compose([placement], For(placement, Selecting(_ => [])), theme, background, GlassTesting.T0);
+        int images = composer.Glass!.LiveImages;
+
+        for (int shift = 0; shift < 3; shift++)
+        {
+            int current = shift;
+            using var frame = composer.Compose([placement], For(placement, Selecting(b => CaseSized(b, current))), theme, background, GlassTesting.T0);
+
+            Assert.Equal(0, composer.GlassPillComputations); // aucun verre calculé
+            Assert.Equal(images, composer.Glass!.LiveImages); // ni image gardée
+            using var expected = none.Copy();
+            DrawLocalPills(expected, bounds, theme, CaseSized(bounds, current));
+            Assert.True(GlassTesting.SameBytes(expected, frame), $"image {shift} : les pastilles hors budget sont la pilule claire");
+            Assert.False(GlassTesting.SameBytes(none, frame), "la pilule claire se voit");
+        }
+    }
+
+    [Fact]
+    public void Composer_PillAreaBudget_IsSpentInOrder_AndASmallerPillStillFits()
+    {
+        var placement = GlassTesting.Place(0, 0, 4, 2);
+        var theme = GlassTesting.Advanced();
+        var bounds = RectOf(placement, theme);
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
+
+        // 180 × 40 = 7 200 px : cinq tiennent dans 40 000 px, la sixième non ; la septième (40 × 20) tient encore.
+        static SKRect[] Pills(SKRect b, int count) =>
+        [
+            .. Enumerable.Range(0, count).Select(i => i == 6
+                ? SKRect.Create(b.Left + 20, b.Top + 175, 40, 20)
+                : SKRect.Create(b.Left + 20 + i % 2 * 200, b.Top + 20 + i / 2 * 50, 180, 40)),
+        ];
+        Assert.True(Pills(bounds, 7).All(p => bounds.Contains(p)), "les pastilles doivent tenir dans la case");
+
+        using var composer = new FrameComposer();
+        using var five = composer.Compose([placement], For(placement, Selecting(b => Pills(b, 5))), theme, background, GlassTesting.T0);
+        Assert.Equal(5, composer.GlassPillComputations);
+
+        using var seven = composer.Compose([placement], For(placement, Selecting(b => Pills(b, 7))), theme, background, GlassTesting.T0);
+        Assert.Equal(6, composer.GlassPillComputations); // la septième seulement : la sixième n'est pas en verre
+
+        // La sixième est la pilule claire : l'image est celle des six pastilles de verre, plus cette pilule.
+        using var fresh = new FrameComposer();
+        using var expected = fresh.Compose(
+            [placement], For(placement, Selecting(b => [.. Pills(b, 7).Where((_, i) => i != 5)])), theme, background, GlassTesting.T0);
+        DrawLocalPills(expected, bounds, theme, [Pills(bounds, 7)[5]]);
+        Assert.True(GlassTesting.SameBytes(expected, seven));
+    }
+
+    [Fact]
+    public void Composer_TabSizedPill_StaysGlass_NextToACaseSizedOne()
+    {
+        // Un onglet de Claude Code (220 × 46 environ) reste en verre, même si le module note aussi un rectangle géant.
+        var placement = GlassTesting.Place(0, 0, 4, 2);
+        var theme = GlassTesting.Advanced();
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
+        using var composer = new FrameComposer();
+
+        using var alone = composer.Compose([placement], For(placement, Selecting(b => [Tab(b)])), theme, background, GlassTesting.T0);
+        Assert.Equal(1, composer.GlassPillComputations);
+
+        using var both = composer.Compose([placement], For(placement, Selecting(b => [b, Tab(b)])), theme, background, GlassTesting.T0);
+        Assert.Equal(1, composer.GlassPillComputations); // l'onglet est gardé, le rectangle géant n'est pas calculé
+        Assert.False(GlassTesting.SameBytes(alone, both));
+    }
+
+    [Fact]
+    public void Composer_OverBudgetPill_KeepsItsOpacityAndItsClip()
+    {
+        // Décision R9 : une pastille voilée passe par un calque de son opacité, en verre comme en pilule claire.
+        var placements = GlassTesting.TwoCases();
+        var theme = GlassTesting.Advanced();
+        var bounds = RectOf(placements[0], theme);
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
+        using var composer = new FrameComposer();
+        using var none = composer.Compose(placements, For(placements[0], Selecting(_ => [])), theme, background, GlassTesting.T0);
+        var huge = new SKRect(-1e6f, -1e6f, 1e6f, 1e6f); // relatif à la case : la recouvre toute, et déborde de partout
+        var module = new FakeModule((_, ctx) => ctx.Selections!.Add(huge, 0.5f));
+
+        using var frame = composer.Compose(placements, For(placements[0], module), theme, background, GlassTesting.T0);
+
+        Assert.Equal(0, composer.GlassPillComputations);
+        using var expected = none.Copy();
+        DrawLocalPills(expected, bounds, theme, [huge], 0.5f);
+        Assert.True(GlassTesting.SameBytes(expected, frame));
+        Assert.False(GlassTesting.SameBytes(none, frame));
+        Assert.Equal(0, Differences(frame, none, (x, y) => !(x >= bounds.Left && x < bounds.Right && y >= bounds.Top && y < bounds.Bottom)));
+    }
+
     [Fact]
     public void Composer_PillFollowsTheSelection_AndFreesTheOldOne()
     {

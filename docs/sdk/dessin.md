@@ -163,7 +163,7 @@ Avant la première réponse du réseau, ton module n'a rien à montrer. Ne dessi
 - dans `classique`, `liquid-glass` et `pixel`, l'aide dessine l'onglet que ces thèmes ont toujours eu : un aplat de la couleur `Surface`, avec un trait d'accent à gauche ;
 - dans `liquid-glass-avance`, elle **ne dessine rien** : elle note le rectangle, et c'est le logiciel qui pose une pastille de verre, la même que celle des modules d'origine, sur le panneau de ta case. Une pastille de moins de 4 pixels de haut ou de large est ignorée.
 
-La pastille passe **sous tout ce que ton module dessine**, que tu appelles l'aide avant ou après ton texte : écris ton dessin dans l'ordre qui te convient, le texte reste lisible par-dessus le verre. Appelle l'aide pour chaque élément choisi, à chaque dessin (le logiciel garde jusqu'à 16 pastilles par case). N'appelle pas l'aide pour les éléments qui ne sont pas choisis.
+La pastille passe **sous tout ce que ton module dessine**, que tu appelles l'aide avant ou après ton texte : écris ton dessin dans l'ordre qui te convient, le texte reste lisible par-dessus le verre. Appelle l'aide pour chaque élément choisi, à chaque dessin (le logiciel garde jusqu'à 16 pastilles par case, et 40 000 px de verre en tout par case : une pastille qui dépasserait ce budget, par exemple un rectangle de la taille de la case, est dessinée comme une simple pilule claire). N'appelle pas l'aide pour les éléments qui ne sont pas choisis.
 
 N'oublie pas `"sdk": "1.2"` dans ton manifeste : voir [la compatibilité](compatibilite.md).
 
