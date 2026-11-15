@@ -44,7 +44,7 @@ Chaque version d'Ashboard Vision sur GitHub porte ces quatre fichiers `.nupkg`, 
 
 ```powershell
 dotnet nuget add source "C:\paquets-ashboard" --name AshboardVision
-dotnet new install "C:\paquets-ashboard\AshboardVision.Sdk.Templates.1.1.0.nupkg"
+dotnet new install "C:\paquets-ashboard\AshboardVision.Sdk.Templates.1.2.0.nupkg"
 dotnet tool install -g AshboardVision.Sdk.Tool --source "C:\paquets-ashboard"
 ```
 
@@ -112,17 +112,17 @@ dotnet test
 }
 ```
 
-Dans ce fichier, `id` et `author` prennent les valeurs que tu as données à la commande. Tous les champs sont expliqués dans [le contrat](contrat.md#le-manifeste). Le modèle demande `"sdk": "1.0"` : n'y touche que si tu utilises ce que le SDK 1.1 ajoute (les [raccourcis](raccourcis.md)).
+Dans ce fichier, `id` et `author` prennent les valeurs que tu as données à la commande. Tous les champs sont expliqués dans [le contrat](contrat.md#le-manifeste). Le modèle demande `"sdk": "1.0"` : n'y touche que si tu utilises ce que le SDK 1.1 ou 1.2 ajoute (les [raccourcis](raccourcis.md), la pastille de l'[élément choisi](dessin.md#lélément-choisi)).
 
 ### Le projet
 
 *Le modèle : `templates/AshboardVision.Sdk.Templates/content/ashboard-module/MonModule/MonModule.csproj`.*
 
 ```xml
-<PackageReference Include="AshboardVision.Sdk" Version="1.1.0" />
+<PackageReference Include="AshboardVision.Sdk" Version="1.2.0" />
 ```
 
-Le SDK est fixé à la version **exacte** `1.1.0`, sans étoile. Une version flottante (`1.1.*`) obligerait chaque restauration à interroger les sources de paquets, donc à échouer hors ligne. Quand un SDK 1.x plus récent sort, tu changes ce numéro **à la main** ; le champ `sdk` du manifeste ne change que si tu te sers de ce que cette version apporte. Voir [la compatibilité](compatibilite.md).
+Le SDK est fixé à la version **exacte** `1.2.0`, sans étoile. Une version flottante (`1.2.*`) obligerait chaque restauration à interroger les sources de paquets, donc à échouer hors ligne. Quand un SDK 1.x plus récent sort, tu changes ce numéro **à la main** ; le champ `sdk` du manifeste ne change que si tu te sers de ce que cette version apporte. Voir [la compatibilité](compatibilite.md).
 
 ### La classe du module
 

@@ -17,6 +17,7 @@ public sealed class TestingPackageTests(PackedSdkTesting packed) : IClassFixture
         "lib/net10.0/AshboardVision.Sdk.Testing.dll",
         "lib/net10.0/AshboardVision.Sdk.Testing.xml",
         "lib/net10.0/Trofeo.Core.dll",
+        "licenses/LICENSE-liquidglass.txt",
         "licenses/OFL-BarlowSemiCondensed.txt",
         "licenses/OFL-Manrope.txt",
         "licenses/OFL-PixelifySans.txt",
@@ -35,7 +36,19 @@ public sealed class TestingPackageTests(PackedSdkTesting packed) : IClassFixture
 
         // ModuleKit et le SDK viennent du paquet AshboardVision.Sdk, dont celui-ci dépend : ils ne sont pas embarqués une seconde fois.
         Assert.Equal(ExpectedEntries.Order(StringComparer.Ordinal), entries);
-        Assert.Equal("AshboardVision.Sdk.Testing.1.1.0.nupkg", Path.GetFileName(packed.PackagePath));
+        Assert.Equal("AshboardVision.Sdk.Testing.1.2.0.nupkg", Path.GetFileName(packed.PackagePath));
+    }
+
+    [Fact]
+    public void Pack_ContainsTheLiquidGlassLicenceOfTheAdaptedShader()
+    {
+        // Core embarque le SkSL adapté du verre de liquidglass (MIT) : le texte de la licence suit dans licenses/, comme celles des polices.
+        using var archive = ZipFile.OpenRead(packed.PackagePath);
+        using var reader = new StreamReader(archive.GetEntry("licenses/LICENSE-liquidglass.txt")!.Open());
+        var text = reader.ReadToEnd();
+
+        Assert.Contains("MIT License", text, StringComparison.Ordinal);
+        Assert.Contains("ybouane", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -44,7 +57,7 @@ public sealed class TestingPackageTests(PackedSdkTesting packed) : IClassFixture
         var metadata = Child(ReadNuspec().Root!, "metadata");
 
         Assert.Equal("AshboardVision.Sdk.Testing", Text(metadata, "id"));
-        Assert.Equal("1.1.0", Text(metadata, "version"));
+        Assert.Equal("1.2.0", Text(metadata, "version"));
         Assert.Equal("Ashewos", Text(metadata, "authors"));
         Assert.Equal("README.md", Text(metadata, "readme"));
 
@@ -68,7 +81,7 @@ public sealed class TestingPackageTests(PackedSdkTesting packed) : IClassFixture
             .ToArray();
 
         // Core est embarqué (lib/), pas référencé : aucune dépendance Trofeo.*, ni celles de Core (ProtectedData). SkiaSharp arrive par le paquet du SDK.
-        Assert.Equal([("AshboardVision.Sdk", "1.1.0"), ("Microsoft.Extensions.TimeProvider.Testing", "10.0.0")], dependencies);
+        Assert.Equal([("AshboardVision.Sdk", "1.2.0"), ("Microsoft.Extensions.TimeProvider.Testing", "10.0.0")], dependencies);
         Assert.DoesNotContain(dependencies, dependency => dependency.Item1!.StartsWith("Trofeo", StringComparison.OrdinalIgnoreCase));
     }
 

@@ -58,12 +58,13 @@ public sealed class ToolPackageTests(PackedTool packed)
     {
         var entries = Entries();
 
-        Assert.Equal("AshboardVision.Sdk.Tool.1.1.0.nupkg", Path.GetFileName(packed.PackagePath));
+        Assert.Equal("AshboardVision.Sdk.Tool.1.2.0.nupkg", Path.GetFileName(packed.PackagePath));
         Assert.Contains("README.md", entries);
         Assert.Contains("AshboardVision.Sdk.Tool.nuspec", entries);
         Assert.All(ToolEntries, entry => Assert.Contains(entry, entries));
         Assert.All(HostEntries, entry => Assert.Contains(entry, entries));
         Assert.Contains("licenses/OFL-Manrope.txt", entries);
+        Assert.Contains("licenses/LICENSE-liquidglass.txt", entries); // Core embarque le SkSL adapté de liquidglass (MIT)
 
         // Le .exe de l'hôte n'est qu'à sa place, dans « host » (sans sa DLL il ne démarre pas), et rien ne pèse pour rien : ni symboles, ni
         // bibliothèques natives d'autres plateformes que Windows 64 bits.
@@ -99,7 +100,7 @@ public sealed class ToolPackageTests(PackedTool packed)
         var metadata = Child(ReadNuspec().Root!, "metadata");
 
         Assert.Equal("AshboardVision.Sdk.Tool", Text(metadata, "id"));
-        Assert.Equal("1.1.0", Text(metadata, "version"));
+        Assert.Equal("1.2.0", Text(metadata, "version"));
         Assert.Equal("Ashewos", Text(metadata, "authors"));
         Assert.Equal("README.md", Text(metadata, "readme"));
 

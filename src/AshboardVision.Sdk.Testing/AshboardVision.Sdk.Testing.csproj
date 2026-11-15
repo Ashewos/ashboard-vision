@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Les aides de test des créateurs de modules : un module s'exécute dans le processus du test, sans enfermement, avec de faux services
-       (capteurs, musique, coffre à secrets, horloge) et les vrais thèmes du logiciel. Même ligne de numéros que le SDK (1.1.0, AssemblyVersion
-       1.0.0.0 pour toute la ligne 1.x) : le paquet dépend du paquet AshboardVision.Sdk 1.1.0. -->
+       (capteurs, musique, coffre à secrets, horloge) et les vrais thèmes du logiciel. Même ligne de numéros que le SDK (1.2.0, AssemblyVersion
+       1.0.0.0 pour toute la ligne 1.x) : le paquet dépend du paquet AshboardVision.Sdk 1.2.0. -->
   <PropertyGroup>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
 
@@ -37,6 +37,8 @@
     <None Include="README.md" Pack="true" PackagePath="\" />
     <!-- Core embarque les polices du logiciel (Barlow, Manrope, Pixelify Sans, VT323, sous licence OFL) : leurs textes de licence suivent. -->
     <None Include="..\Trofeo.Core\Assets\Fonts\OFL-*.txt" Pack="true" PackagePath="licenses\" Link="licenses\%(Filename)%(Extension)" />
+    <!-- Core embarque aussi le SkSL adapté du verre de liquidglass (MIT) : la mention et le texte de la licence suivent, comme ceux des polices. -->
+    <None Include="..\Trofeo.Core\Rendering\LiquidGlass\LICENSE-liquidglass.txt" Pack="true" PackagePath="licenses\" Link="licenses\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Sources partagées avec le service (Trofeo.Extensions) : la règle des ports du relais et les limites du coffre à secrets, pour que le

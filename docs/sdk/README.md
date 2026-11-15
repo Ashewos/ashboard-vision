@@ -55,4 +55,4 @@ Le dépôt contient trois vrais modules, avec leurs tests. Les extraits de cette
 
 ## Version
 
-Cette documentation décrit le **SDK 1.1** (la 1.0 plus les [raccourcis](raccourcis.md)). Les numéros du SDK ne suivent pas ceux du logiciel. Voir [la compatibilité](compatibilite.md).
+Cette documentation décrit le **SDK 1.2** (la 1.0, plus les [raccourcis](raccourcis.md) de la 1.1, plus la pastille de l'[élément choisi](dessin.md#lélément-choisi) et le thème `liquid-glass-avance` de la 1.2). Les numéros du SDK ne suivent pas ceux du logiciel. Voir [la compatibilité](compatibilite.md).

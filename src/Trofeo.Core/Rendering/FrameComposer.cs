@@ -196,10 +196,7 @@ public sealed class FrameComposer : IDisposable
         SKPicture picture;
         try
         {
-            using var recorder = new SKPictureRecorder();
-            var recording = recorder.BeginRecording(SKRect.Create(GridGeometry.Width, GridGeometry.Height));
-            module.Render(recording, context with { Selections = selections });
-            picture = recorder.EndRecording();
+            picture = Record(SKPoint.Empty, context, selections, module.Render);
         }
         catch (Exception ex)
         {
@@ -210,36 +207,132 @@ public sealed class FrameComposer : IDisposable
 
         using (picture)
         {
-            int saved = canvas.Save();
-            try
-            {
-                foreach (var (local, opacity) in selections.Rects)
-                {
-                    var pill = local;
-                    pill.Offset(context.Bounds.Left, context.Bounds.Top);
-                    PaintSelection(canvas, pixels, rect, pill, opacity, theme);
-                }
-            }
-            catch (Exception ex)
-            {
-                // Une pastille qui échoue ne prive pas le module de son dessin.
-                _errors.Report($"Échec du dessin de la pastille du module {placement.TypeId} ({placement.InstanceId}) : {ex}");
-            }
-            finally
-            {
-                canvas.RestoreToCount(saved);
-            }
+            PaintSelectionsThenPicture(canvas, pixels, placement.TypeId, placement.InstanceId, rect, theme, context.Bounds.Location, selections, picture);
+        }
+    }
 
-            saved = canvas.Save();
-            try
+    /// <summary>
+    /// Enregistre le dessin d'un module : <see cref="ModuleDrawing.DrawSelection"/> y note ses rectangles dans
+    /// <paramref name="selections"/> au lieu de les dessiner. L'enregistrement couvre tout l'écran ; <paramref name="origin"/> décale
+    /// le dessin (0 pour un module dont les bornes sont déjà celles de l'écran).
+    /// </summary>
+    private static SKPicture Record(SKPoint origin, ModuleRenderContext context, SelectionList selections, Action<SKCanvas, ModuleRenderContext> render)
+    {
+        using var recorder = new SKPictureRecorder();
+        var recording = recorder.BeginRecording(SKRect.Create(GridGeometry.Width, GridGeometry.Height));
+        recording.Translate(origin.X, origin.Y);
+        render(recording, context with { Selections = selections });
+        return recorder.EndRecording();
+    }
+
+    /// <summary>
+    /// Peint les pastilles notées (décalées de <paramref name="offset"/>, qui les ramène à l'écran), puis rejoue l'enregistrement par-dessus,
+    /// rogné à la forme du panneau : les pastilles passent sous tout ce que le module dessine. Une pastille qui échoue ne prive pas le
+    /// module de son dessin.
+    /// </summary>
+    private void PaintSelectionsThenPicture(
+        SKCanvas canvas, SKPixmap pixels, string typeId, Guid instanceId, SKRect rect, ThemeDefinition theme, SKPoint offset,
+        SelectionList selections, SKPicture picture)
+    {
+        int saved = canvas.Save();
+        try
+        {
+            foreach (var (local, opacity) in selections.Rects)
             {
-                PanelPainter.ClipToPanel(canvas, rect, theme); // même forme que le panneau
-                canvas.DrawPicture(picture);
+                var pill = local;
+                pill.Offset(offset.X, offset.Y);
+                PaintSelection(canvas, pixels, rect, pill, opacity, theme);
             }
-            finally
-            {
-                canvas.RestoreToCount(saved);
-            }
+        }
+        catch (Exception ex)
+        {
+            // Une pastille qui échoue ne prive pas le module de son dessin.
+            _errors.Report($"Échec du dessin de la pastille du module {typeId} ({instanceId}) : {ex}");
+        }
+        finally
+        {
+            canvas.RestoreToCount(saved);
+        }
+
+        saved = canvas.Save();
+        try
+        {
+            PanelPainter.ClipToPanel(canvas, rect, theme); // même forme que le panneau
+            canvas.DrawPicture(picture);
+        }
+        finally
+        {
+            canvas.RestoreToCount(saved);
+        }
+    }
+
+    /// <summary>
+    /// Le calque d'une case pour les aides de test du SDK : ce que le service poserait sur le panneau de la case, et rien d'autre.
+    /// Le panneau (fond, ombre, verre, teinte) est peint comme à l'écran, sur le fond par défaut du thème, à la place (0, 0) du damier,
+    /// mais seulement dans une image à part, d'où les pastilles lisent leurs pixels ; le calque rendu est transparent hors des pastilles
+    /// et du dessin du module. <paramref name="render"/> reçoit un canevas dont l'origine est le coin de la case et un contexte aux
+    /// bornes locales (0, 0, largeur, hauteur) : une exception qu'elle lève sort telle quelle. Un thème sans pastille du service
+    /// n'a pas besoin de ce chemin.
+    /// </summary>
+    /// <param name="theme">Le thème (« Liquid Glass avancé » pour voir la vraie pastille).</param>
+    /// <param name="size">La taille de la case sur le damier.</param>
+    /// <param name="textScale">L'échelle du texte de la case.</param>
+    /// <param name="now">L'heure du contexte.</param>
+    /// <param name="render">Le dessin du module.</param>
+    internal SKBitmap ComposeCaseLayer(
+        ThemeDefinition theme, GridSize size, float textScale, DateTimeOffset now, Action<SKCanvas, ModuleRenderContext> render)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(render);
+
+        var area = GridGeometry.ModuleRect(0, 0, size.Columns, size.Rows, theme.Grid);
+        var rect = SKRect.Create(area.Left, area.Top, area.Width, area.Height);
+        var context = new ModuleRenderContext(new SKRect(0, 0, area.Width, area.Height), size, theme.Theme, textScale, now);
+
+        using var background = BackgroundFactory.Create(null, theme);
+        using var frame = new SKBitmap(GridGeometry.Width, GridGeometry.Height);
+        using var layer = new SKBitmap(GridGeometry.Width, GridGeometry.Height);
+        using var frameCanvas = new SKCanvas(frame);
+        using var layerCanvas = new SKCanvas(layer);
+        using var pixels = frame.PeekPixels();
+        layerCanvas.Clear(SKColors.Transparent);
+        DrawBackground(frameCanvas, background);
+
+        LiquidGlassLayers? glass = null;
+        if (theme.Panel.Kind == PanelKind.LiquidGlass)
+        {
+            glass = _glass ??= NewGlassLayers();
+            glass.BeginFrame(background, theme);
+            glass.PaintShadows(frameCanvas, [rect]);
+        }
+        else
+        {
+            DropGlass();
+        }
+
+        PaintPanel(frameCanvas, rect, theme, background, now);
+
+        var selections = new SelectionList();
+        using (var picture = Record(rect.Location, context, selections, render))
+        {
+            PaintSelectionsThenPicture(layerCanvas, pixels, "module d'essai", Guid.Empty, rect, theme, rect.Location, selections, picture);
+        }
+
+        glass?.EndFrame();
+
+        var result = new SKBitmap(new SKImageInfo(area.Width, area.Height, SKColorType.Bgra8888, SKAlphaType.Premul));
+        try
+        {
+            using var canvas = new SKCanvas(result);
+            canvas.Clear(SKColors.Transparent);
+            using var copy = new SKPaint { BlendMode = SKBlendMode.Src };
+            canvas.DrawBitmap(layer, -area.Left, -area.Top, copy);
+            return result;
+        }
+        catch
+        {
+            result.Dispose();
+            throw;
         }
     }
 

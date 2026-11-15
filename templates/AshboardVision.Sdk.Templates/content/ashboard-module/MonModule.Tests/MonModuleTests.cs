@@ -22,6 +22,7 @@ public sealed class ModuleClassNameTests
     [InlineData("classique")]
     [InlineData("liquid-glass")]
     [InlineData("pixel")]
+    [InlineData("liquid-glass-avance")]
     public async Task Render_InEveryTheme_DrawsSomething(string theme)
     {
         await using var host = new ModuleTestHost<ModuleClassName>(ManifestPath);

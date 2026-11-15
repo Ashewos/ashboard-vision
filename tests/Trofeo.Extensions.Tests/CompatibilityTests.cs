@@ -7,10 +7,10 @@ public class CompatibilityTests
     private static readonly IReadOnlySet<int> Majors = new HashSet<int> { 1 };
 
     [Fact]
-    public void Current_IsOnePointOne_AndMajorOneIsSupported()
+    public void Compatibility_Current_Is_1_2()
     {
-        Assert.Equal(new SdkVersion(1, 1), Compatibility.Current);
-        Assert.Equal("1.1", Compatibility.Current.ToString());
+        Assert.Equal(new SdkVersion(1, 2), Compatibility.Current);
+        Assert.Equal("1.2", Compatibility.Current.ToString());
         Assert.Equal([1], Compatibility.SupportedMajors.ToArray());
     }
 
@@ -18,6 +18,7 @@ public class CompatibilityTests
     public void Check_OlderMinorRequired_IsCompatible()
     {
         Assert.Equal(CompatibilityKind.Compatible, Compatibility.Check(new SdkVersion(1, 0)));
+        Assert.Equal(CompatibilityKind.Compatible, Compatibility.Check(new SdkVersion(1, 2))); // DrawSelection demande « 1.2 »
         Assert.Equal(CompatibilityKind.Compatible, Compatibility.Check(new SdkVersion(1, 2), new SdkVersion(1, 5), Majors));
         Assert.Equal(CompatibilityKind.Compatible, Compatibility.Check(new SdkVersion(1, 5), new SdkVersion(1, 5), Majors));
     }
@@ -26,7 +27,7 @@ public class CompatibilityTests
     public void Check_NewerMinorRequired_NeedsNewerApp()
     {
         Assert.Equal(CompatibilityKind.NeedsNewerApp, Compatibility.Check(new SdkVersion(1, 6), new SdkVersion(1, 5), Majors));
-        Assert.Equal(CompatibilityKind.NeedsNewerApp, Compatibility.Check(new SdkVersion(1, 2)));
+        Assert.Equal(CompatibilityKind.NeedsNewerApp, Compatibility.Check(new SdkVersion(1, 3)));
     }
 
     [Fact]

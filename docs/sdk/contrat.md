@@ -213,7 +213,7 @@ Voici celui du module « Dépôt GitHub ».
 | `description` | oui | Une phrase de description, 300 caractères au plus. |
 | `author` | oui | Ton nom, 40 caractères au plus. |
 | `version` | oui | La version de ton module, au format SemVer : `1.2.3` ou `1.2.3-beta.1`, **sans `v`**. |
-| `sdk` | oui | La version **minimale** du SDK dont tu as besoin, `majeur.mineur` (`1.0`, ou `1.1` si tu déclares des raccourcis). Voir [la compatibilité](compatibilite.md). |
+| `sdk` | oui | La version **minimale** du SDK dont tu as besoin, `majeur.mineur` (`1.0`, `1.1` si tu déclares des raccourcis, `1.2` si tu appelles `ModuleDrawing.DrawSelection`). Voir [la compatibilité](compatibilite.md). |
 | `entry` | oui | Le nom de ta DLL, à la racine du module, sans dossier. |
 | `permissions` | non | Les permissions que tu demandes : `reseau-local`, `internet`, `ce-pc`, `capteurs`, `musique`. Une permission inconnue est refusée. Voir [les permissions](permissions.md). |
 | `repository` | non | Ton dépôt GitHub, `propriétaire/dépôt`. Sans lui, pas de mise à jour automatique. Voir [Publier](publier.md). |

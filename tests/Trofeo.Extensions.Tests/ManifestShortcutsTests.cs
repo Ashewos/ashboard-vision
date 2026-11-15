@@ -190,9 +190,8 @@ public class ManifestShortcutsTests
     [Fact]
     public void Sdk11Module_IsCompatible()
     {
-        Assert.Equal(new SdkVersion(1, 1), Compatibility.Current);
         Assert.Equal(CompatibilityKind.Compatible, Compatibility.Check(new SdkVersion(1, 1)));
         Assert.Equal(CompatibilityKind.Compatible, Compatibility.Check(new SdkVersion(1, 0)));
-        Assert.Equal(CompatibilityKind.NeedsNewerApp, Compatibility.Check(new SdkVersion(1, 2)));
+        Assert.Equal(CompatibilityKind.NeedsNewerApp, Compatibility.Check(new SdkVersion(1, 3)));
     }
 }

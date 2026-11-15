@@ -2,13 +2,13 @@
 
   <!-- Le banc d'essai des modules de la communauté : la commande « ashboard-module » (check et pack). Un outil .NET (dotnet tool), dans le
        paquet local « AshboardVision.Sdk.Tool » (jamais poussé sur nuget.org : il est joint aux versions GitHub et posé par l'installateur,
-       comme le SDK ; voir la conception, 5.6). Même ligne de numéros que le SDK : 1.1.0, AssemblyVersion 1.0.0.0 pour toute la ligne 1.x. -->
+       comme le SDK ; voir la conception, 5.6). Même ligne de numéros que le SDK : 1.2.0, AssemblyVersion 1.0.0.0 pour toute la ligne 1.x. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>ashboard-module</AssemblyName>
     <RootNamespace>AshboardVision.Sdk.Tool</RootNamespace>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <SatelliteResourceLanguages>en;fr</SatelliteResourceLanguages>
   </PropertyGroup>
@@ -41,6 +41,8 @@
     <None Include="README.md" Pack="true" PackagePath="\" />
     <!-- Core embarque les polices du logiciel (Barlow, Manrope, Pixelify Sans, VT323, sous licence OFL) : leurs textes de licence suivent. -->
     <None Include="..\..\src\Trofeo.Core\Assets\Fonts\OFL-*.txt" Pack="true" PackagePath="licenses\" Link="licenses\%(Filename)%(Extension)" />
+    <!-- Core embarque aussi le SkSL adapté du verre de liquidglass (MIT) : la mention et le texte de la licence suivent. -->
+    <None Include="..\..\src\Trofeo.Core\Rendering\LiquidGlass\LICENSE-liquidglass.txt" Pack="true" PackagePath="licenses\" Link="licenses\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Attention : les dépendances d'Extensions (Control, Distribution, Modules.Agents, ProtectedData…) ne sont pas déclarées ici : elles n'arrivent

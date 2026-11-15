@@ -37,7 +37,7 @@ La signature est `public override void Render(SKCanvas canvas, ModuleRenderConte
 
 ## Le thème
 
-Ashboard Vision a trois thèmes : `classique`, `liquid-glass` et `pixel`. L'utilisateur en choisit un pour tout l'écran. Ton module n'a pas à y ressembler, mais il est plus agréable de s'y accorder. Prends les couleurs dans `ctx.Theme` :
+Ashboard Vision a quatre thèmes : `classique`, `liquid-glass`, `pixel` et `liquid-glass-avance` (« Liquid Glass avancé »). L'utilisateur en choisit un pour tout l'écran. Ton module n'a pas à y ressembler, mais il est plus agréable de s'y accorder. Prends les couleurs dans `ctx.Theme` :
 
 | Membre | Pour quoi faire |
 |---|---|
@@ -71,7 +71,7 @@ Le module « Démo » suit la forme du thème : son rayon est nul en `Pixel`.
         }
 ```
 
-N'écris pas de couleur en dur pour le texte. Les trois thèmes n'ont ni les mêmes couleurs, ni la même forme : regarde ton module dans chacun.
+N'écris pas de couleur en dur pour le texte. Les quatre thèmes n'ont ni les mêmes couleurs, ni la même forme : regarde ton module dans chacun.
 
 ## Le texte
 
@@ -89,6 +89,7 @@ Le texte demande trois précautions : la **police**, la **taille** et la **place
 | `ModuleDrawing.DrawBar(canvas, rect, fraction, couleur, theme)` | Une barre de progression dans le style du thème (pleine en `Rounded`, en segments en `Pixel`). |
 | `ModuleDrawing.BarRect(rect, theme)` | Le rectangle de la barre, ajusté à la forme du thème. |
 | `ModuleDrawing.DrawActionMessage(canvas, zone, theme, textScale, message)` | Un message centré, en couleur d'avertissement, sur trois lignes au plus. |
+| `ModuleDrawing.DrawSelection(canvas, rect, ctx)` | *SDK 1.2.* La marque d'un onglet ou d'une ligne **choisis** : un aplat et un trait dans les trois premiers thèmes, une pastille de verre dans « Liquid Glass avancé ». Voir [l'élément choisi](#lélément-choisi). |
 
 Dessine **toujours** avec `ModuleDrawing.DrawText`, pas avec `canvas.DrawText` : un caractère que la police du thème n'a pas ne s'afficherait pas correctement sans la police de secours.
 
@@ -154,6 +155,30 @@ Avant la première réponse du réseau, ton module n'a rien à montrer. Ne dessi
             return;
         }
 ```
+
+## L'élément choisi
+
+*SDK 1.2.* Si ton module montre un onglet, une ligne ou une entrée **choisis** (le serveur sélectionné dans une liste, la page affichée parmi plusieurs), marque-le avec `ModuleDrawing.DrawSelection(canvas, rect, ctx)` plutôt que de dessiner toi-même un fond. Le rectangle est celui de l'élément, dans les coordonnées de ta case (`ctx.Bounds`) :
+
+- dans `classique`, `liquid-glass` et `pixel`, l'aide dessine l'onglet que ces thèmes ont toujours eu : un aplat de la couleur `Surface`, avec un trait d'accent à gauche ;
+- dans `liquid-glass-avance`, elle **ne dessine rien** : elle note le rectangle, et c'est le logiciel qui pose une pastille de verre, la même que celle des modules d'origine, sur le panneau de ta case. Une pastille de moins de 4 pixels de haut ou de large est ignorée.
+
+La pastille passe **sous tout ce que ton module dessine**, que tu appelles l'aide avant ou après ton texte : écris ton dessin dans l'ordre qui te convient, le texte reste lisible par-dessus le verre. Appelle l'aide pour chaque élément choisi, à chaque dessin (le logiciel garde jusqu'à 16 pastilles par case). N'appelle pas l'aide pour les éléments qui ne sont pas choisis.
+
+N'oublie pas `"sdk": "1.2"` dans ton manifeste : voir [la compatibilité](compatibilite.md).
+
+*Un module d'essai du SDK : `tests/AshboardVision.Sdk.Tests/ModuleTestHostTests.cs`.*
+
+```csharp
+    public override void Render(SKCanvas canvas, ModuleRenderContext ctx)
+    {
+        using var paint = new SKPaint { Color = Mark, Style = SKPaintStyle.Fill };
+        canvas.DrawRect(MarkRect, paint);
+        ModuleDrawing.DrawSelection(canvas, PillRect, ctx); // appelée après le repère : la pastille passe quand même dessous
+    }
+```
+
+Pour voir la vraie pastille dans un test, rends ton module avec `host.Render(taille, "liquid-glass-avance")` (voir [Tester](tests.md)) : l'image est transparente hors de la pastille et de ton dessin. Les images de `ashboard-module check` montrent, pour ce thème, ton dessin sur le panneau : la pastille, que seul le logiciel pose, n'y figure pas.
 
 ## Les images
 

@@ -51,7 +51,7 @@ public sealed class ModuleTestHostTests : IDisposable
         Assert.Equal((1892, 434), (full.Width, full.Height));
 
         // Une case de 4 × 2 : la taille que le logiciel donnerait à ce module sur le damier, thème par thème.
-        foreach (var (name, definition) in new[] { ("classique", Themes.ClassiqueDefinition), ("liquid-glass", Themes.LiquidGlass), ("pixel", Themes.Pixel) })
+        foreach (var (name, definition) in new[] { ("classique", Themes.ClassiqueDefinition), ("liquid-glass", Themes.LiquidGlass), ("pixel", Themes.Pixel), ("liquid-glass-avance", Themes.LiquidGlassAdvanced) })
         {
             var expected = GridGeometry.ModuleRect(0, 0, 4, 2, definition.Grid);
             using var bitmap = host.Render(new GridSize(4, 2), name);
@@ -80,9 +80,47 @@ public sealed class ModuleTestHostTests : IDisposable
         await using var host = new ModuleTestHost<ProbeModule>(WriteManifest());
         await host.StartAsync();
 
-        Assert.Throws<ArgumentException>(() => host.Render(new GridSize(4, 2), "inconnu"));
+        var unknown = Assert.Throws<ArgumentException>(() => host.Render(new GridSize(4, 2), "inconnu"));
+        foreach (var id in new[] { "classique", "liquid-glass", "pixel", "liquid-glass-avance" })
+        {
+            Assert.Contains(id, unknown.Message, StringComparison.Ordinal); // le message cite les quatre thèmes
+        }
+
         Assert.Throws<ArgumentOutOfRangeException>(() => host.Render(new GridSize(17, 2), "classique"));
         Assert.Throws<ArgumentOutOfRangeException>(() => host.Render(new GridSize(4, 0), "classique"));
+    }
+
+    [Fact]
+    public async Task ModuleTestHost_AdvancedTheme_ShowsPill()
+    {
+        await using var host = new ModuleTestHost<SelectionProbeModule>(WriteManifest());
+        await host.StartAsync();
+
+        using var bitmap = host.Render(new GridSize(4, 2), "liquid-glass-avance");
+        var pill = SelectionProbeModule.PillRect;
+        var inside = bitmap.GetPixel((int)pill.MidX, (int)pill.MidY);
+
+        // La vraie pastille de verre est là, et ce n'est pas l'approximation locale que DrawSelection dessine sans service.
+        Assert.True(inside.Alpha > 0, "La pastille de verre manque.");
+        using var approximate = new SKBitmap(new SKImageInfo(bitmap.Width, bitmap.Height, SKColorType.Bgra8888, SKAlphaType.Premul));
+        using (var canvas = new SKCanvas(approximate))
+        {
+            canvas.Clear(SKColors.Transparent);
+            ModuleDrawing.DrawLocalSelection(canvas, pill, Themes.LiquidGlassAdvanced.Theme);
+        }
+
+        Assert.NotEqual(approximate.GetPixel((int)pill.MidX, (int)pill.MidY), inside);
+
+        // Transparente hors de la pastille et du dessin du module ; la pastille passe sous le dessin du module, même appelé après lui.
+        Assert.Equal(0, bitmap.GetPixel(bitmap.Width / 2, bitmap.Height - 20).Alpha);
+        var marked = SelectionProbeModule.MarkRect;
+        Assert.Equal(SelectionProbeModule.Mark, bitmap.GetPixel((int)marked.MidX, (int)marked.MidY));
+
+        // Les autres thèmes gardent l'onglet qu'ils ont toujours eu : un aplat de la surface du thème dans le rectangle.
+        using var classic = host.Render(new GridSize(4, 2), "classique");
+        var surface = Themes.ClassiqueDefinition.Theme.Surface;
+        var tab = classic.GetPixel((int)pill.MidX, (int)pill.MidY);
+        Assert.True(Math.Abs(tab.Alpha - surface.Alpha) <= 1 && tab.Red >= 0xE0, $"Onglet attendu {surface}, obtenu {tab}."); // un aplat clair translucide : l'arrondi de l'alpha faible change les canaux
     }
 
     [Fact]
@@ -485,4 +523,26 @@ internal sealed class ProbeModule : CommunityModule
     }
 
     public void Say(ModuleHealth health, string message) => SetStatus(health, message);
+}
+
+/// <summary>
+/// Un module d'essai qui dessine un repère, puis appelle <see cref="ModuleDrawing.DrawSelection"/> pour un rectangle qui le recouvre en partie :
+/// la pastille doit passer sous le repère. Comme <see cref="ProbeModule"/>, réservé aux tests de cette classe.
+/// </summary>
+internal sealed class SelectionProbeModule : CommunityModule
+{
+    public static readonly SKRect PillRect = new(40, 12, 260, 52);
+
+    public const float MarkSize = 10f;
+
+    public static readonly SKColor Mark = new(255, 0, 0);
+
+    public static SKRect MarkRect { get; } = new(100, 24, 100 + MarkSize, 24 + MarkSize);
+
+    public override void Render(SKCanvas canvas, ModuleRenderContext ctx)
+    {
+        using var paint = new SKPaint { Color = Mark, Style = SKPaintStyle.Fill };
+        canvas.DrawRect(MarkRect, paint);
+        ModuleDrawing.DrawSelection(canvas, PillRect, ctx); // appelée après le repère : la pastille passe quand même dessous
+    }
 }
