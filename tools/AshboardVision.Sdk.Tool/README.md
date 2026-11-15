@@ -22,4 +22,4 @@ Il embarque l'hôte de module du logiciel (`Trofeo.ModuleHost.exe`, dans le sous
 
 ## Licence
 
-GPL-3.0-or-later. Les polices embarquées sont sous licence OFL.
+GPL-3.0-or-later. Les polices embarquées sont sous licence OFL. Le paquet porte aussi, dans `licenses/`, la mention MIT du verre de « Liquid Glass avancé », adapté de ybouane/liquidglass.

@@ -37,4 +37,4 @@ Il dépend du paquet `AshboardVision.Sdk` 1.2.0 et de `Microsoft.Extensions.Time
 
 ## Licence
 
-GPL-3.0-or-later. Les polices embarquées sont sous licence OFL : leurs textes sont dans le dossier `licenses` du paquet.
+GPL-3.0-or-later. Les polices embarquées sont sous licence OFL : leurs textes sont dans le dossier `licenses` du paquet. Le paquet y porte aussi la mention MIT du verre de « Liquid Glass avancé », adapté de ybouane/liquidglass.

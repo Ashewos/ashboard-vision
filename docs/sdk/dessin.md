@@ -178,7 +178,7 @@ N'oublie pas `"sdk": "1.2"` dans ton manifeste : voir [la compatibilité](compat
     }
 ```
 
-Pour voir la vraie pastille dans un test, rends ton module avec `host.Render(taille, "liquid-glass-avance")` (voir [Tester](tests.md)) : l'image est transparente hors de la pastille et de ton dessin. Les images de `ashboard-module check` montrent, pour ce thème, ton dessin sur le panneau : la pastille, que seul le logiciel pose, n'y figure pas.
+Pour voir la vraie pastille dans un test, rends ton module avec `host.Render(taille, "liquid-glass-avance")` (voir [Tester](tests.md)) : l'image est transparente hors de la pastille et de ton dessin. Attention : les images de `ashboard-module check` ne montrent, pour ce thème, que le calque de ton module, posé sur un panneau uni et sans verre. La pastille, que seul le logiciel pose, n'y figure pas : un élément choisi que tu marques **uniquement** avec `DrawSelection` n'a donc aucune marque dans ces images (l'hôte note toujours les rectangles, mais le banc d'essai ne les dessine pas). `host.Render(taille, "liquid-glass-avance")` est le moyen de voir la vraie pastille.
 
 ## Les images
 
