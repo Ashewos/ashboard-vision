@@ -31,11 +31,31 @@ internal sealed class LiquidGlassEffect : IDisposable
         }
     }
 
+    /// <summary>Les poids du flou à 9 points de l'original (FS_BLUR), du centre vers le bord.</summary>
+    private static readonly double[] BlurWeights = [0.227027, 0.194594, 0.121622, 0.054054, 0.016216];
+
     /// <summary>
-    /// Le σ du flou de Skia, en pixels de l'écran, équivalent au flou de l'original : 6 passes séparables d'un flou à 9 points
-    /// (σ de 1,69 pas), au pas <c>2,5 × blur</c>, soit <c>1,69 × 2,5 × √6 × blur</c>.
+    /// Le σ du flou de Skia, en pixels de l'écran, équivalent au flou de l'original : 6 passes séparables d'un flou à 9 points,
+    /// au pas <c>2,5 × blur</c>. Chaque prise tombe à <c>k × pas</c> du pixel et la lit en filtrage linéaire, ce qui ajoute
+    /// la variance <c>f × (1 − f)</c> (f, la partie fractionnaire de la position) : sans elle, le flou des petits réglages
+    /// serait sous-estimé (σ 1,04 au lieu de 1,41 pour 0,1). La variance d'une passe est
+    /// <c>Σ poids × ((k × pas)² + f × (1 − f))</c>, et σ = √(6 × variance).
     /// </summary>
-    public static float BlurSigma(float blur) => 10.35f * blur;
+    public static float BlurSigma(float blur)
+    {
+        if (!(blur > 0f)) return 0f;
+
+        var step = 2.5 * blur;
+        var variance = 0.0;
+        for (var k = 1; k < BlurWeights.Length; k++)
+        {
+            var offset = k * step;
+            var fraction = offset - Math.Floor(offset);
+            variance += 2.0 * BlurWeights[k] * (offset * offset + fraction * (1.0 - fraction));
+        }
+
+        return (float)Math.Sqrt(6.0 * variance);
+    }
 
     /// <summary>
     /// La marge à ajouter autour du verre pour contenir toute l'ombre visible : à 3 étendues du bord, l'ombre de

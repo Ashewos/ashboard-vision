@@ -471,11 +471,25 @@ public class LiquidGlassEffectTests
     }
 
     [Fact]
-    public void BlurSigma_IsLinear()
+    public void BlurSigma_MatchesTheDemo_FilteringIncluded()
     {
-        Assert.Equal(10.35f, LiquidGlassEffect.BlurSigma(1f));
+        // σ des 6 passes de la démo, filtrage linéaire compris (calculé à part) : il pèse surtout pour les petits réglages.
         Assert.Equal(0f, LiquidGlassEffect.BlurSigma(0f));
-        Assert.Equal(5.175f, LiquidGlassEffect.BlurSigma(0.5f), 4);
+        Assert.Equal(0.447f, LiquidGlassEffect.BlurSigma(0.01f), 2);
+        Assert.Equal(1.412f, LiquidGlassEffect.BlurSigma(0.1f), 2);
+        Assert.Equal(1.830f, LiquidGlassEffect.BlurSigma(0.15f), 2);
+        Assert.Equal(6.267f, LiquidGlassEffect.BlurSigma(0.6f), 2);
+        Assert.Equal(10.381f, LiquidGlassEffect.BlurSigma(1f), 2);
+        Assert.Equal(0f, LiquidGlassEffect.BlurSigma(float.NaN));
+        Assert.Equal(0f, LiquidGlassEffect.BlurSigma(-1f));
+
+        var previous = 0f;
+        for (var i = 1; i <= 100; i++)
+        {
+            var sigma = LiquidGlassEffect.BlurSigma(i / 100f);
+            Assert.True(sigma > previous, $"le flou baisse à {i / 100f}");
+            previous = sigma;
+        }
     }
 
     [Fact]
