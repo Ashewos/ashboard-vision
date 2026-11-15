@@ -156,6 +156,28 @@ public class LiquidGlassEffectTests
     }
 
     [Fact]
+    public void Specular_LightsTheRim_NoLineInsideAWidePanel()
+    {
+        // Un panneau large, comme une case de module : avec la normale du biseau, la lumière du bas de FS_GLASS dessinait
+        // une ligne droite à environ 18 px du bord bas (0,45 × zRadius), qui se lisait comme une seconde pastille.
+        var panel = SKRect.Create(100, 100, 800, 200);
+        using var scene = Solid(new SKColor(40, 40, 40));
+        using var matte = Glass(scene, Neutral, panel);
+        using var shiny = Glass(scene, Neutral with { Specular = 1f }, panel);
+
+        int Gain(int y) => shiny.GetPixel(400, y).Red - matte.GetPixel(400, y).Red;
+        var center = Gain(100);
+        for (var inset = 6; inset <= 40; inset++)
+        {
+            var gain = Gain(199 - inset);
+            Assert.True(gain <= center + 15, $"à {inset} px du bord bas, le reflet ajoute {gain} (centre : {center})");
+        }
+
+        // Le reflet est sur le bord lui-même, à 1,5 px.
+        Assert.True(Gain(198) > center + 40, $"bord bas {Gain(198)}, centre {center}");
+    }
+
+    [Fact]
     public void Chroma_SplitsChannelsAtEdges()
     {
         using var stripes = Stripes();

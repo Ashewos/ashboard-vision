@@ -21,6 +21,8 @@
 //     programme y est dessiné en (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) sur du vide : pour une sortie (c, a), le canevas
 //     garde (c·a, a²), lu comme une couleur c·a à l'alpha a². Le verre rend donc (c·a³, a²) en prémultiplié, avec
 //     a = masque × opacité, et l'ombre a pour alpha le carré de celui de FS_GLASS.
+//   - Les trois lumières étroites des reflets spéculaires éclairent le bord du verre, et non plus la pente du biseau :
+//     sur un grand panneau, elles dessinaient une ligne droite à l'intérieur du verre (voir « Reflets spéculaires »).
 //   - Gardes contre les divisions par zéro et les NaN pour les formes minuscules (elles ne changent rien dès que la
 //     forme fait plus de quelques pixels).
 //
@@ -164,20 +166,22 @@ half4 main(vec2 fragCoord) {
 	// Garde : une normale normalisée à 1,0000001 donnerait une base négative, donc un NaN.
 	float fres = pow(max(1.0 - abs(N.z), 0.0), 4.0) * u_fresnel;
 
-	// ── Reflets spéculaires (Blinn-Phong, quatre lumières) ──
-	vec3 V = vec3(0.0, 0.0, 1.0);
-	vec3 L1 = normalize(vec3(0.4, 0.7, 1.0));
-	vec3 H1 = normalize(L1 + V);
-	float sp1 = pow(max(dot(N, H1), 0.0), 90.0);
-	vec3 L2 = normalize(vec3(-0.3, -0.5, 1.0));
-	vec3 H2 = normalize(L2 + V);
-	float sp2 = pow(max(dot(N, H2), 0.0), 50.0) * 0.3;
+	// ── Reflets spéculaires (quatre lumières) ──
+	// FS_GLASS éclaire la normale du biseau (Blinn-Phong) : ses trois lumières étroites y brillent là où la pente du biseau
+	// leur fait face, à environ 0,45 × zRadius du bord. Sur une pastille, c'est un croissant ; le long du côté droit d'un
+	// panneau, une ligne droite à l'intérieur du verre, qui se lit comme une seconde pastille. Ici, chacune allume le bord
+	// lui-même, sur la partie du contour tournée vers elle (mêmes directions et mêmes poids), comme les reflets du verre
+	// d'iOS. La lumière large (spB) reste celle de FS_GLASS : elle n'a pas de ligne.
 	vec3 L3 = normalize(vec3(0.1, 0.3, 1.0));
 	float spB = pow(max(dot(N, L3), 0.0), 6.0) * 0.1;
-	vec3 L4 = normalize(vec3(0.0, 0.9, 0.4));
-	vec3 H4 = normalize(L4 + V);
-	float sp4 = pow(max(dot(N, H4), 0.0), 120.0) * 0.6;
-	float totalSpec = (sp1 + sp2 + spB + sp4) * u_spec;
+	vec2 outward = vec2(dL - dR, dD - dU);
+	float outLen = length(outward);
+	outward = outLen > 0.0001 ? outward / outLen : vec2(0.0);
+	float rimBand = 1.0 - smoothstep(0.0, 3.0, inside);
+	float sp1 = pow(max(dot(outward, normalize(vec2(0.4, 0.7))), 0.0), 6.0);
+	float sp2 = pow(max(dot(outward, normalize(vec2(-0.3, -0.5))), 0.0), 6.0) * 0.3;
+	float sp4 = pow(max(dot(outward, vec2(0.0, 1.0)), 0.0), 6.0) * 0.6;
+	float totalSpec = ((sp1 + sp2 + sp4) * rimBand + spB) * u_spec;
 
 	// ── Trait intérieur ──
 	float borderWidth = 1.5;
