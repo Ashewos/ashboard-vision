@@ -169,6 +169,10 @@ function Copy-Licences {
     # Les licences OFL des polices sont déjà à côté du programme (Assets/Fonts) : on le vérifie plutôt que de le supposer.
     $ofl = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File -Filter 'OFL-*.txt')
     if ($ofl.Count -lt 4) { throw "Les licences OFL des polices manquent dans la publication ($($ofl.Count) trouvée(s) sur 4)." }
+
+    # Même chose pour la licence MIT de liquidglass (le verre de « Liquid Glass avancé »), citée dans LICENCES-TIERCES.txt.
+    $liquidGlass = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File -Filter 'LICENSE-liquidglass.txt')
+    if ($liquidGlass.Count -lt 1) { throw 'La licence de liquidglass (Rendering\LiquidGlass\LICENSE-liquidglass.txt) manque dans la publication.' }
 }
 
 function Read-PawnIo {

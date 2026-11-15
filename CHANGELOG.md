@@ -14,12 +14,12 @@ Deuxième bêta de la 1.2.0 : un quatrième thème, **Liquid Glass avancé**, do
 - La garde de lisibilité garde son rôle : sur un fond clair, la teinte s'assombrit pour que le texte reste lisible, sans clignoter quand le fond bouge. Tu peux la couper comme pour les autres thèmes.
 - Le verre se calcule une fois par case, puis il est gardé tant que le fond, la taille de la case et les réglages ne changent pas. Il demande tout de même plus de processeur que les autres thèmes, surtout avec un fond animé ou une vidéo.
 - Classique, Liquid Glass et Pixel ne changent pas, au pixel près.
-- Tu peux le choisir en ligne de commande : `Trofeo.HardwareCheck.exe --appearance theme=liquid-glass-avance`.
+- Si tu construis le logiciel depuis le dépôt, tu peux aussi le choisir en ligne de commande, avec `--appearance theme=liquid-glass-avance` (voir `docs/utilisation-avancee.md`).
 
 ### Une pastille de verre pour l'élément choisi
 
 - Dans ce thème, l'onglet choisi de Claude Code et de Codex est surligné par une **vraie pastille de verre**, pas par un simple aplat. Elle passe sous le texte, qui reste net.
-- Les modules complémentaires en profitent sans rien changer : c'est le logiciel qui dessine la pastille, jamais le module. Un module ne reçoit toujours ni les pixels du fond ni ceux d'une autre case.
+- Les modules complémentaires qui appellent `DrawSelection` (nouveau dans le SDK 1.2.0) ont la même pastille : c'est le logiciel qui la dessine, jamais le module. Un module ne reçoit toujours ni les pixels du fond ni ceux d'une autre case.
 
 ### SDK 1.2.0
 

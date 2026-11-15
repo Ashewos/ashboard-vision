@@ -3,7 +3,8 @@ Ashboard Vision - licences des composants tiers
 
 Ashboard Vision est un logiciel libre sous licence GPL-3.0 (fichier LICENSE, à côté de ce fichier). Il embarque les composants
 ci-dessous, chacun sous sa propre licence. Les textes de licence que les paquets fournissent eux-mêmes sont copiés dans le
-dossier « licences », à côté de ce fichier ; les licences des polices (OFL) sont dans le dossier « Assets\Fonts ».
+dossier « licences », à côté de ce fichier ; les licences des polices (OFL) sont dans le dossier « Assets\Fonts », et celle de
+liquidglass dans « Rendering\LiquidGlass ».
 
 
 1. Licence MIT
@@ -25,6 +26,9 @@ Composants sous licence MIT, avec leur mention de droits d'auteur :
                                                          Copyright (c) Microsoft Corporation et les contributeurs du projet Mono
   - Tmds.DBus.Protocol                                   Copyright (c) Tom Deseyn
   - .NET (runtime, WinForms) et ses bibliothèques System.*   Copyright (c) Microsoft Corporation et .NET Foundation
+  - liquidglass (l'effet de verre du thème « Liquid Glass avancé » en est adapté)    https://github.com/ybouane/liquidglass
+                                                         Copyright (c) ybouane
+                                                         Notice : « Rendering\LiquidGlass\LICENSE-liquidglass.txt »
 
 Texte de la licence MIT :
 
