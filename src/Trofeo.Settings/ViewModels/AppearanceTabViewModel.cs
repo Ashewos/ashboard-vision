@@ -8,7 +8,7 @@ namespace Trofeo.Settings.ViewModels;
 
 /// <summary>
 /// L'onglet Personnalisation : le thème, la transparence des panneaux, la police, le fond de l'écran, la garde de
-/// lisibilité et le glissement entre les vues. Chaque changement est une modification de l'apparence enregistrée par <see cref="EditSession"/> (le même
+/// lisibilité, le glissement entre les vues et, avec le thème « Liquid Glass avancé », les réglages du verre (<see cref="Glass"/>). Chaque changement est une modification de l'apparence enregistrée par <see cref="EditSession"/> (le même
 /// historique que la disposition, donc Ctrl+Z l'annule) ; rien d'autre du fichier n'est touché. Les avertissements du
 /// rechargement s'affichent sous le réglage concerné. Tout se passe sur le fil de l'interface.
 /// </summary>
@@ -19,6 +19,8 @@ public sealed partial class AppearanceTabViewModel : TabViewModel, IDisposable
         ["#7A2A31", "#7A4A14", "#6B6417", "#1F6B3E", "#14696B", "#24498A", "#5A33A0", "#85305F"];
 
     private static readonly Regex HexColor = new("^#?[0-9A-Fa-f]{6}$", RegexOptions.CultureInvariant);
+
+    private static readonly string AdvancedThemeId = Trofeo.Core.Rendering.Themes.LiquidGlassAdvanced.Theme.Id;
 
     private readonly EditSession _session;
     private IFilePicker? _picker;
@@ -37,11 +39,13 @@ public sealed partial class AppearanceTabViewModel : TabViewModel, IDisposable
     {
         _session = session;
         _picker = picker;
+        Glass = new GlassSectionViewModel(() => Appearance, change => EditAsync(change));
 
         Themes =
         [
             new ThemeCard("classique", Texts.AppearanceThemeClassic, Texts.AppearanceThemeClassicText, () => SetThemeAsync("classique")),
             new ThemeCard("liquid-glass", Texts.AppearanceThemeLiquidGlass, Texts.AppearanceThemeLiquidGlassText, () => SetThemeAsync("liquid-glass")),
+            new ThemeCard(AdvancedThemeId, Texts.AppearanceThemeLiquidGlassAdvanced, Texts.AppearanceThemeLiquidGlassAdvancedText, () => SetThemeAsync(AdvancedThemeId)),
             new ThemeCard("pixel", Texts.AppearanceThemePixel, Texts.AppearanceThemePixelText, () => SetThemeAsync("pixel")),
         ];
 
@@ -94,6 +98,14 @@ public sealed partial class AppearanceTabViewModel : TabViewModel, IDisposable
     [RelayCommand]
     public Task SetThemeAsync(string id) =>
         Themes.All(t => t.Id != id) ? Task.CompletedTask : EditAsync(a => a with { Theme = id });
+
+    // ---- Verre (thème « Liquid Glass avancé ») ----
+
+    /// <summary>La section « Verre » : préréglages, curseurs, forme du biseau.</summary>
+    public GlassSectionViewModel Glass { get; }
+
+    /// <summary>La section « Verre » n'est montrée qu'avec le thème « Liquid Glass avancé ».</summary>
+    public bool ShowsGlass => string.Equals(Appearance.Theme, AdvancedThemeId, StringComparison.OrdinalIgnoreCase);
 
     // ---- Transparence ----
 
@@ -394,6 +406,7 @@ public sealed partial class AppearanceTabViewModel : TabViewModel, IDisposable
                 swatch.IsSelected = appearance.Background is { Kind: BackgroundKind.Color, Color: { } hex }
                                     && string.Equals(hex, swatch.Hex, StringComparison.OrdinalIgnoreCase);
 
+            Glass.Sync(force);
             OnPropertyChanged(string.Empty);
         }
         finally
