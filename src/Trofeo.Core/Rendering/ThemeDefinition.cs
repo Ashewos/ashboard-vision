@@ -5,7 +5,7 @@ using Trofeo.ModuleKit;
 namespace Trofeo.Core.Rendering;
 
 /// <summary>Façon de dessiner le panneau d'un module.</summary>
-public enum PanelKind { Matte, Glass, Pixel }
+public enum PanelKind { Matte, Glass, Pixel, LiquidGlass }
 
 /// <summary>Dessin du panneau. Champs inutiles pour un style : laissés à leur défaut.</summary>
 public sealed record PanelLook(PanelKind Kind)
@@ -38,6 +38,9 @@ public sealed record PanelLook(PanelKind Kind)
 
     /// <summary>Pixel : ombre nette décalée de (8, 8), étendue de 4.</summary>
     public SKColor PixelShadow { get; init; }
+
+    /// <summary>LiquidGlass : les réglages du verre (posés par <see cref="AppearanceResolver"/> d'après le choix de l'utilisateur).</summary>
+    public GlassSettings? Glass { get; init; }
 }
 
 /// <summary>Nature du fond de l'écran choisi par l'utilisateur.</summary>

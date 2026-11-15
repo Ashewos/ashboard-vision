@@ -24,7 +24,7 @@ Tu lui donnes le chemin de ton `manifest.json` : il y lit les permissions et les
     private static bool HasDrawing(SKBitmap image) => image.Pixels.Any(pixel => pixel.Alpha > 0);
 ```
 
-Un premier test : le module démarre, se dessine dans les trois thèmes, et reste en ligne.
+Un premier test : le module démarre, se dessine dans les quatre thèmes, et reste en ligne.
 
 *Même fichier : `templates/AshboardVision.Sdk.Templates/content/ashboard-module/MonModule.Tests/MonModuleTests.cs`.*
 
@@ -33,6 +33,7 @@ Un premier test : le module démarre, se dessine dans les trois thèmes, et rest
     [InlineData("classique")]
     [InlineData("liquid-glass")]
     [InlineData("pixel")]
+    [InlineData("liquid-glass-avance")]
     public async Task Render_InEveryTheme_DrawsSomething(string theme)
     {
         await using var host = new ModuleTestHost<ModuleClassName>(ManifestPath);
@@ -51,7 +52,7 @@ Ce que tu as là :
 
 - `new ModuleTestHost<TonModule>(chemin, réglages, permissionsAccordées)` : les réglages (un `JsonElement`) et les permissions sont facultatifs. Sans permissions précisées, **toutes celles que le manifeste déclare** sont accordées.
 - `await host.StartAsync()` crée le module et appelle son `StartAsync`.
-- `host.Render(taille, thème)` rend une `SKBitmap` de la taille que ta case aurait sur le damier. Les thèmes sont `classique`, `liquid-glass` et `pixel`.
+- `host.Render(taille, thème)` rend une `SKBitmap` de la taille que ta case aurait sur le damier. Les thèmes sont `classique`, `liquid-glass`, `pixel` et `liquid-glass-avance` ; dans ce dernier, l'image montre la vraie pastille de verre de l'[élément choisi](dessin.md#lélément-choisi).
 - `host.Health` et `host.StatusMessage` : l'état que ton module a annoncé avec `SetStatus`.
 - `await using` : libère le module et supprime son dossier de données.
 
@@ -229,28 +230,28 @@ Elle fait huit vérifications, dans l'ordre. Chaque ligne commence par `✔` (r�
 | 1 | **Le manifeste** : champs obligatoires, identifiant, version du SDK, permissions connues… avec les règles du logiciel. |
 | 2 | **La compatibilité** : le SDK que ton module demande, face à celui que parle le logiciel. |
 | 3 | **Le démarrage enfermé** : ton module doit envoyer sa première image en moins de 10 secondes. |
-| 4 | **Les images** : une image PNG pour ta taille minimale et chacun de tes préréglages, dans les trois thèmes. Les fichiers s'appellent `<id>_<thème>_<colonnes>x<lignes>.png`. |
+| 4 | **Les images** : une image PNG pour ta taille minimale et chacun de tes préréglages, dans les quatre thèmes. Les fichiers s'appellent `<id>_<thème>_<colonnes>x<lignes>.png`. |
 | 5 | **Chaque permission refusée, l'une après l'autre** : le module ne doit pas s'arrêter. |
 | 6 | **Les raccourcis** (si ton manifeste en déclare) : chacun est livré à ton module enfermé, et ni une exception de `OnShortcutAsync` ni l'arrêt de l'hôte ne sont permis. Voir [les raccourcis](raccourcis.md#tester-un-raccourci). |
 | 7 | **La mesure** : le temps de dessin, le processeur, la mémoire. |
 | 8 | **L'arrêt propre** : l'hôte s'arrête en moins de 5 secondes. |
 
-Elle conclut « Compatible avec Ashboard Vision (SDK 1.1). », avec le code de sortie 0, ou « Pas compatible : … » avec la raison de chaque échec, en français, et le code 1. Un `!` ne rend jamais le module incompatible.
+Elle conclut « Compatible avec Ashboard Vision (SDK 1.2). », avec le code de sortie 0, ou « Pas compatible : … » avec la raison de chaque échec, en français, et le code 1. Un `!` ne rend jamais le module incompatible.
 
 Voici à quoi ressemble la sortie. Les chiffres changent d'une machine à l'autre.
 
 ```text
 ✔ Manifeste : ashewos.demo 1.0.0 (Démo)
-✔ Compatibilité : le module demande le SDK 1.1, Ashboard Vision parle le 1.1.
+✔ Compatibilité : le module demande le SDK 1.1, Ashboard Vision parle le 1.2.
 ✔ Démarrage enfermé : première image en 0,6 s (sans permission).
-✔ Images : 6 images PNG écrites dans « C:\dev\demo\check-out » (2 tailles × 3 thèmes).
+✔ Images : 8 images PNG écrites dans « C:\dev\demo\check-out » (2 tailles × 4 thèmes).
 ✔ Raccourcis : 1 livré au module (colour), sans erreur.
 ✔ Dessin : 1,8 ms en moyenne, 4,1 ms au plus (120 dessins demandés, de la demande à l'image reçue).
 ✔ Processeur : 0,3 % de la machine en moyenne sur 30,0 s
 ✔ Mémoire : 58,4 Mio au plus (mémoire privée de l'hôte)
 ✔ Arrêt propre : l'hôte s'est arrêté en 0,1 s.
 
-Compatible avec Ashboard Vision (SDK 1.1).
+Compatible avec Ashboard Vision (SDK 1.2).
 ```
 
 ### Les repères de consommation

@@ -85,7 +85,7 @@ L'outil `tools/Trofeo.HardwareCheck` sert à vérifier un écran, à régler l'a
 
 ## Apparence
 
-Trois thèmes sont fournis : `classique` (le thème par défaut), `liquid-glass` (panneaux de verre dépoli sur un fond « Aurore », un dégradé de halos colorés) et `pixel` (panneaux en pixel art, avec VT323, une police pixel lisible ; l'ancienne, Pixelify Sans, se choisit avec `font=Pixelify Sans`). Les réglages se font avec `Trofeo.HardwareCheck.exe --appearance`, que tu peux relancer autant de fois que tu veux : un réglage que tu ne cites pas reste comme il était. Après `dotnet build -c Release`, depuis la racine du dépôt, l'outil se trouve ici : `tools\Trofeo.HardwareCheck\bin\Release\net10.0-windows10.0.19041.0\Trofeo.HardwareCheck.exe`.
+Quatre thèmes sont fournis : `classique` (le thème par défaut), `liquid-glass` (panneaux de verre dépoli sur un fond « Aurore », un dégradé de halos colorés), `liquid-glass-avance` (le même fond, avec un verre qui courbe le fond sur ses bords ; ses préréglages et ses réglages fins se choisissent dans la fenêtre de réglage, section Verre de l'onglet Personnalisation) et `pixel` (panneaux en pixel art, avec VT323, une police pixel lisible ; l'ancienne, Pixelify Sans, se choisit avec `font=Pixelify Sans`). Les réglages se font avec `Trofeo.HardwareCheck.exe --appearance`, que tu peux relancer autant de fois que tu veux : un réglage que tu ne cites pas reste comme il était. Après `dotnet build -c Release`, depuis la racine du dépôt, l'outil se trouve ici : `tools\Trofeo.HardwareCheck\bin\Release\net10.0-windows10.0.19041.0\Trofeo.HardwareCheck.exe`.
 
 ```powershell
 Trofeo.HardwareCheck.exe --appearance theme=liquid-glass opacity=0.3 font="Segoe UI"
@@ -93,7 +93,7 @@ Trofeo.HardwareCheck.exe --appearance background=video:C:\Videos\fond.mp4
 Trofeo.HardwareCheck.exe --appearance
 ```
 
-- `theme=<id>` : `classique`, `liquid-glass` ou `pixel` ;
+- `theme=<id>` : `classique`, `liquid-glass`, `liquid-glass-avance` ou `pixel` ;
 - `opacity=<0 à 1>` : l'opacité du fond des modules (0 : transparent, 1 : plein), ou `opacity=theme` pour celle du thème. **Écris le nombre avec un point** (`opacity=0.3`) : la commande accepte aussi la virgule (`opacity=0,3`) quand elle lui arrive entière, mais un terminal peut la couper en deux. Constaté avec Windows PowerShell 5.1 : un appel direct à l'exe (`Trofeo.HardwareCheck.exe --appearance opacity=0,3`) transmet `opacity=0,3` en un seul morceau et marche, mais `Start-Process -ArgumentList opacity=0,3` le coupe en `opacity=0` puis `3`. La commande refuse alors le `3` seul (code de sortie 2, rien n'est écrit) en te rappelant d'écrire un point ;
 - `font=<famille>` : une police installée sur ton PC (par exemple `Segoe UI`), ou `font=theme` pour celle du thème. Si la police n'est pas installée, la commande te prévient et le service garde la police du thème, jusqu'à ce que tu l'installes ;
 - `background=` : `theme` (le fond du thème), `color:#1A2B3C` (une couleur), `image:<chemin>` (une photo), `gif:<chemin>` (un GIF animé) ou `video:<chemin>` (une vidéo). Le fichier doit exister, son chemin est enregistré en entier ;

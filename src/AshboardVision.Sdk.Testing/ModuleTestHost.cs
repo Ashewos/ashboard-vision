@@ -97,9 +97,15 @@ public sealed class ModuleTestHost<TModule> : IAsyncDisposable
     /// <summary>
     /// Dessine le module dans une image de la taille que sa case aurait sur le damier de l'écran (16 × 4, <see cref="GridGeometry"/>), avec
     /// les écarts du thème, sur un fond transparent : le logiciel pose l'image par-dessus le panneau de la case.
+    /// <para>
+    /// Avec <c>liquid-glass-avance</c>, l'image montre la <b>vraie pastille</b> de verre de ce que le module note avec
+    /// <see cref="ModuleDrawing.DrawSelection"/> : elle est dessinée comme le logiciel la dessine, sur le fond par défaut du thème (Aurore) et
+    /// le verre de la case, puis le dessin du module est posé par-dessus. L'image reste transparente hors des pastilles et du dessin du module,
+    /// et rognée à la forme du panneau.
+    /// </para>
     /// </summary>
     /// <param name="size">La taille de la case en colonnes (1 à 16) et en lignes (1 à 4).</param>
-    /// <param name="theme">Le thème : <c>classique</c>, <c>liquid-glass</c> ou <c>pixel</c>.</param>
+    /// <param name="theme">Le thème : <c>classique</c>, <c>liquid-glass</c>, <c>pixel</c> ou <c>liquid-glass-avance</c>.</param>
     /// <returns>L'image (à libérer par l'appelant).</returns>
     /// <exception cref="ArgumentException">Le thème est inconnu.</exception>
     /// <exception cref="ArgumentOutOfRangeException">La taille sort du damier.</exception>
@@ -109,7 +115,7 @@ public sealed class ModuleTestHost<TModule> : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(theme);
         var definition = Themes.Find(theme)
-            ?? throw new ArgumentException($"Thème inconnu « {theme} » : classique, liquid-glass ou pixel.", nameof(theme));
+            ?? throw new ArgumentException($"Thème inconnu « {theme} » : classique, liquid-glass, pixel ou liquid-glass-avance.", nameof(theme));
         if (size.Columns is < 1 or > GridGeometry.Columns)
         {
             throw new ArgumentOutOfRangeException(nameof(size), size, $"Le damier a {GridGeometry.Columns} colonnes : une case en a de 1 à {GridGeometry.Columns}.");
@@ -123,6 +129,14 @@ public sealed class ModuleTestHost<TModule> : IAsyncDisposable
         if (!_started || _module is null)
         {
             throw new InvalidOperationException("Appelle StartAsync (et attends-le) avant Render.");
+        }
+
+        if (definition.Theme.ServiceDrawsSelection)
+        {
+            // Le logiciel dessine lui-même la pastille de l'élément choisi : on passe par son compositeur, qui enregistre le module, peint les
+            // pastilles sur le verre de la case, puis rejoue le dessin par-dessus.
+            using var composer = new FrameComposer();
+            return composer.ComposeCaseLayer(definition, size, 1f, Time.GetLocalNow(), _module.Render);
         }
 
         var rect = GridGeometry.ModuleRect(0, 0, size.Columns, size.Rows, definition.Grid);

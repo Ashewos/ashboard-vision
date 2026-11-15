@@ -1264,6 +1264,64 @@ public sealed class AgentModuleTests
         Assert.Equal(theme.Background, bitmap.GetPixel(left + 190, top + 4));
     }
 
+    /// <summary>
+    /// Les empreintes ont été relevées sous Windows x64 (le dessin des lettres dépend de la plateforme) : ailleurs, le test est
+    /// ignoré, pas en échec.
+    /// </summary>
+    private sealed class WindowsFactAttribute : FactAttribute
+    {
+        public WindowsFactAttribute()
+        {
+            if (!OperatingSystem.IsWindows()) Skip = "Empreintes relevées sous Windows x64 seulement.";
+        }
+    }
+
+    /// <summary>
+    /// Le rendu du module (onglet choisi compris) dans les trois autres thèmes, relevé sur le code d'avant la tâche 4 du plan 9
+    /// (commit <c>f79f3da</c>), quand <c>DrawTab</c> dessinait encore lui-même l'onglet choisi. SHA-256 des pixels en RGBA.
+    /// </summary>
+    private static readonly Dictionary<string, string> TabReference = new()
+    {
+        ["classique/1"] = "643E99904CA0E5F78EDF569AA2792208717B5F448ED70952201121A2B6E431B7",
+        ["classique/1.25"] = "AA4DD269ED76A31E6A2068C04F4534E4D3B121BD564DC7BF46A7448DB6D39E54",
+        ["liquid-glass/1"] = "E1C644C14B83055E9EC4914F4051C995D7E81BF1600771B831A3891B59BBDCD7",
+        ["liquid-glass/1.25"] = "463451E9D31B423117ABB81F89DAE34438EF19467C3BFA2FB8BB39485CE9EAED",
+        ["pixel/1"] = "768439E31CBE15A22749EE95E0913886370E652CF10791048E2A95B7A25A7A52",
+        ["pixel/1.25"] = "DB87BF74023ED8A04ABDDF9A24C660CF30B75A7FA8BC2D6EC21BCF3D13355D68",
+    };
+
+    [WindowsFact]
+    public async Task Tabs_OtherThemes_Unchanged()
+    {
+        using var rig = await Started(Snapshot([Session("a", AgentActivity.Idle, 30), Session("b", AgentActivity.Working, 1), Session("c", AgentActivity.Waiting, 40)]));
+        var rect = GridGeometry.ModuleRect(0, 0, 8, 4);
+        var actual = new SortedDictionary<string, string>();
+        foreach (var theme in new[] { Themes.Classique, Themes.LiquidGlass.Theme, Themes.Pixel.Theme })
+        {
+            foreach (var scale in new[] { 1f, 1.25f })
+            {
+                using var bitmap = RenderOn(rig.Module, rect, new GridSize(8, 4), scale, theme: theme);
+                using var rgba = new SKBitmap(new SKImageInfo(bitmap.Width, bitmap.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+                using (var canvas = new SKCanvas(rgba))
+                using (var paint = new SKPaint { BlendMode = SKBlendMode.Src })
+                {
+                    canvas.DrawBitmap(bitmap, 0, 0, paint);
+                }
+                actual[FormattableString.Invariant($"{theme.Id}/{scale}")] =
+                    Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(rgba.GetPixelSpan()));
+
+                // L'onglet choisi est bien dans l'image : son trait, à gauche du second onglet.
+                var marker = theme.Shape == ThemeShape.Pixel ? theme.Highlight : theme.Accent;
+                Assert.Equal(marker, bitmap.GetPixel(rect.Left + 30 + (int)(16 * scale) + 1, rect.Top + 30 + (int)((16 + 52 + 23) * scale)));
+            }
+        }
+
+        var lines = string.Join("\n", actual.Select(p => $"        [\"{p.Key}\"] = \"{p.Value}\","));
+        Assert.True(
+            actual.Count == TabReference.Count && actual.All(p => TabReference.TryGetValue(p.Key, out var expected) && expected == p.Value),
+            "Le rendu du module a changé dans un autre thème. Empreintes obtenues :\n" + lines);
+    }
+
     [Fact]
     public async Task Render_TabDots_UseTheStateColors()
     {

@@ -183,6 +183,72 @@ public static class Texts
     public static string AppearanceThemePixel => Get();
     /// <summary>Phrase de la carte Pixel.</summary>
     public static string AppearanceThemePixelText => Get();
+    /// <summary>Nom du thème Liquid Glass avancé.</summary>
+    public static string AppearanceThemeLiquidGlassAdvanced => Get();
+    /// <summary>Phrase de la carte Liquid Glass avancé ; prévient de la consommation.</summary>
+    public static string AppearanceThemeLiquidGlassAdvancedText => Get();
+    /// <summary>Titre de la section des réglages du verre.</summary>
+    public static string AppearanceGlass => Get();
+    /// <summary>Indication : les réglages du verre ne sont plus ceux d'un préréglage.</summary>
+    public static string AppearanceGlassCustom => Get();
+    /// <summary>Bouton qui ouvre ou replie les curseurs du verre.</summary>
+    public static string AppearanceGlassDetails => Get();
+    /// <summary>Nom accessible de la rangée des préréglages du verre.</summary>
+    public static string AppearanceGlassPresets => Get();
+    /// <summary>Préréglage du verre : Clair.</summary>
+    public static string AppearanceGlassPresetClair => Get();
+    /// <summary>Préréglage du verre : Givré.</summary>
+    public static string AppearanceGlassPresetGivre => Get();
+    /// <summary>Préréglage du verre : Prisme.</summary>
+    public static string AppearanceGlassPresetPrisme => Get();
+    /// <summary>Préréglage du verre : Discret.</summary>
+    public static string AppearanceGlassPresetDiscret => Get();
+    /// <summary>Groupe de curseurs : la forme du verre.</summary>
+    public static string AppearanceGlassGroupGlass => Get();
+    /// <summary>Groupe de curseurs : reflets et franges.</summary>
+    public static string AppearanceGlassGroupLight => Get();
+    /// <summary>Groupe de curseurs : opacité, saturation, teinte, luminosité.</summary>
+    public static string AppearanceGlassGroupColor => Get();
+    /// <summary>Groupe de curseurs : l'ombre portée.</summary>
+    public static string AppearanceGlassGroupShadow => Get();
+    /// <summary>Curseur du verre : flou.</summary>
+    public static string AppearanceGlassBlur => Get();
+    /// <summary>Curseur du verre : réfraction.</summary>
+    public static string AppearanceGlassRefraction => Get();
+    /// <summary>Curseur du verre : profondeur du biseau.</summary>
+    public static string AppearanceGlassBevelDepth => Get();
+    /// <summary>Curseur du verre : rayon des angles.</summary>
+    public static string AppearanceGlassCornerRadius => Get();
+    /// <summary>Curseur du verre : micro-déformation.</summary>
+    public static string AppearanceGlassDistortion => Get();
+    /// <summary>Curseur du verre : lumière des bords.</summary>
+    public static string AppearanceGlassEdgeHighlight => Get();
+    /// <summary>Curseur du verre : reflets.</summary>
+    public static string AppearanceGlassSpecular => Get();
+    /// <summary>Curseur du verre : effet Fresnel.</summary>
+    public static string AppearanceGlassFresnel => Get();
+    /// <summary>Curseur du verre : franges de couleur (aberration chromatique).</summary>
+    public static string AppearanceGlassChromatic => Get();
+    /// <summary>Curseur du verre : opacité.</summary>
+    public static string AppearanceGlassOpacity => Get();
+    /// <summary>Curseur du verre : saturation.</summary>
+    public static string AppearanceGlassSaturation => Get();
+    /// <summary>Curseur du verre : teinte froide.</summary>
+    public static string AppearanceGlassTint => Get();
+    /// <summary>Curseur du verre : luminosité.</summary>
+    public static string AppearanceGlassBrightness => Get();
+    /// <summary>Curseur du verre : opacité de l'ombre.</summary>
+    public static string AppearanceGlassShadowOpacity => Get();
+    /// <summary>Curseur du verre : étendue de l'ombre.</summary>
+    public static string AppearanceGlassShadowSpread => Get();
+    /// <summary>Curseur du verre : décalage vertical de l'ombre.</summary>
+    public static string AppearanceGlassShadowOffset => Get();
+    /// <summary>Titre du choix de la forme du biseau.</summary>
+    public static string AppearanceGlassBevel => Get();
+    /// <summary>Forme du biseau : pilule.</summary>
+    public static string AppearanceGlassBevelPill => Get();
+    /// <summary>Forme du biseau : dôme.</summary>
+    public static string AppearanceGlassBevelDome => Get();
     /// <summary>Titre de la section du curseur de transparence des panneaux.</summary>
     public static string AppearanceOpacity => Get();
     /// <summary>{0} : la transparence choisie, de 0 à 100.</summary>

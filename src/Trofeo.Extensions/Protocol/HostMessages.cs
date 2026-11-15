@@ -129,8 +129,21 @@ public sealed record Shutdown : HostMessage;
 /// <summary>Le module est chargé ; <c>RequiredSdk</c> est la version du SDK dont il a besoin.</summary>
 public sealed record Ready(string RequiredSdk) : HostMessage;
 
-/// <summary>Une image est prête dans le tampon <c>Buffer</c> ; <c>Animating</c> dit que d'autres vont suivre sans qu'on les demande.</summary>
-public sealed record Frame(Guid InstanceId, int Buffer, bool Animating) : HostMessage;
+/// <summary>
+/// Une image est prête dans le tampon <c>Buffer</c> ; <c>Animating</c> dit que d'autres vont suivre sans qu'on les demande.
+/// <c>Selections</c> sont les éléments choisis que le module a notés avec <c>ModuleDrawing.DrawSelection</c> pendant ce dessin, en
+/// pixels de l'image (origine : son coin haut gauche) : dans le thème « Liquid Glass avancé », le service dessine leur pastille sous
+/// l'image. Au plus <see cref="MaxSelections"/> ; absent (ou nul) quand il n'y en a pas, comme chez un hôte plus ancien. Ajouté au
+/// protocole 1.1, sans changer sa version : un service plus ancien ignore la propriété, un hôte plus ancien ne l'écrit pas.
+/// </summary>
+public sealed record Frame(Guid InstanceId, int Buffer, bool Animating, IReadOnlyList<SelectionRect>? Selections = null) : HostMessage
+{
+    /// <summary>Le nombre de pastilles par case et par image (celui du compositeur du service) ; l'hôte n'en envoie pas plus, le service n'en garde pas plus.</summary>
+    public const int MaxSelections = 16;
+}
+
+/// <summary>Le rectangle d'un élément choisi, en pixels de l'image de la case (voir <see cref="Frame"/>).</summary>
+public sealed record SelectionRect(float X, float Y, float Width, float Height);
 
 /// <summary>L'état d'une instance.</summary>
 public sealed record Status(Guid InstanceId, ModuleHealth Health, string? Message = null) : HostMessage;

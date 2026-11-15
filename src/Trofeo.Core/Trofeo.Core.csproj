@@ -11,12 +11,17 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Trofeo.Core.Tests" />
     <InternalsVisibleTo Include="Trofeo.Display" />
+    <!-- Les aides de test du SDK dessinent la vraie pastille du verre avancé avec le compositeur (FrameComposer.ComposeCaseLayer). -->
+    <InternalsVisibleTo Include="AshboardVision.Sdk.Testing" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\Fonts\*.ttf" LogicalName="Trofeo.Core.Assets.Fonts.%(Filename)%(Extension)" />
     <!-- Les textes de licence OFL suivent les polices dans le dossier de sortie (Assets/Fonts). -->
     <Content Include="Assets\Fonts\OFL-*.txt" Link="Assets\Fonts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Le verre de liquidglass adapté en SkSL (MIT) : le programme est embarqué, le texte de la licence suit dans le dossier de sortie. -->
+    <EmbeddedResource Include="Rendering\LiquidGlass\liquid-glass.sksl" LogicalName="Trofeo.Core.Rendering.LiquidGlass.liquid-glass.sksl" />
+    <Content Include="Rendering\LiquidGlass\LICENSE-liquidglass.txt" Link="Rendering\LiquidGlass\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

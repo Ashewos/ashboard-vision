@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AshboardVision.Sdk;
+using Trofeo.Core.Layout;
 using Trofeo.Core.Rendering;
 using Trofeo.Extensions.Protocol;
 
@@ -46,6 +47,39 @@ public sealed class HostPayloadsTests
         var appearance = new AppearanceSettings("pixel", 0.5f, "VT323", new BackgroundSettings(BackgroundKind.Color, "#102030"), false);
 
         Assert.Equal(appearance, HostPayloads.ReadAppearance(HostPayloads.AppearanceToJson(appearance)));
+    }
+
+    [Fact]
+    public void Appearance_FromADamagedLayout_IsSentToTheHostsWithoutThrowing()
+    {
+        // Relecture finale du plan 9 (décision R11) : un layout.json abîmé ne doit plus empêcher le service de démarrer.
+        // La lecture borne le verre et écarte une opacité non finie : ce qui part vers les hôtes s'écrit toujours en JSON.
+        const string Views = """[{"Id":"7e4b2a91-c3d5-4f08-a6b1-92d0e5f13c48","Name":"Vue 1","Placements":[]}]""";
+        string[] appearances =
+        [
+            """{"Theme":"liquid-glass-avance","Glass":{"Preset":"personnalise","Values":{"Blur":"NaN"}}}""",
+            """{"Theme":"liquid-glass-avance","Glass":{"Preset":"personnalise","Values":{"Blur":"Infinity","Tint":"-Infinity"}}}""",
+            """{"Theme":"liquid-glass-avance","Glass":{"Preset":"personnalise","Values":{"Refraction":9,"ZRadius":1e999}}}""",
+            """{"Theme":"liquid-glass-avance","PanelOpacity":1e999,"Glass":{"Preset":"clair","Values":{"Blur":"NaN"}}}""",
+            """{"Theme":"pixel","PanelOpacity":"NaN"}""",
+        ];
+
+        foreach (var appearance in appearances)
+        {
+            var json = "{\"Format\":\"" + LayoutTransfer.Format + "\",\"Layout\":{\"Rotation\":180,\"Views\":" + Views + ",\"Appearance\":" + appearance + "}}";
+
+            var result = LayoutTransfer.Import(json);
+
+            Assert.Null(result.Error);
+            Assert.NotEmpty(result.Warnings);
+            var read = result.Layout!.Appearance!;
+            Assert.Equal(appearance.Contains("pixel") ? "pixel" : "liquid-glass-avance", read.Theme); // le reste est gardé
+            Assert.True(read.PanelOpacity is null || float.IsFinite(read.PanelOpacity.Value));
+            if (read.Glass?.Values is { } values) Assert.Equal(values, values.Clamped(new GlassSettings()));
+
+            var sent = HostPayloads.AppearanceToJson(read); // levait ArgumentException
+            Assert.Equal(read, HostPayloads.ReadAppearance(sent));
+        }
     }
 
     [Fact]

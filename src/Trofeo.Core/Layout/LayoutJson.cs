@@ -20,6 +20,9 @@ internal static class LayoutJson
     {
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() },
+        // « NaN » et « Infinity » s'écrivent et se lisent en texte : un réglage du verre fou se relit, au lieu de faire échouer
+        // l'écriture ou la lecture. Il est borné dès la lecture (voir Sanitize) : il n'entre jamais dans AppearanceSettings.
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
     /// <summary>Avertissement quand une <c>Appearance</c> illisible est abandonnée.</summary>
@@ -30,7 +33,18 @@ internal static class LayoutJson
     internal const string AnimateViewSwitchInvalid =
         "Réglage « AnimateViewSwitch » illisible dans layout.json : passage animé entre les vues par défaut.";
 
-    internal const string MaxFpsInvalid = "Plafond d'images invalide : 12 images/s utilisées.";
+    /// <summary>Avertissement quand le champ <c>Glass</c> n'est pas lisible : le verre retombe sur Clair.</summary>
+    internal const string GlassInvalid = "Réglages du verre illisibles : préréglage Clair utilisé.";
+
+    /// <summary>Avertissement quand une valeur du verre est hors de ses bornes, <c>NaN</c> ou infinie : elle est bornée dès la lecture.</summary>
+    internal const string GlassClamped =
+        "Réglages du verre hors bornes ou illisibles dans layout.json : valeurs ramenées dans leurs bornes.";
+
+    /// <summary>Avertissement quand <c>PanelOpacity</c> n'est pas un nombre fini : l'opacité redevient celle du thème.</summary>
+    internal const string PanelOpacityInvalid =
+        "Opacité des panneaux illisible dans layout.json : opacité du thème utilisée.";
+
+    internal const string MaxFpsInvalid ="Plafond d'images invalide : 12 images/s utilisées.";
     internal const string ShortcutsDropped = "Raccourcis illisibles dans layout.json : raccourcis par défaut utilisés.";
     internal const string ViewsDropped = "Vues illisibles dans layout.json : elles sont ignorées.";
     internal const string Unreadable = "Le fichier layout.json est illisible (JSON invalide).";
@@ -121,7 +135,7 @@ internal static class LayoutJson
                 ? [.. wired.Where(v => v is not null)]
                 : [new LayoutView(DashboardLayout.DefaultViewId, LayoutView.FirstViewName, legacy.Placements ?? [])];
             return new DashboardLayout(
-                legacy.Rotation, Normalize(views, warn), DropNullShortcuts(legacy.Shortcuts, warn), legacy.Appearance,
+                legacy.Rotation, Normalize(views, warn), DropNullShortcuts(legacy.Shortcuts, warn), Sanitize(legacy.Appearance, warn),
                 legacy.Shelf is null ? null : [.. legacy.Shelf.Select(p => p is null ? p! : CleanCaseName(p, warn))],
                 CheckMaxFps(legacy.MaxFps, warn));
         }
@@ -322,10 +336,27 @@ internal static class LayoutJson
                 else warn(AnimateViewSwitchInvalid);
             }
 
+            // Glass aussi : un champ du mauvais type fait retomber le verre sur Clair (null), pas abandonner l'apparence.
+            GlassAppearance? glass = null;
+            if (node is JsonObject glassFields && Take(glassFields, nameof(AppearanceSettings.Glass), out var glassNode)
+                && glassNode is not null)
+            {
+                try
+                {
+                    glass = glassNode.Deserialize<GlassAppearance>(Options);
+                }
+                catch (Exception)
+                {
+                    // Mauvais type JSON, énumération inconnue... : pas de verre choisi.
+                }
+
+                if (glass is null) warn(GlassInvalid);
+            }
+
             var appearance = node.Deserialize<AppearanceSettings>(Options);
             if (appearance is not null && appearance.Theme is not null &&
                 (appearance.Background is not { } background || Enum.IsDefined(background.Kind)))
-                return appearance with { AnimateViewSwitch = animate };
+                return Sanitize(appearance with { AnimateViewSwitch = animate, Glass = glass }, warn);
         }
         catch (Exception)
         {
@@ -334,6 +365,36 @@ internal static class LayoutJson
 
         warn(AppearanceDropped);
         return null;
+    }
+
+    /// <summary>
+    /// Borne l'apparence dès la lecture, pour qu'aucun nombre non fini n'entre dans <see cref="AppearanceSettings"/> : elle est
+    /// renvoyée en JSON aux hôtes des modules, et un <c>NaN</c> y ferait échouer l'écriture (le service ne démarrait plus). Les
+    /// valeurs du verre sont ramenées dans leurs bornes (<see cref="GlassSettings.Clamped"/>, repli : Clair), même pour un
+    /// préréglage connu qui les ignore ; une <c>PanelOpacity</c> non finie redevient <c>null</c> (celle du thème). Un seul
+    /// avertissement pour le verre, un pour l'opacité.
+    /// </summary>
+    private static AppearanceSettings? Sanitize(AppearanceSettings? appearance, Action<string> warn)
+    {
+        if (appearance is null) return null;
+
+        if (appearance.PanelOpacity is { } opacity && !float.IsFinite(opacity))
+        {
+            warn(PanelOpacityInvalid);
+            appearance = appearance with { PanelOpacity = null };
+        }
+
+        if (appearance.Glass is { Values: { } values } glass)
+        {
+            var clamped = values.Clamped(GlassPresets.Find(GlassPresets.Clair)!);
+            if (clamped != values)
+            {
+                warn(GlassClamped);
+                appearance = appearance with { Glass = glass with { Values = clamped } };
+            }
+        }
+
+        return appearance;
     }
 
     private static int? ReadMaxFps(JsonNode? node, Action<string> warn)

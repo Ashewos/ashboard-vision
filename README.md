@@ -37,7 +37,7 @@ Ashboard Vision fait du Thermalright Trofeo Vision 9,16" (1920 × 462) un tablea
 - Plusieurs **vues** : chacune a sa propre disposition, que tu prépares dans l'onglet Disposition de la fenêtre de réglage (un onglet par vue, et « + Nouvelle vue »). Seule la vue affichée est dessinée ; les modules des autres continuent de récupérer leurs données, donc tout est à jour quand tu y reviens. Tu peux aussi donner un nom à chaque case pour t'y retrouver quand un même module est posé plusieurs fois.
 - Des raccourcis clavier globaux, actifs même quand une autre application a le focus : `Ctrl+Alt+←` et `Ctrl+Alt+→` changent de vue, `Ctrl+Alt+↑` et `Ctrl+Alt+↓` changent d'onglet dans les modules Claude Code et Codex, et `Ctrl+Alt+Maj+1` à `9` vont directement à l'onglet 1 à 9 (voir [les raccourcis](docs/utilisation-avancee.md#raccourcis-clavier)). Tu peux les changer dans l'onglet Raccourcis.
 - Il reste discret : de l'ordre de 0,3 à 0,4 % du processeur et 40 à 50 Mo de mémoire, sans fond vidéo.
-- Trois thèmes (Classique, Liquid Glass, Pixel), la transparence des modules, la police, et un fond en couleur, en image, en GIF ou en vidéo.
+- Quatre thèmes (Classique, Liquid Glass, Pixel et **Liquid Glass avancé**, un verre qui courbe vraiment le fond sur les bords, avec quatre préréglages et des réglages fins), la transparence des modules, la police, et un fond en couleur, en image, en GIF ou en vidéo.
 
 Le détail des réglages se trouve dans [l'utilisation avancée](docs/utilisation-avancee.md).
 
@@ -179,6 +179,11 @@ Polices embarquées, les quatre familles des thèmes (Barlow Semi Condensed, Man
 - VT323 : `OFL-VT323.txt`.
 
 Manrope et Pixelify Sans, publiées en police variable, sont embarquées en une graisse fixe (Medium et Regular).
+
+### Licences tierces
+
+- **liquidglass** (MIT) : le verre du thème « Liquid Glass avancé » adapte l'effet de [liquidglass](https://github.com/ybouane/liquidglass), de ybouane (« Copyright (c) ybouane »), au commit `59af227`. Le texte complet de la licence est dans [`src/Trofeo.Core/Rendering/LiquidGlass/LICENSE-liquidglass.txt`](src/Trofeo.Core/Rendering/LiquidGlass/LICENSE-liquidglass.txt), copié à côté du programme comme les licences OFL des polices ci-dessus.
+- **Polices** (SIL Open Font License 1.1) : voir plus haut.
 
 ## Licence
 

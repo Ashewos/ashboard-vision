@@ -3,7 +3,10 @@ using Trofeo.Core.Layout;
 
 namespace Trofeo.Core.Rendering;
 
-/// <summary>Peint le panneau sous un module, selon le style du thème (mat, verre, pixel), garde de lisibilité comprise.</summary>
+/// <summary>
+/// Peint le panneau sous un module, selon le style du thème (mat, verre, pixel), garde de lisibilité comprise. Pour
+/// « Liquid Glass avancé », il ne peint que la teinte : le verre et l'ombre viennent de <see cref="LiquidGlassLayers"/>.
+/// </summary>
 internal static class PanelPainter
 {
     /// <summary>Luminance relative maximale du panneau posé sur le fond (WCAG, 0 à 1).</summary>
@@ -37,6 +40,9 @@ internal static class PanelPainter
             case PanelKind.Pixel:
                 PaintPixel(canvas, rect, theme, applied);
                 break;
+            case PanelKind.LiquidGlass:
+                PaintTint(canvas, rect, theme, applied);
+                break;
             default:
                 PaintMatte(canvas, rect, theme, applied);
                 break;
@@ -46,7 +52,8 @@ internal static class PanelPainter
     /// <summary>
     /// L'opacité voulue du panneau devant une zone du fond de luminance <paramref name="backdropLuminance"/> : celle de la garde
     /// de lisibilité (<see cref="LegibleAlpha"/>, avec le reflet du verre), ou exactement l'opacité choisie quand le thème a
-    /// coupé la garde (<see cref="ThemeDefinition.LegibilityGuard"/>).
+    /// coupé la garde (<see cref="ThemeDefinition.LegibilityGuard"/>). Pour « Liquid Glass avancé », la luminance est celle de la
+    /// couche de verre posée sur le fond (<see cref="LiquidGlassLayers.Luminance"/>) : elle contient déjà les reflets.
     /// </summary>
     public static float TargetAlpha(ThemeDefinition theme, float backdropLuminance)
     {
@@ -59,6 +66,17 @@ internal static class PanelPainter
             theme.Panel.Kind == PanelKind.Glass ? GlassSheenLuminance : 0f);
     }
 
+    /// <summary>
+    /// Le rayon des angles du panneau sur <paramref name="rect"/>. Pour « Liquid Glass avancé », c'est celui du verre
+    /// (<see cref="GlassSettings.CornerRadius"/>), borné comme dans l'effet à la moitié du plus petit côté : le rognage du
+    /// module, la teinte et le panneau d'erreur suivent ainsi la forme du verre, même si le thème n'est pas passé par
+    /// <see cref="AppearanceResolver"/> (qui recopie ce rayon dans <c>Theme.CornerRadius</c>). Les autres thèmes : le leur, tel quel.
+    /// </summary>
+    public static float CornerRadius(ThemeDefinition theme, SKRect rect) =>
+        theme.Panel is { Kind: PanelKind.LiquidGlass, Glass: { } glass }
+            ? Math.Max(0f, Math.Min(glass.CornerRadius, Math.Min(rect.Width, rect.Height) / 2f))
+            : theme.Theme.CornerRadius;
+
     /// <summary>Le rognage d'un module : le contour du panneau (arrondi, ou angles vifs en Pixel).</summary>
     public static void ClipToPanel(SKCanvas canvas, SKRect rect, ThemeDefinition theme)
     {
@@ -68,7 +86,7 @@ internal static class PanelPainter
             return;
         }
 
-        using var clip = new SKRoundRect(rect, theme.Theme.CornerRadius);
+        using var clip = new SKRoundRect(rect, CornerRadius(theme, rect));
         canvas.ClipRoundRect(clip, SKClipOperation.Intersect, true);
     }
 
@@ -144,6 +162,33 @@ internal static class PanelPainter
             canvas.DrawRect(rect, light);
             canvas.Restore();
         }
+    }
+
+    // ---- Liquid Glass avancé ----
+
+    /// <summary>
+    /// La teinte seule, sur la forme du verre. Le masque du verre passe par la moitié à un demi-pixel à l'intérieur du bord :
+    /// la teinte est rentrée d'autant, pour ne pas dépasser du verre.
+    /// </summary>
+    private static void PaintTint(SKCanvas canvas, SKRect rect, ThemeDefinition def, float alpha)
+    {
+        var color = Tint(def.Theme.Panel, alpha);
+        if (color.Alpha == 0)
+        {
+            return;
+        }
+
+        float radius = Math.Min(CornerRadius(def, rect), Math.Min(rect.Width, rect.Height) / 2f);
+        var inner = rect;
+        inner.Inflate(-0.5f, -0.5f);
+        if (inner.Width <= 0f || inner.Height <= 0f)
+        {
+            return;
+        }
+
+        float r = Math.Max(0f, radius - 0.5f);
+        using var tint = new SKPaint { IsAntialias = true, Color = color };
+        canvas.DrawRoundRect(inner, r, r, tint);
     }
 
     // ---- Pixel ----

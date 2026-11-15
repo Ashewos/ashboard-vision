@@ -87,8 +87,8 @@ internal sealed class HostRig : IAsyncDisposable
         => SendAsync(new Hello(HostMessage.ProtocolVersion, folder, entry, "test.sample", granted ?? [], Path.GetTempPath(),
             HostPayloads.AppearanceToJson(new AppearanceSettings(appearance)), maxFps));
 
-    public Task SendSampleHelloAsync(ModulePermission[]? granted = null, int maxFps = 30)
-        => SendHelloAsync(SampleFolder, "Trofeo.ModuleHost.Tests.SampleModule.dll", granted, maxFps);
+    public Task SendSampleHelloAsync(ModulePermission[]? granted = null, int maxFps = 30, string appearance = "classique")
+        => SendHelloAsync(SampleFolder, "Trofeo.ModuleHost.Tests.SampleModule.dll", granted, maxFps, appearance);
 
     /// <summary>Ouvre une instance avec de vrais tampons partagés, dupliqués dans l'hôte.</summary>
     public async Task<OpenedInstance> OpenAsync(string settingsJson = "{}", int width = 96, int height = 48, int columns = 2, int rows = 1)

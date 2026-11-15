@@ -238,11 +238,9 @@ internal sealed class AgentPainter
             var pixel = _theme.Shape == ThemeShape.Pixel;
             if (shown)
             {
-                Fill(rect, _theme.Surface);
-
-                // Pixel : trait de 4 px dans la couleur de mise en avant ; sinon trait de 3 px dans l'accent.
-                var marker = pixel ? 4f : 3f;
-                Fill(new SKRect(rect.Left, rect.Top, rect.Left + marker * _scale, rect.Bottom), pixel ? _theme.Highlight : _theme.Accent);
+                // L'aplat et le trait à gauche (Pixel : 4 px dans la couleur de mise en avant ; sinon 3 px dans l'accent), ou la
+                // pastille de verre de « Liquid Glass avancé », que le service dessine sous le module.
+                ModuleDrawing.DrawSelection(_canvas, rect, _ctx);
             }
 
             var dotColor = session.Activity switch

@@ -184,6 +184,24 @@ public sealed class SampleModule : CommunityModule
         canvas.DrawRect(0, 0, ctx.Bounds.Width / 2, ctx.Bounds.Height, left);
         canvas.DrawRect(ctx.Bounds.Width / 2, 0, ctx.Bounds.Width / 2, ctx.Bounds.Height, right);
         _frames++;
+        if (_mode == "select")
+        {
+            ModuleDrawing.DrawSelection(canvas, new SKRect(10, 5, 60, 25), ctx);
+        }
+
+        if (_mode == "selectMany")
+        {
+            // Des entrées que l'hôte ne doit pas laisser passer (non finies, vides, à l'envers), puis plus de rectangles que le plafond.
+            ModuleDrawing.DrawSelection(canvas, new SKRect(float.NaN, 5, 60, 25), ctx);
+            ModuleDrawing.DrawSelection(canvas, new SKRect(10, 5, float.PositiveInfinity, 25), ctx);
+            ModuleDrawing.DrawSelection(canvas, new SKRect(10, 5, 10, 25), ctx);
+            ModuleDrawing.DrawSelection(canvas, new SKRect(60, 25, 10, 5), ctx);
+            for (var i = 0; i < 20; i++)
+            {
+                ModuleDrawing.DrawSelection(canvas, new SKRect(i * 4, 2, (i * 4) + 3, 12), ctx);
+            }
+        }
+
         if (_mode == "ctx")
         {
             Services.Log.Info(FormattableString.Invariant($"ctx:{ctx.Size.Columns}x{ctx.Size.Rows}:{ctx.Bounds.Width}x{ctx.Bounds.Height}:{ctx.TextScale}:{ctx.Theme.Id}"));

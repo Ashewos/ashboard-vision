@@ -190,6 +190,72 @@ public static class ModuleDrawing
     }
 
     /// <summary>
+    /// Marque l'élément choisi d'une liste (un onglet, une ligne) : à appeler pour le rectangle <paramref name="rect"/> de cet
+    /// élément, en coordonnées de la toile comme tout dessin du module, avant d'y dessiner son texte.
+    /// <list type="bullet">
+    /// <item>Thèmes Classique, Liquid Glass et Pixel : un aplat <see cref="Theme.Surface"/>, et à gauche un trait de
+    /// 3 × <see cref="ModuleRenderContext.TextScale"/> px en <see cref="Theme.Accent"/> (Pixel : 4 × l'échelle, en
+    /// <see cref="Theme.Highlight"/>).</item>
+    /// <item>Thème « Liquid Glass avancé » : une pastille de verre, que le logiciel dessine lui-même sous tout ce que le
+    /// module dessine, que ce soit avant ou après cet appel. Hors du logiciel (un banc d'essai sans service), une pilule
+    /// claire la remplace.</item>
+    /// </list>
+    /// </summary>
+    public static void DrawSelection(SKCanvas canvas, SKRect rect, ModuleRenderContext ctx)
+    {
+        ArgumentNullException.ThrowIfNull(canvas);
+        ArgumentNullException.ThrowIfNull(ctx);
+
+        var theme = ctx.Theme;
+        if (!theme.ServiceDrawsSelection)
+        {
+            // L'onglet choisi tel qu'il a toujours été dessiné : sans anticrénelage, au pixel près.
+            var pixel = theme.Shape == ThemeShape.Pixel;
+            using var paint = new SKPaint { Color = theme.Surface, Style = SKPaintStyle.Fill };
+            canvas.DrawRect(rect, paint);
+
+            paint.Color = pixel ? theme.Highlight : theme.Accent;
+            canvas.DrawRect(new SKRect(rect.Left, rect.Top, rect.Left + (pixel ? 4f : 3f) * ctx.TextScale, rect.Bottom), paint);
+            return;
+        }
+
+        if (ctx.Selections is { } selections)
+        {
+            rect.Offset(-ctx.Bounds.Left, -ctx.Bounds.Top);
+            selections.Add(rect);
+            return;
+        }
+
+        DrawLocalSelection(canvas, rect, theme);
+    }
+
+    /// <summary>
+    /// La pastille sans verre, quand personne ne peut dessiner la vraie : une pilule <see cref="Theme.Text"/> à 12 %, avec un
+    /// trait intérieur de 1,5 px, à 45 % en haut et à 15 % en bas. Rien n'est peint hors de <paramref name="rect"/>.
+    /// </summary>
+    internal static void DrawLocalSelection(SKCanvas canvas, SKRect rect, Theme theme)
+    {
+        if (!(rect.Width > 0f) || !(rect.Height > 0f)) return; // vide, à l'envers ou pas un nombre
+
+        const float Stroke = 1.5f;
+        var radius = rect.Height / 2f;
+        using (var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Text.WithAlpha(31) })
+        {
+            canvas.DrawRoundRect(rect, radius, radius, fill);
+        }
+
+        var inner = SKRect.Inflate(rect, -Stroke / 2f, -Stroke / 2f);
+        if (inner.Width <= 0f || inner.Height <= 0f) return;
+
+        using var shade = SKShader.CreateLinearGradient(
+            new SKPoint(0f, rect.Top), new SKPoint(0f, rect.Bottom),
+            [theme.Text.WithAlpha(115), theme.Text.WithAlpha(38)], SKShaderTileMode.Clamp);
+        using var edge = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = Stroke, Shader = shade };
+        var innerRadius = Math.Max(0f, radius - Stroke / 2f);
+        canvas.DrawRoundRect(inner, innerRadius, innerRadius, edge);
+    }
+
+    /// <summary>
     /// Message d'action (ex. « Réglages requis ») en <see cref="Theme.Warning"/>, centré dans
     /// <paramref name="area"/> sur au plus 3 lignes. Taille 24 × <paramref name="textScale"/>, réduite
     /// par pas de 2 jusqu'à 16 × <paramref name="textScale"/> si le texte ne tient pas.

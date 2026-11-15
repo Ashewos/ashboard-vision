@@ -95,84 +95,169 @@
         </Grid>
       </Border>
 
-      <!-- Fond : celui du thème, une couleur, une photo, un GIF ou une vidéo. -->
-      <Border Grid.Column="4" Classes="panel" Padding="20" VerticalAlignment="Top">
-        <StackPanel Spacing="16">
-          <TextBlock Classes="section" Text="{x:Static t:Texts.AppearanceBackground}" />
+      <!-- Fond (celui du thème, une couleur, une photo, un GIF ou une vidéo) ; dessous, avec le thème « Liquid Glass avancé », la section Verre. -->
+      <StackPanel Grid.Column="4" Spacing="16" VerticalAlignment="Top">
+        <Border Classes="panel" Padding="20" VerticalAlignment="Top">
+          <StackPanel Spacing="16">
+            <TextBlock Classes="section" Text="{x:Static t:Texts.AppearanceBackground}" />
 
-          <ItemsControl Name="BackgroundKinds" ItemsSource="{Binding Kinds}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <WrapPanel Orientation="Horizontal" />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:BackgroundKindItem">
-                <Button Classes="choice" Classes.primary="{Binding IsSelected}" Margin="0,0,6,6"
-                        Content="{Binding Label}" Command="{Binding SelectCommand}" />
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-
-          <!-- Couleur : huit teintes et un champ #RRGGBB. -->
-          <StackPanel Name="ColorSection" Spacing="10" IsVisible="{Binding ShowsColor}">
-            <ItemsControl Name="Palette" ItemsSource="{Binding Palette}">
+            <ItemsControl Name="BackgroundKinds" ItemsSource="{Binding Kinds}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                   <WrapPanel Orientation="Horizontal" />
                 </ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:SwatchItem">
-                  <Button Classes="swatch" Classes.selected="{Binding IsSelected}" Command="{Binding SelectCommand}"
-                          AutomationProperties.Name="{Binding Hex}">
-                    <Border Width="28" Height="28" CornerRadius="4" Background="{Binding Brush}" />
-                  </Button>
+                <DataTemplate x:DataType="vm:BackgroundKindItem">
+                  <Button Classes="choice" Classes.primary="{Binding IsSelected}" Margin="0,0,6,6"
+                          Content="{Binding Label}" Command="{Binding SelectCommand}" />
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <TextBox Name="HexBox" Width="140" HorizontalAlignment="Left" MaxLength="9"
-                     PlaceholderText="{x:Static t:Texts.AppearanceHexHint}"
-                     AutomationProperties.Name="{x:Static t:Texts.AppearanceHexName}"
-                     Text="{Binding ColorText}">
-              <TextBox.KeyBindings>
-                <KeyBinding Gesture="Enter" Command="{Binding ApplyColorTextCommand}" />
-              </TextBox.KeyBindings>
-            </TextBox>
-            <TextBlock Name="ColorError" Classes="error" TextWrapping="Wrap"
-                       Text="{Binding ColorError}" IsVisible="{Binding HasColorError}" />
-          </StackPanel>
 
-          <!-- Photo, GIF, vidéo : le sélecteur de fichier et le nom du fichier choisi. -->
-          <StackPanel Name="FileSection" Spacing="10" IsVisible="{Binding ShowsFile}">
-            <StackPanel Orientation="Horizontal" Spacing="12">
-              <Button Name="ChooseFile" Content="{x:Static t:Texts.AppearanceChooseFile}" Command="{Binding ChooseFileCommand}"
-                      IsEnabled="{Binding CanPickFile}" />
-              <TextBlock Name="FileName" Classes="lead" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="260"
-                         Classes.muted="{Binding !HasFileName}" Text="{Binding FileLabel}" ToolTip.Tip="{Binding FileName}" />
+            <!-- Couleur : huit teintes et un champ #RRGGBB. -->
+            <StackPanel Name="ColorSection" Spacing="10" IsVisible="{Binding ShowsColor}">
+              <ItemsControl Name="Palette" ItemsSource="{Binding Palette}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SwatchItem">
+                    <Button Classes="swatch" Classes.selected="{Binding IsSelected}" Command="{Binding SelectCommand}"
+                            AutomationProperties.Name="{Binding Hex}">
+                      <Border Width="28" Height="28" CornerRadius="4" Background="{Binding Brush}" />
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBox Name="HexBox" Width="140" HorizontalAlignment="Left" MaxLength="9"
+                       PlaceholderText="{x:Static t:Texts.AppearanceHexHint}"
+                       AutomationProperties.Name="{x:Static t:Texts.AppearanceHexName}"
+                       Text="{Binding ColorText}">
+                <TextBox.KeyBindings>
+                  <KeyBinding Gesture="Enter" Command="{Binding ApplyColorTextCommand}" />
+                </TextBox.KeyBindings>
+              </TextBox>
+              <TextBlock Name="ColorError" Classes="error" TextWrapping="Wrap"
+                         Text="{Binding ColorError}" IsVisible="{Binding HasColorError}" />
             </StackPanel>
-            <TextBlock Name="FileError" Classes="error" TextWrapping="Wrap"
-                       Text="{Binding FileError}" IsVisible="{Binding HasFileError}" />
-            <TextBlock Name="VideoAdvice" Classes="muted" TextWrapping="Wrap"
-                       Text="{x:Static t:Texts.AppearanceVideoAdvice}" IsVisible="{Binding ShowsVideoAdvice}" />
-          </StackPanel>
 
-          <TextBlock Name="BackgroundWarning" Classes="warning" TextWrapping="Wrap"
-                     Text="{Binding BackgroundWarning}" IsVisible="{Binding HasBackgroundWarning}" />
-
-          <!-- La garde de lisibilité regarde le fond : elle est rangée avec lui. -->
-          <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,24,0">
-              <TextBlock Classes="name" Text="{x:Static t:Texts.AppearanceLegibility}" />
-              <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.AppearanceLegibilityHelp}" />
+            <!-- Photo, GIF, vidéo : le sélecteur de fichier et le nom du fichier choisi. -->
+            <StackPanel Name="FileSection" Spacing="10" IsVisible="{Binding ShowsFile}">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Name="ChooseFile" Content="{x:Static t:Texts.AppearanceChooseFile}" Command="{Binding ChooseFileCommand}"
+                        IsEnabled="{Binding CanPickFile}" />
+                <TextBlock Name="FileName" Classes="lead" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="260"
+                           Classes.muted="{Binding !HasFileName}" Text="{Binding FileLabel}" ToolTip.Tip="{Binding FileName}" />
+              </StackPanel>
+              <TextBlock Name="FileError" Classes="error" TextWrapping="Wrap"
+                         Text="{Binding FileError}" IsVisible="{Binding HasFileError}" />
+              <TextBlock Name="VideoAdvice" Classes="muted" TextWrapping="Wrap"
+                         Text="{x:Static t:Texts.AppearanceVideoAdvice}" IsVisible="{Binding ShowsVideoAdvice}" />
             </StackPanel>
-            <ToggleSwitch Grid.Column="1" Name="LegibilitySwitch" OnContent="" OffContent="" VerticalAlignment="Center"
-                          AutomationProperties.Name="{x:Static t:Texts.AppearanceLegibility}"
-                          IsChecked="{Binding IsLegibilityOn}" />
-          </Grid>
-        </StackPanel>
-      </Border>
+
+            <TextBlock Name="BackgroundWarning" Classes="warning" TextWrapping="Wrap"
+                       Text="{Binding BackgroundWarning}" IsVisible="{Binding HasBackgroundWarning}" />
+
+            <!-- La garde de lisibilité regarde le fond : elle est rangée avec lui. -->
+            <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,24,0">
+                <TextBlock Classes="name" Text="{x:Static t:Texts.AppearanceLegibility}" />
+                <TextBlock Classes="muted" TextWrapping="Wrap" Text="{x:Static t:Texts.AppearanceLegibilityHelp}" />
+              </StackPanel>
+              <ToggleSwitch Grid.Column="1" Name="LegibilitySwitch" OnContent="" OffContent="" VerticalAlignment="Center"
+                            AutomationProperties.Name="{x:Static t:Texts.AppearanceLegibility}"
+                            IsChecked="{Binding IsLegibilityOn}" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- Verre : quatre préréglages, puis (dans le repli « Réglages fins ») les 16 curseurs et la forme du biseau. -->
+        <Border Name="GlassSection" Classes="panel" Padding="20" IsVisible="{Binding ShowsGlass}">
+          <StackPanel x:DataType="vm:GlassSectionViewModel" DataContext="{Binding Glass}" Spacing="14">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Classes="section" Text="{x:Static t:Texts.AppearanceGlass}" />
+              <TextBlock Grid.Column="1" Name="GlassCustom" Classes="muted" VerticalAlignment="Center"
+                         Text="{x:Static t:Texts.AppearanceGlassCustom}" IsVisible="{Binding IsCustom}" />
+            </Grid>
+
+            <ItemsControl Name="GlassPresets" ItemsSource="{Binding Presets}" AutomationProperties.Name="{x:Static t:Texts.AppearanceGlassPresets}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:GlassPresetItem">
+                  <Button Classes="choice" Classes.primary="{Binding IsSelected}" Margin="0,0,6,6"
+                          Content="{Binding Label}" Command="{Binding SelectCommand}"
+                          AutomationProperties.Name="{Binding Label}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Le repli : fermé par défaut. -->
+            <Button Name="GlassDetailsToggle" Classes="group" Command="{Binding ToggleDetailsCommand}"
+                    AutomationProperties.Name="{x:Static t:Texts.AppearanceGlassDetails}">
+              <Grid ColumnDefinitions="Auto,*">
+                <Panel Grid.Column="0" Width="12" Margin="0,0,8,0" VerticalAlignment="Center">
+                  <Path Data="M 1,0 L 5,4 L 1,8" Stretch="None" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round"
+                        Stroke="{DynamicResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        IsVisible="{Binding !ShowsDetails}" />
+                  <Path Data="M 0,1 L 4,5 L 8,1" Stretch="None" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round"
+                        Stroke="{DynamicResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        IsVisible="{Binding ShowsDetails}" />
+                </Panel>
+                <TextBlock Grid.Column="1" Classes="name" Text="{x:Static t:Texts.AppearanceGlassDetails}" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+
+            <StackPanel Name="GlassDetails" Spacing="16" IsVisible="{Binding ShowsDetails}">
+              <StackPanel Spacing="8">
+                <TextBlock Classes="muted" Text="{x:Static t:Texts.AppearanceGlassBevel}" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button Name="GlassBevelPill" Classes="choice" Classes.primary="{Binding IsPill}"
+                          Content="{x:Static t:Texts.AppearanceGlassBevelPill}" Command="{Binding SetPillCommand}"
+                          AutomationProperties.Name="{x:Static t:Texts.AppearanceGlassBevelPill}" />
+                  <Button Name="GlassBevelDome" Classes="choice" Classes.primary="{Binding IsDome}"
+                          Content="{x:Static t:Texts.AppearanceGlassBevelDome}" Command="{Binding SetDomeCommand}"
+                          AutomationProperties.Name="{x:Static t:Texts.AppearanceGlassBevelDome}" />
+                </StackPanel>
+              </StackPanel>
+
+              <ItemsControl Name="GlassGroups" ItemsSource="{Binding Groups}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:GlassGroup">
+                    <StackPanel Spacing="6" Margin="0,0,0,12">
+                      <TextBlock Classes="name" Text="{Binding Title}" />
+                      <ItemsControl ItemsSource="{Binding Sliders}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:GlassSliderItem">
+                            <Grid ColumnDefinitions="150,*,52" Height="32">
+                              <TextBlock Grid.Column="0" Classes="muted" Text="{Binding Label}" TextTrimming="CharacterEllipsis"
+                                         VerticalAlignment="Center" />
+                              <!-- Le curseur Fluent fait 50 px de haut, piste à 25 px : les marges négatives le recentrent dans la ligne de 32 px. -->
+                            <Slider Grid.Column="1" Minimum="{Binding Min}" Maximum="{Binding Max}" TickFrequency="{Binding Step}"
+                                      SmallChange="{Binding Step}" LargeChange="{Binding Step}" IsSnapToTickEnabled="True"
+                                      VerticalAlignment="Center" Margin="0,-9,8,-9"
+                                      AutomationProperties.Name="{Binding Label}" Value="{Binding Value}" />
+                              <TextBlock Grid.Column="2" Classes="number" TextAlignment="Right" VerticalAlignment="Center"
+                                         Text="{Binding ValueText}" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
     </Grid>
   </ScrollViewer>
 </UserControl>

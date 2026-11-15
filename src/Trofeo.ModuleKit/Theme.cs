@@ -57,6 +57,12 @@ public sealed record Theme(
     public float FeedScale { get => _feedScale ?? 1f; init => _feedScale = value; }
 
     /// <summary>
+    /// Vrai quand le service dessine lui-même la pastille de l'élément choisi (thème « Liquid Glass avancé »). Interne : il
+    /// n'entre pas dans l'API publique, les modules ne le voient pas.
+    /// </summary>
+    internal bool ServiceDrawsSelection { get; init; }
+
+    /// <summary>
     /// Agrandissement des caractères dessinés avec <see cref="Typeface"/> ; défaut 1. Il multiplie la taille de la police
     /// (voir <c>ModuleDrawing.Font</c>), jamais la mise en page : les modules choisissent leurs lignes d'après
     /// <c>TextScale</c>, qui reste inchangé. Une police qui dessine petit dans son carré (VT323) y gagne en lisibilité.

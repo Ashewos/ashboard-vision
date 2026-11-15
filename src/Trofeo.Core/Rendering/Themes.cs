@@ -65,6 +65,18 @@ public static class Themes
             new ThemeBackground(SKColor.Parse("#241A3D"), true));
     });
 
+    // Même palette, même police, mêmes écarts et même fond Aurore que Liquid Glass ; seul le verre (PanelKind.LiquidGlass) change,
+    // et le service y dessine lui-même la pastille de l'élément choisi.
+    private static readonly Lazy<ThemeDefinition> LiquidGlassAdvancedLazy = new(() =>
+    {
+        var glass = LiquidGlassLazy.Value;
+        return glass with
+        {
+            Theme = glass.Theme with { Id = "liquid-glass-avance", ServiceDrawsSelection = true },
+            Panel = new PanelLook(PanelKind.LiquidGlass) { Glass = GlassPresets.Find(GlassPresets.Clair) },
+        };
+    });
+
     private static readonly Lazy<ThemeDefinition> PixelLazy = new(() => new ThemeDefinition(
         new Theme(
             Id: "pixel",
@@ -97,7 +109,7 @@ public static class Themes
         new ThemeBackground(SKColor.Parse("#17142A"), true)));
 
     private static readonly Lazy<IReadOnlyList<ThemeDefinition>> AllLazy = new(() =>
-        new[] { ClassiqueLazy.Value, LiquidGlassLazy.Value, PixelLazy.Value });
+        new[] { ClassiqueLazy.Value, LiquidGlassLazy.Value, PixelLazy.Value, LiquidGlassAdvancedLazy.Value });
 
     /// <summary>Thème par défaut : fond sombre, accent turquoise, Barlow Semi Condensed. Même instance que <c>ClassiqueDefinition.Theme</c>.</summary>
     public static Theme Classique => ClassiqueLazy.Value.Theme;
@@ -108,7 +120,10 @@ public static class Themes
 
     public static ThemeDefinition Pixel => PixelLazy.Value;
 
-    /// <summary>Les trois thèmes : Classique, Liquid Glass, Pixel.</summary>
+    /// <summary>« Liquid Glass avancé » : le verre adapté de liquidglass, avec ses réglages et la pastille de l'élément choisi.</summary>
+    public static ThemeDefinition LiquidGlassAdvanced => LiquidGlassAdvancedLazy.Value;
+
+    /// <summary>Les quatre thèmes : Classique, Liquid Glass, Pixel, Liquid Glass avancé.</summary>
     public static IReadOnlyList<ThemeDefinition> All => AllLazy.Value;
 
     /// <summary>Thème par identifiant (casse ignorée) ; null si inconnu.</summary>

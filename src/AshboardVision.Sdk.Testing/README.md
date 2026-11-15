@@ -33,8 +33,8 @@ Elles ne vérifient pas non plus tout ton manifeste : elles n'en lisent que les 
 
 Ce paquet **n'est pas sur nuget.org**. C'est un fichier `.nupkg` joint à chaque version d'Ashboard Vision sur GitHub, et posé sur ton PC par l'installateur du logiciel, à côté de `AshboardVision.Sdk`. Tu l'ajoutes à ton projet de tests comme source locale NuGet.
 
-Il dépend du paquet `AshboardVision.Sdk` 1.1.0 et de `Microsoft.Extensions.TimeProvider.Testing` (le `FakeTimeProvider`). Il embarque `Trofeo.Core.dll`, qui lui fournit les thèmes et les polices du logiciel.
+Il dépend du paquet `AshboardVision.Sdk` 1.2.0 et de `Microsoft.Extensions.TimeProvider.Testing` (le `FakeTimeProvider`). Il embarque `Trofeo.Core.dll`, qui lui fournit les thèmes et les polices du logiciel.
 
 ## Licence
 
-GPL-3.0-or-later. Les polices embarquées sont sous licence OFL : leurs textes sont dans le dossier `licenses` du paquet.
+GPL-3.0-or-later. Les polices embarquées sont sous licence OFL : leurs textes sont dans le dossier `licenses` du paquet. Le paquet y porte aussi la mention MIT du verre de « Liquid Glass avancé », adapté de ybouane/liquidglass.

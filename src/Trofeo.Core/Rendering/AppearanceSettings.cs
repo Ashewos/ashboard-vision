@@ -15,9 +15,13 @@ namespace Trofeo.Core.Rendering;
 /// Le passage d'une vue à l'autre glisse (environ 300 ms, avec un flou de mouvement) : vrai par défaut ; faux, la nouvelle
 /// vue s'affiche d'un coup.
 /// </param>
+/// <param name="Glass">
+/// Le verre du thème « Liquid Glass avancé » (préréglage, ou valeurs personnalisées) ; <c>null</c> : Clair. Les autres thèmes
+/// l'ignorent.
+/// </param>
 public sealed record AppearanceSettings(
     string Theme = "classique", float? PanelOpacity = null, string? Font = null, BackgroundSettings? Background = null,
-    bool? Legibility = null, bool AnimateViewSwitch = true)
+    bool? Legibility = null, bool AnimateViewSwitch = true, GlassAppearance? Glass = null)
 {
     /// <summary>Aucun réglage : Classique tel quel.</summary>
     public static AppearanceSettings Default { get; } = new();

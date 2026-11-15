@@ -352,13 +352,29 @@ internal sealed class FakeHostProcess : IHostProcess
     }
 
     /// <summary>Peint l'image du tampon dans la section de l'instance (comme l'hôte) puis l'annonce. L'hôte doit avoir reçu <see cref="Open"/>.</summary>
-    public async Task SendFrameAsync(Open open, int buffer, SKColor color, bool animating = false)
+    public async Task SendFrameAsync(Open open, int buffer, SKColor color, bool animating = false, IReadOnlyList<SelectionRect>? selections = null)
     {
         PaintBuffer(open, buffer, color);
-        await SendAsync(new Frame(open.InstanceId, buffer, animating));
+        await SendAsync(new Frame(open.InstanceId, buffer, animating, selections));
     }
 
-    public void PaintBuffer(Open open, int buffer, SKColor color)
+    /// <summary>Comme <see cref="SendFrameAsync(Open, int, SKColor, bool, IReadOnlyList{SelectionRect}?)"/>, avec une image dessinée (BGRA prémultiplié, de la taille de la case).</summary>
+    public async Task SendFrameAsync(Open open, int buffer, SKBitmap image, IReadOnlyList<SelectionRect>? selections = null)
+    {
+        PaintBuffer(open, buffer, image);
+        await SendAsync(new Frame(open.InstanceId, buffer, false, selections));
+    }
+
+    /// <summary>Copie une image dans le tampon de la section de l'instance, comme le fait l'hôte avec sa surface.</summary>
+    public void PaintBuffer(Open open, int buffer, SKBitmap image)
+    {
+        Assert.Equal((open.Width, open.Height), (image.Width, image.Height));
+        var view = MappedView(open);
+        var bytes = view.Width * view.Height * 4;
+        Marshal.Copy(image.Bytes, 0, view.View + buffer * bytes, bytes);
+    }
+
+    private (IntPtr View, int Width, int Height) MappedView(Open open)
     {
         if (!_views.TryGetValue(open.InstanceId, out var view))
         {
@@ -366,6 +382,12 @@ internal sealed class FakeHostProcess : IHostProcess
             _views[open.InstanceId] = view;
         }
 
+        return view;
+    }
+
+    public void PaintBuffer(Open open, int buffer, SKColor color)
+    {
+        var view = MappedView(open);
         var bytes = view.Width * view.Height * 4;
         var premultiplied = color.Alpha == 255 ? color : new SKColor((byte)(color.Red * color.Alpha / 255), (byte)(color.Green * color.Alpha / 255), (byte)(color.Blue * color.Alpha / 255), color.Alpha);
         var pixels = new byte[bytes];
@@ -736,13 +758,16 @@ internal sealed class SupervisorRig : IAsyncDisposable
     }
 
     /// <summary>Dessine la case sur un bitmap transparent (la case occupe un rectangle décalé de 10 px) et le rend.</summary>
-    public SKBitmap Draw(RemoteModule module, int width = 96, int height = 48, int columns = 2, int rows = 1)
+    public SKBitmap Draw(RemoteModule module, int width = 96, int height = 48, int columns = 2, int rows = 1, ISelectionSink? sink = null)
     {
         var bitmap = new SKBitmap(width + 20, height + 20);
         using var canvas = new SKCanvas(bitmap);
         canvas.Clear(SKColors.Transparent);
         module.Render(canvas, new ModuleRenderContext(
-            SKRect.Create(10, 10, width, height), new GridSize(columns, rows), Trofeo.Core.Rendering.Themes.ClassiqueDefinition.Theme, 1f, Time.GetUtcNow()));
+            SKRect.Create(10, 10, width, height), new GridSize(columns, rows), Trofeo.Core.Rendering.Themes.ClassiqueDefinition.Theme, 1f, Time.GetUtcNow())
+        {
+            Selections = sink,
+        });
         return bitmap;
     }
 

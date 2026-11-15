@@ -141,6 +141,70 @@ public sealed class ProtocolTests
     }
 
     [Fact]
+    public async Task Frame_RoundTrip_WithAndWithoutSelections()
+    {
+        var with = new Frame(Instance, 1, false, [new SelectionRect(4.5f, 6f, 40f, 12.25f), new SelectionRect(0, 0, 96, 48)]);
+        var without = new Frame(Instance, 0, true);
+
+        var wire = await WireOf(with, without);
+        var text = Encoding.UTF8.GetString(wire);
+        Assert.Contains("\"selections\":[{\"x\":4.5,\"y\":6,\"width\":40,\"height\":12.25},{\"x\":0,\"y\":0,\"width\":96,\"height\":48}]", text);
+        Assert.Equal(1, text.Split("\"selections\"").Length - 1); // sans liste, la propriété n'est pas écrite
+
+        var read = await ReadAll(wire);
+        var roundWith = Assert.IsType<Frame>(read[0]);
+        Assert.Equal([new SelectionRect(4.5f, 6f, 40f, 12.25f), new SelectionRect(0, 0, 96, 48)], roundWith.Selections);
+        Assert.Equal((Instance, 1, false), (roundWith.InstanceId, roundWith.Buffer, roundWith.Animating));
+        var roundWithout = Assert.IsType<Frame>(read[1]);
+        Assert.Null(roundWithout.Selections);
+    }
+
+    [Fact]
+    public async Task Frame_FromAnOlderHost_ReadsWithoutSelections()
+    {
+        var read = await ReadAll(FrameOf($$"""{"type":"frame","instanceId":"{{Instance}}","buffer":1,"animating":true}"""));
+
+        var frame = Assert.IsType<Frame>(Assert.Single(read));
+        Assert.Null(frame.Selections);
+        Assert.True(frame.Animating);
+    }
+
+    /// <summary>Le <c>Frame</c> d'avant l'ajout : un service plus ancien lit un message neuf en ignorant la propriété qu'il ne connaît pas.</summary>
+    private sealed record OlderFrame(Guid InstanceId, int Buffer, bool Animating);
+
+    [Fact]
+    public async Task Frame_WithSelections_IsReadByAnOlderService()
+    {
+        var wire = await WireOf(new Frame(Instance, 1, true, [new SelectionRect(1, 2, 3, 4)]));
+
+        var older = JsonSerializer.Deserialize<OlderFrame>(wire.AsSpan(4), ProtocolJson.Options);
+
+        Assert.Equal(new OlderFrame(Instance, 1, true), older);
+    }
+
+    [Fact]
+    public async Task Read_FrameWithNaNSelection_ReadsButTheServiceIgnoresIt()
+    {
+        // Les réglages du protocole acceptent un nombre écrit en texte : « NaN » arrive donc jusqu'au service, qui l'écarte (RemoteModule.ValidateSelections).
+        var read = await ReadAll(FrameOf(
+            $$"""{"type":"frame","instanceId":"{{Instance}}","buffer":0,"animating":false,"selections":[{"x":"NaN","y":0,"width":10,"height":10},{"x":1,"y":2,"width":3,"height":4}]}"""));
+
+        var frame = Assert.IsType<Frame>(Assert.Single(read));
+        Assert.Equal(2, frame.Selections!.Count);
+        Assert.Equal([new SKRect(1, 2, 4, 6)], Trofeo.Extensions.Service.RemoteModule.ValidateSelections(frame.Selections, 96, 48));
+    }
+
+    [Theory]
+    [InlineData("""[{"x":1,"y":0,"width":10}]""")] // un champ manque
+    [InlineData("""[{"x":1,"y":0,"width":10,"height":"dix"}]""")] // un champ n'est pas un nombre
+    [InlineData("""{"x":1,"y":0,"width":10,"height":10}""")] // un objet à la place de la liste
+    public async Task Read_FrameWithMalformedSelections_IsRefused(string selections)
+    {
+        await Assert.ThrowsAsync<InvalidDataException>(() => ReadAll(FrameOf(
+            $$"""{"type":"frame","instanceId":"{{Instance}}","buffer":0,"animating":false,"selections":{{selections}}}""")));
+    }
+
+    [Fact]
     public async Task Wire_UsesCamelCaseNamesAndManifestPermissions()
     {
         var wire = await WireOf(

@@ -25,7 +25,7 @@ internal static class Program
           --at       facultatif : n'écrit que ces instants (en secondes, par exemple 0,2.5,4.1), en instant-<s>.png, pour regarder
         """;
 
-    // Les noms affichés des trois thèmes, dans l'ordre de l'image (le même que Themes.All).
+    // Les noms affichés des trois thèmes de l'image, dans l'ordre de Themes.All ; un thème absent de cette table n'y figure pas.
     private static readonly Dictionary<string, string> ThemeNames = new(StringComparer.Ordinal)
     {
         ["classique"] = "Classique",
@@ -128,7 +128,7 @@ internal static class Program
         using var scene = await PreviewScene.CreateAsync(longTexts: false).ConfigureAwait(false);
         using var composer = new FrameComposer();
         var themes = new List<HeroTheme>();
-        foreach (var definition in Themes.All)
+        foreach (var definition in Themes.All.Where(t => ThemeNames.ContainsKey(t.Theme.Id)))
         {
             var id = definition.Theme.Id;
             var theme = Trofeo.ThemePreview.Program.Resolve(new AppearanceSettings(id));

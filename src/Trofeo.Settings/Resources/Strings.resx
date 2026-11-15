@@ -329,6 +329,138 @@
     <value>Blocs nets et typo pixel.</value>
     <comment>Phrase de la carte Pixel.</comment>
   </data>
+  <data name="AppearanceThemeLiquidGlassAdvanced" xml:space="preserve">
+    <value>Liquid Glass avancé</value>
+    <comment>Nom du thème Liquid Glass avancé.</comment>
+  </data>
+  <data name="AppearanceThemeLiquidGlassAdvancedText" xml:space="preserve">
+    <value>Le verre d'iOS : le fond se déforme sur les bords, avec reflets et franges de couleur. Il demande plus au processeur, surtout avec un fond animé ou une vidéo.</value>
+    <comment>Phrase de la carte Liquid Glass avancé ; prévient de la consommation.</comment>
+  </data>
+  <data name="AppearanceGlass" xml:space="preserve">
+    <value>Verre</value>
+    <comment>Titre de la section des réglages du verre.</comment>
+  </data>
+  <data name="AppearanceGlassCustom" xml:space="preserve">
+    <value>Personnalisé</value>
+    <comment>Indication : les réglages du verre ne sont plus ceux d'un préréglage.</comment>
+  </data>
+  <data name="AppearanceGlassDetails" xml:space="preserve">
+    <value>Réglages fins</value>
+    <comment>Bouton qui ouvre ou replie les curseurs du verre.</comment>
+  </data>
+  <data name="AppearanceGlassPresets" xml:space="preserve">
+    <value>Préréglages du verre</value>
+    <comment>Nom accessible de la rangée des préréglages du verre.</comment>
+  </data>
+  <data name="AppearanceGlassPresetClair" xml:space="preserve">
+    <value>Clair</value>
+    <comment>Préréglage du verre : Clair.</comment>
+  </data>
+  <data name="AppearanceGlassPresetGivre" xml:space="preserve">
+    <value>Givré</value>
+    <comment>Préréglage du verre : Givré.</comment>
+  </data>
+  <data name="AppearanceGlassPresetPrisme" xml:space="preserve">
+    <value>Prisme</value>
+    <comment>Préréglage du verre : Prisme.</comment>
+  </data>
+  <data name="AppearanceGlassPresetDiscret" xml:space="preserve">
+    <value>Discret</value>
+    <comment>Préréglage du verre : Discret.</comment>
+  </data>
+  <data name="AppearanceGlassGroupGlass" xml:space="preserve">
+    <value>Verre</value>
+    <comment>Groupe de curseurs : la forme du verre.</comment>
+  </data>
+  <data name="AppearanceGlassGroupLight" xml:space="preserve">
+    <value>Lumière</value>
+    <comment>Groupe de curseurs : reflets et franges.</comment>
+  </data>
+  <data name="AppearanceGlassGroupColor" xml:space="preserve">
+    <value>Couleur</value>
+    <comment>Groupe de curseurs : opacité, saturation, teinte, luminosité.</comment>
+  </data>
+  <data name="AppearanceGlassGroupShadow" xml:space="preserve">
+    <value>Ombre</value>
+    <comment>Groupe de curseurs : l'ombre portée.</comment>
+  </data>
+  <data name="AppearanceGlassBlur" xml:space="preserve">
+    <value>Flou</value>
+    <comment>Curseur du verre : flou.</comment>
+  </data>
+  <data name="AppearanceGlassRefraction" xml:space="preserve">
+    <value>Réfraction</value>
+    <comment>Curseur du verre : réfraction.</comment>
+  </data>
+  <data name="AppearanceGlassBevelDepth" xml:space="preserve">
+    <value>Profondeur du biseau</value>
+    <comment>Curseur du verre : profondeur du biseau.</comment>
+  </data>
+  <data name="AppearanceGlassCornerRadius" xml:space="preserve">
+    <value>Rayon des angles</value>
+    <comment>Curseur du verre : rayon des angles.</comment>
+  </data>
+  <data name="AppearanceGlassDistortion" xml:space="preserve">
+    <value>Micro-déformation</value>
+    <comment>Curseur du verre : micro-déformation.</comment>
+  </data>
+  <data name="AppearanceGlassEdgeHighlight" xml:space="preserve">
+    <value>Lumière des bords</value>
+    <comment>Curseur du verre : lumière des bords.</comment>
+  </data>
+  <data name="AppearanceGlassSpecular" xml:space="preserve">
+    <value>Reflets</value>
+    <comment>Curseur du verre : reflets.</comment>
+  </data>
+  <data name="AppearanceGlassFresnel" xml:space="preserve">
+    <value>Fresnel</value>
+    <comment>Curseur du verre : effet Fresnel.</comment>
+  </data>
+  <data name="AppearanceGlassChromatic" xml:space="preserve">
+    <value>Franges de couleur</value>
+    <comment>Curseur du verre : franges de couleur (aberration chromatique).</comment>
+  </data>
+  <data name="AppearanceGlassOpacity" xml:space="preserve">
+    <value>Opacité du verre</value>
+    <comment>Curseur du verre : opacité.</comment>
+  </data>
+  <data name="AppearanceGlassSaturation" xml:space="preserve">
+    <value>Saturation</value>
+    <comment>Curseur du verre : saturation.</comment>
+  </data>
+  <data name="AppearanceGlassTint" xml:space="preserve">
+    <value>Teinte froide</value>
+    <comment>Curseur du verre : teinte froide.</comment>
+  </data>
+  <data name="AppearanceGlassBrightness" xml:space="preserve">
+    <value>Luminosité</value>
+    <comment>Curseur du verre : luminosité.</comment>
+  </data>
+  <data name="AppearanceGlassShadowOpacity" xml:space="preserve">
+    <value>Opacité de l'ombre</value>
+    <comment>Curseur du verre : opacité de l'ombre.</comment>
+  </data>
+  <data name="AppearanceGlassShadowSpread" xml:space="preserve">
+    <value>Étendue de l'ombre</value>
+    <comment>Curseur du verre : étendue de l'ombre.</comment>
+  </data>
+  <data name="AppearanceGlassShadowOffset" xml:space="preserve">
+    <value>Décalage de l'ombre</value>
+    <comment>Curseur du verre : décalage vertical de l'ombre.</comment>
+  </data>
+  <data name="AppearanceGlassBevel" xml:space="preserve">
+    <value>Forme du biseau</value>
+    <comment>Titre du choix de la forme du biseau.</comment>
+  </data>
+  <data name="AppearanceGlassBevelPill" xml:space="preserve">
+    <value>Pilule</value>
+    <comment>Forme du biseau : pilule.</comment>
+  </data>
+  <data name="AppearanceGlassBevelDome" xml:space="preserve">
+    <value>Dôme</value>
+    <comment>Forme du biseau : dôme.</comment>
+  </data>
   <data name="AppearanceOpacity" xml:space="preserve">
     <value>Transparence</value>
     <comment>Titre de la section du curseur de transparence des panneaux.</comment>

@@ -20,7 +20,7 @@ internal static class Program
                                       -fond-clair.png, et liquid-glass-gif-1..4.png (4 images d'un GIF fabriqué, à 83 ms)
           --theme <id> [--opacity x] [--font <famille>] [--background color:#hex|image:<chemin>|gif:<chemin>]
                        [--text-size small|normal|large] --png <fichier>
-                                      une image à la demande (thèmes : classique, liquid-glass, pixel)
+                                      une image à la demande (thèmes : classique, liquid-glass, pixel, liquid-glass-avance)
           --thumbnails <dossier> [--width n]
                                       une vignette par thème (<thème>.png, 480 px de large par défaut) : celles de
                                       src/Trofeo.Settings/Assets/Themes, pour les cartes de l'onglet Personnalisation
@@ -28,6 +28,9 @@ internal static class Program
                                       une capture par module, découpée dans l'écran complet (Classique par défaut) :
                                       claude-code.png, codex.png, monitoring.png, en-ecoute.png, heure-meteo.png, reseau.png
                                       (celles du README, dans docs/images/modules)
+          --glass <dossier>           les aperçus du thème Liquid Glass avancé : avance-<préréglage>-<fond>.png (clair, givre,
+                                      prisme, discret ; fonds aurore, clair, sombre) et avance-clair-rayures.png (fond à
+                                      rayures, pour juger la réfraction) : 13 images
           --check                     rend chaque thème à chaque taille de texte avec des textes longs et vérifie que rien
                                       n'est peint hors des panneaux ; affiche OK, ou une ligne par faute (code de sortie 1)
         """;
@@ -59,6 +62,11 @@ internal static class Program
             if (args.Length is 2 or 4 && args[0] == "--modules")
             {
                 return await WriteModuleShotsAsync(args).ConfigureAwait(false);
+            }
+
+            if (args.Length == 2 && args[0] == "--glass")
+            {
+                return await WriteGlassAsync(args[1]).ConfigureAwait(false);
             }
 
             if (args[0] == "--theme")
@@ -135,6 +143,132 @@ internal static class Program
         var file = Path.Combine(folder, name);
         RenderTo(file, scene, composer, settings, size);
         Console.WriteLine("Aperçu écrit : " + file);
+    }
+
+    // --- Les aperçus du thème « Liquid Glass avancé » ---
+
+    /// <summary>
+    /// Quatre préréglages sur trois fonds (aurore, clair, sombre), plus Clair sur un fond à rayures : 13 images. Le
+    /// <see cref="FrameComposer"/> est celui du mode synchrone : le verre est calculé pendant <c>Compose</c>, donc l'image
+    /// écrite montre bien le verre de liquidglass et non le verre simple de repli.
+    /// </summary>
+    private static async Task<int> WriteGlassAsync(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        using var scene = await PreviewScene.CreateAsync(longTexts: false).ConfigureAwait(false);
+        using var composer = new FrameComposer();
+        var temp = Path.Combine(Path.GetTempPath(), $"trofeo-verre-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(temp);
+        try
+        {
+            var backgrounds = new (string Name, BackgroundSettings? Settings)[]
+            {
+                ("aurore", null),
+                ("clair", ImageBackground(temp, "clair", PaintLightBackdrop)),
+                ("sombre", ImageBackground(temp, "sombre", PaintDarkBackdrop)),
+            };
+
+            foreach (var preset in GlassPresets.Ids)
+            {
+                foreach (var (name, background) in backgrounds)
+                {
+                    Write(folder, $"avance-{preset}-{name}.png", scene, composer,
+                        new AppearanceSettings(Themes.LiquidGlassAdvanced.Theme.Id, Background: background, Glass: new GlassAppearance(preset)), TextSize.Normal);
+                }
+            }
+
+            Write(folder, "avance-clair-rayures.png", scene, composer,
+                new AppearanceSettings(Themes.LiquidGlassAdvanced.Theme.Id, Background: ImageBackground(temp, "rayures", PaintStripes),
+                    Glass: new GlassAppearance(GlassPresets.Clair)), TextSize.Normal);
+            return 0;
+        }
+        finally
+        {
+            Directory.Delete(temp, recursive: true);
+        }
+    }
+
+    private static BackgroundSettings ImageBackground(string folder, string name, Action<SKCanvas> paint)
+    {
+        var file = Path.Combine(folder, name + ".png");
+        using var bitmap = new SKBitmap(GridGeometry.Width, GridGeometry.Height);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            paint(canvas);
+        }
+
+        SavePng(bitmap, file);
+        return new BackgroundSettings(BackgroundKind.Image, Path: file);
+    }
+
+    /// <summary>Une image claire : un dégradé du blanc au jaune pâle, avec quelques formes pastel.</summary>
+    private static void PaintLightBackdrop(SKCanvas canvas)
+    {
+        using (var gradient = new SKPaint { IsAntialias = true })
+        {
+            gradient.Shader = SKShader.CreateLinearGradient(
+                new SKPoint(0, 0), new SKPoint(GridGeometry.Width, GridGeometry.Height),
+                [SKColors.White, new SKColor(0xFF, 0xF3, 0xB8)], null, SKShaderTileMode.Clamp);
+            canvas.DrawRect(0, 0, GridGeometry.Width, GridGeometry.Height, gradient);
+        }
+
+        using var shape = new SKPaint { IsAntialias = true };
+        var shapes = new (float X, float Y, float R, uint Color)[]
+        {
+            (260, 120, 150, 0xFFBFD7FF), (700, 350, 120, 0xFFFFC9D6), (1150, 90, 130, 0xFFC4F0D2),
+            (1500, 330, 170, 0xFFD9C8FF), (1800, 110, 90, 0xFFFFD9A8),
+        };
+        foreach (var (x, y, r, color) in shapes)
+        {
+            shape.Color = new SKColor(color);
+            canvas.DrawCircle(x, y, r, shape);
+        }
+    }
+
+    /// <summary>Une image sombre et contrastée : un dégradé presque noir, des disques vifs et un anneau clair.</summary>
+    private static void PaintDarkBackdrop(SKCanvas canvas)
+    {
+        using (var gradient = new SKPaint { IsAntialias = true })
+        {
+            gradient.Shader = SKShader.CreateLinearGradient(
+                new SKPoint(0, 0), new SKPoint(GridGeometry.Width, 0),
+                [new SKColor(0x05, 0x06, 0x12), new SKColor(0x14, 0x0B, 0x2A)], null, SKShaderTileMode.Clamp);
+            canvas.DrawRect(0, 0, GridGeometry.Width, GridGeometry.Height, gradient);
+        }
+
+        using var shape = new SKPaint { IsAntialias = true };
+        var shapes = new (float X, float Y, float R, uint Color)[]
+        {
+            (200, 300, 140, 0xFFFF2E88), (650, 100, 110, 0xFF14E0C8), (1100, 380, 160, 0xFFFFB300),
+            (1450, 120, 130, 0xFF3D7BFF), (1780, 330, 110, 0xFF9B5CFF),
+        };
+        foreach (var (x, y, r, color) in shapes)
+        {
+            shape.Color = new SKColor(color);
+            canvas.DrawCircle(x, y, r, shape);
+        }
+
+        shape.Style = SKPaintStyle.Stroke;
+        shape.StrokeWidth = 14;
+        shape.Color = new SKColor(0xF2, 0xF4, 0xFF);
+        canvas.DrawCircle(960, 231, 190, shape);
+    }
+
+    /// <summary>Des rayures verticales noires et blanches de 24 px, coupées par une diagonale : la réfraction les plie sur les bords du verre.</summary>
+    private static void PaintStripes(SKCanvas canvas)
+    {
+        canvas.Clear(SKColors.White);
+        using var dark = new SKPaint { Color = new SKColor(0x10, 0x14, 0x28), IsAntialias = false };
+        for (var x = 0; x < GridGeometry.Width; x += 48)
+        {
+            canvas.DrawRect(x, 0, 24, GridGeometry.Height, dark);
+        }
+
+        using var diagonal = new SKPaint { Color = new SKColor(0xE5, 0x39, 0x35), IsAntialias = true, StrokeWidth = 10, Style = SKPaintStyle.Stroke };
+        for (var x = -GridGeometry.Height; x < GridGeometry.Width; x += 240)
+        {
+            canvas.DrawLine(x, GridGeometry.Height, x + GridGeometry.Height, 0, diagonal);
+        }
     }
 
     // --- Les vignettes des thèmes ---

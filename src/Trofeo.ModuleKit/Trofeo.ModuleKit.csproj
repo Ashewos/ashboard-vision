@@ -15,6 +15,15 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Trofeo.Core.Tests" />
+    <InternalsVisibleTo Include="Trofeo.Core" />
+    <InternalsVisibleTo Include="Trofeo.Extensions" />
+    <InternalsVisibleTo Include="Trofeo.ModuleHost" />
+    <InternalsVisibleTo Include="AshboardVision.Sdk.Testing" />
+    <InternalsVisibleTo Include="Trofeo.Modules.Agents" />
+    <InternalsVisibleTo Include="Trofeo.Extensions.Tests" />
+    <InternalsVisibleTo Include="Trofeo.ModuleHost.Tests" />
+    <InternalsVisibleTo Include="AshboardVision.Sdk.Tests" />
+    <InternalsVisibleTo Include="Trofeo.Modules.Agents.Tests" />
   </ItemGroup>
 
 </Project>

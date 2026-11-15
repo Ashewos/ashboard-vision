@@ -45,7 +45,8 @@ public sealed class AppearanceTabViewTests : IDisposable
         var document = new LayoutDocument(_store, _link);
         document.Load();
         var model = new MainViewModel(_link, document, new EditorPreferences(FirstRunDone: true), picker, ["Arial", "Verdana"]);
-        _window = new MainWindow { DataContext = model };
+        // Assez haute pour que tout l'onglet soit à l'écran : avec la quatrième carte de thème, le curseur et l'interrupteur de la colonne de gauche passent sous 900 px.
+        _window = new MainWindow { DataContext = model, Width = 1440, Height = 1200 };
         _window.Show();
         model.SelectedTab = model.AppearanceTab;
         Dispatcher.UIThread.RunJobs();
@@ -83,8 +84,8 @@ public sealed class AppearanceTabViewTests : IDisposable
 
         var images = Named<ItemsControl>("ThemeCards").GetVisualDescendants().OfType<Image>().ToList();
 
-        Assert.Equal(3, images.Count);
-        Assert.All(images, image => Assert.NotNull(image.Source));   // les trois PNG de Assets/Themes sont dans l'assembly
+        Assert.Equal(4, images.Count);
+        Assert.All(images, image => Assert.NotNull(image.Source));   // les quatre PNG de Assets/Themes sont dans l'assembly
     }
 
     [AvaloniaFact]
@@ -92,14 +93,14 @@ public sealed class AppearanceTabViewTests : IDisposable
     {
         var (model, document) = Open();
         var cards = Find<Button>().Where(b => b.Classes.Contains("card")).ToList();
-        Assert.Equal(3, cards.Count);
+        Assert.Equal(4, cards.Count);
 
-        Click(cards[2]);
+        Click(cards[3]);
 
         await WaitUntil(() => _link.ReloadCount == 1);
         Assert.Equal("pixel", document.Current.Appearance!.Theme);
-        await WaitUntil(() => Find<Button>().Where(b => b.Classes.Contains("card")).ElementAt(2).Classes.Contains("selected"));
-        Assert.True(model.AppearanceTab.Themes[2].IsSelected);
+        await WaitUntil(() => Find<Button>().Where(b => b.Classes.Contains("card")).ElementAt(3).Classes.Contains("selected"));
+        Assert.True(model.AppearanceTab.Themes[3].IsSelected);
     }
 
     [AvaloniaFact]

@@ -53,12 +53,13 @@ public class ThemesTests
     }
 
     [Fact]
-    public void All_ListsThreeThemesInOrder()
+    public void All_ListsFourThemesInOrder()
     {
-        Assert.Equal(new[] { "classique", "liquid-glass", "pixel" }, Themes.All.Select(t => t.Theme.Id));
+        Assert.Equal(new[] { "classique", "liquid-glass", "pixel", "liquid-glass-avance" }, Themes.All.Select(t => t.Theme.Id));
         Assert.Same(Themes.ClassiqueDefinition, Themes.All[0]);
         Assert.Same(Themes.LiquidGlass, Themes.All[1]);
         Assert.Same(Themes.Pixel, Themes.All[2]);
+        Assert.Same(Themes.LiquidGlassAdvanced, Themes.All[3]);
     }
 
     public static TheoryData<string, string, string, float, int, int, ThemeShape, string, string, float> MockupValues => new()

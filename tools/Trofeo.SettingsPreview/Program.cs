@@ -246,6 +246,31 @@ internal static class Program
             layout: Base with { Appearance = new AppearanceSettings("pixel", Font: "Consolas") },
             systemFonts: fonts);
 
+        // Le thème « Liquid Glass avancé » : la section Verre repliée, ouverte sur Clair, puis personnalisée (dôme, curseurs bougés).
+        // Les deux images « ouvertes » sont hautes (1700 px) pour montrer toute la section sans défiler.
+        var advanced = Base with { Appearance = new AppearanceSettings("liquid-glass-avance") };
+        var custom = Base with
+        {
+            Appearance = new AppearanceSettings("liquid-glass-avance", Glass: new GlassAppearance(GlassPresets.Custom,
+                GlassPresets.Find(GlassPresets.Clair)! with { Blur = 0.45f, Refraction = 1.1f, ChromaticAberration = 0.18f, Bevel = GlassBevel.Dome, ShadowOffsetY = -4f })),
+        };
+        Render(folder, scratch, "apparence-verre-ferme.png", 1440, 900, jpeg, Connected, (_, model) => Open(model), layout: advanced);
+        Render(folder, scratch, "apparence-verre.png", 1440, 1700, jpeg, Connected, (_, model) =>
+        {
+            Open(model);
+            model.AppearanceTab.Glass.ShowsDetails = true;
+        }, layout: advanced);
+        Render(folder, scratch, "apparence-verre-personnalise.png", 1440, 1700, jpeg, Connected, (_, model) =>
+        {
+            Open(model);
+            model.AppearanceTab.Glass.ShowsDetails = true;
+        }, layout: custom);
+        Render(folder, scratch, "apparence-verre-1200.png", 1200, 1650, jpeg, Connected, (_, model) =>
+        {
+            Open(model);
+            model.AppearanceTab.Glass.ShowsDetails = true;
+        }, layout: custom);
+
         // Un refus du service : la ligne Amber sous la bande, ici dans l'onglet Personnalisation.
         Render(folder, scratch, "personnalisation-message-du-service.png", 1440, 900, jpeg, Connected, (_, model) =>
         {

@@ -57,16 +57,16 @@ public sealed class AppearanceTabTests : IDisposable
     // ---- Thème ----
 
     [Fact]
-    public void Themes_AreThreeCards_WithTheirSentence()
+    public void Themes_AreFourCards_WithTheirSentence()
     {
         var tab = Open();
 
-        Assert.Equal(["Classique", "Liquid Glass", "Pixel"], tab.Themes.Select(t => t.Name));
+        Assert.Equal(["Classique", "Liquid Glass", "Liquid Glass avancé", "Pixel"], tab.Themes.Select(t => t.Name));
         Assert.Equal(
-            ["Panneaux mats, typo de tableau de bord.", "Verre dépoli sur un fond de halos.", "Blocs nets et typo pixel."],
+            ["Panneaux mats, typo de tableau de bord.", "Verre dépoli sur un fond de halos.", Texts.AppearanceThemeLiquidGlassAdvancedText, "Blocs nets et typo pixel."],
             tab.Themes.Select(t => t.Description));
-        Assert.Equal(["classique", "liquid-glass", "pixel"], tab.Themes.Select(t => t.Id));
-        Assert.Equal([true, false, false], tab.Themes.Select(t => t.IsSelected));
+        Assert.Equal(["classique", "liquid-glass", "liquid-glass-avance", "pixel"], tab.Themes.Select(t => t.Id));
+        Assert.Equal([true, false, false, false], tab.Themes.Select(t => t.IsSelected));
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class AppearanceTabTests : IDisposable
         Assert.Same(before.Shortcuts, _document.Current.Shortcuts);
         Assert.Equal(before.Rotation, _document.Current.Rotation);
         Assert.Equal(1, _link.ReloadCount);
-        Assert.Equal([false, false, true], tab.Themes.Select(t => t.IsSelected));
+        Assert.Equal([false, false, false, true], tab.Themes.Select(t => t.IsSelected));
         Assert.True(_session.CanUndo);
     }
 

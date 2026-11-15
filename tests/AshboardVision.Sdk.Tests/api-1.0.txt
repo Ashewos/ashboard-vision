@@ -222,6 +222,7 @@
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDrawing :: method public static void DrawActionMessage(SkiaSharp.SKCanvas canvas, SkiaSharp.SKRect area, Trofeo.ModuleKit.Theme theme, float textScale, string message)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDrawing :: method public static void DrawBar(SkiaSharp.SKCanvas canvas, SkiaSharp.SKRect rect, float fraction, SkiaSharp.SKColor fill, SkiaSharp.SKColor track)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDrawing :: method public static void DrawBar(SkiaSharp.SKCanvas canvas, SkiaSharp.SKRect rect, float fraction, SkiaSharp.SKColor fill, Trofeo.ModuleKit.Theme theme)
+[Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDrawing :: method public static void DrawSelection(SkiaSharp.SKCanvas canvas, SkiaSharp.SKRect rect, Trofeo.ModuleKit.ModuleRenderContext ctx)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDrawing :: method public static void DrawText(SkiaSharp.SKCanvas canvas, string text, float x, float baseline, SkiaSharp.SKTextAlign align, SkiaSharp.SKFont font, SkiaSharp.SKPaint paint)
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleDrawing :: type public static class
 [Trofeo.ModuleKit] Trofeo.ModuleKit.ModuleHealth :: field public const Trofeo.ModuleKit.ModuleHealth NotConfigured = 0

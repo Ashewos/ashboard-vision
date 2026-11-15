@@ -22,6 +22,11 @@ public partial class AppearanceTabView : UserControl
         OpacitySlider.AddHandler(Thumb.DragCompletedEvent, OnOpacityReleased, RoutingStrategies.Bubble, handledEventsToo: true);
         OpacitySlider.AddHandler(KeyUpEvent, OnOpacityReleased, RoutingStrategies.Bubble, handledEventsToo: true);
 
+        // Les curseurs du verre : même règle que la transparence, un seul enregistrement au lâcher (un lâcher sans brouillon n'écrit rien).
+        GlassSection.AddHandler(PointerReleasedEvent, OnGlassReleased, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        GlassSection.AddHandler(Thumb.DragCompletedEvent, OnGlassReleased, RoutingStrategies.Bubble, handledEventsToo: true);
+        GlassSection.AddHandler(KeyUpEvent, OnGlassReleased, RoutingStrategies.Bubble, handledEventsToo: true);
+
         // La liste des polices : les flèches (et la frappe) ne font que déplacer la sélection ; la police ne s'enregistre qu'au
         // clic (ou au toucher) sur une ligne, ou à Entrée. Sinon chaque flèche réécrirait le fichier et rechargerait le service.
         FontList.AddHandler(PointerReleasedEvent, OnFontClicked, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
@@ -54,6 +59,9 @@ public partial class AppearanceTabView : UserControl
         if (e.Key == Key.Enter && DataContext is AppearanceTabViewModel model && FontList.SelectedItem is FontItem item)
             _ = model.SetFontAsync(item);
     }
+
+    private void OnGlassReleased(object? sender, RoutedEventArgs e) =>
+        _ = (DataContext as AppearanceTabViewModel)?.Glass.CommitAsync();
 
     private void OnOpacityReleased(object? sender, RoutedEventArgs e) =>
         _ = (DataContext as AppearanceTabViewModel)?.CommitOpacityAsync();

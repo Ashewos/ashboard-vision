@@ -40,7 +40,7 @@ internal static class CheckCommand
     /// <summary>Le rythme des demandes de dessin pendant la mesure.</summary>
     private static readonly TimeSpan DrawInterval = TimeSpan.FromMilliseconds(250);
 
-    private static readonly string[] ThemeIds = ["classique", "liquid-glass", "pixel"];
+    private static readonly string[] ThemeIds = ["classique", "liquid-glass", "pixel", "liquid-glass-avance"];
 
     public static async Task<int> RunAsync(DirectoryInfo? directory, DirectoryInfo? output, TimeSpan measure, TextWriter writer, CancellationToken ct)
     {

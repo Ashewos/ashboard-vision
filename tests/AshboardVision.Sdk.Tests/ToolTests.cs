@@ -63,18 +63,18 @@ public sealed class ToolTests(PackedTool packed) : IDisposable
         Assert.True(run.ExitCode == 0, run.Output);
         Assert.Contains("✔ Manifeste : " + module.Id + " 1.0.0", run.Output, StringComparison.Ordinal);
         Assert.Contains("✔ Démarrage enfermé : première image en", run.Output, StringComparison.Ordinal);
-        Assert.Contains("✔ Images : 9 images PNG écrites", run.Output, StringComparison.Ordinal);
+        Assert.Contains("✔ Images : 12 images PNG écrites", run.Output, StringComparison.Ordinal);
         Assert.Contains("✔ Sans la permission « capteurs » : le module continue de tourner.", run.Output, StringComparison.Ordinal);
         Assert.Contains("✔ Dessin :", run.Output, StringComparison.Ordinal);
         Assert.Contains("Processeur :", run.Output, StringComparison.Ordinal);
         Assert.Contains("Mémoire :", run.Output, StringComparison.Ordinal);
         Assert.Contains("✔ Arrêt propre", run.Output, StringComparison.Ordinal);
-        Assert.EndsWith("Compatible avec Ashboard Vision (SDK 1.1)." + Environment.NewLine, run.Output, StringComparison.Ordinal);
+        Assert.EndsWith("Compatible avec Ashboard Vision (SDK 1.2)." + Environment.NewLine, run.Output, StringComparison.Ordinal);
 
         // Une image par taille (minSize, compact, idéal) et par thème, de la taille que la case aurait sur l'écran, avec le dessin du module dedans.
         var files = Directory.GetFiles(output, "*.png").Select(Path.GetFileName).Order().ToArray();
-        Assert.Equal(9, files.Length);
-        foreach (var theme in new[] { "classique", "liquid-glass", "pixel" })
+        Assert.Equal(12, files.Length);
+        foreach (var theme in new[] { "classique", "liquid-glass", "pixel", "liquid-glass-avance" })
         {
             foreach (var (columns, rows) in new[] { (2, 1), (3, 1), (4, 2) })
             {
@@ -93,6 +93,29 @@ public sealed class ToolTests(PackedTool packed) : IDisposable
     }
 
     [WindowsToolFact]
+    public void Check_ProducesAdvancedThemeImages()
+    {
+        var module = NewModule();
+        var output = NewFolder();
+
+        var run = packed.Run("check", module.Folder, "--out", output, "--mesure", "2");
+
+        Assert.True(run.ExitCode == 0, run.Output);
+
+        // « Liquid Glass avancé » a, comme les trois autres thèmes, une image par taille, de la taille de la case sur l'écran.
+        var advanced = Themes.Find("liquid-glass-avance")!;
+        foreach (var (columns, rows) in new[] { (2, 1), (3, 1), (4, 2) })
+        {
+            var path = Path.Combine(output, $"{module.Id}_liquid-glass-avance_{columns}x{rows}.png");
+            Assert.True(File.Exists(path), "Image manquante : " + path);
+            using var image = SKBitmap.Decode(path);
+            var expected = GridGeometry.ModuleRect(0, 0, columns, rows, advanced.Grid);
+            Assert.Equal((expected.Width, expected.Height), (image.Width, image.Height));
+            Assert.Equal(new SKColor(255, 0, 0), image.GetPixel(image.Width / 8, image.Height / 2)); // le dessin du module est dedans
+        }
+    }
+
+    [WindowsToolFact]
     public void Check_DeliversEachDeclaredShortcut()
     {
         var module = NewModule(
@@ -103,7 +126,7 @@ public sealed class ToolTests(PackedTool packed) : IDisposable
 
         Assert.True(run.ExitCode == 0, run.Output);
         Assert.Contains("✔ Raccourcis : 2 livrés au module (refresh, colour), sans erreur.", run.Output, StringComparison.Ordinal);
-        Assert.Contains("Compatible avec Ashboard Vision (SDK 1.1).", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Compatible avec Ashboard Vision (SDK 1.2).", run.Output, StringComparison.Ordinal);
         Assert.False(Directory.Exists(ContainerFolder(module.Id)), "Le conteneur d'essai n'a pas été supprimé.");
     }
 
