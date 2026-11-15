@@ -11,6 +11,8 @@ public sealed record GlassAppearance(string Preset = GlassPresets.Clair, GlassSe
     /// <summary>
     /// Les réglages du verre. Un préréglage connu donne ses valeurs (<see cref="Values"/> est ignoré) ; « personnalise » donne
     /// <see cref="Values"/> bornées (repli : Clair), ou Clair sans valeurs ; un préréglage inconnu donne Clair, avec un avertissement.
+    /// Les valeurs lues dans <c>layout.json</c> sont déjà bornées à la lecture, avec un avertissement (<c>LayoutJson</c>) : la borne
+    /// d'ici ne sert qu'aux valeurs construites dans le code.
     /// </summary>
     public GlassSettings Resolve(Action<string>? warn = null)
     {

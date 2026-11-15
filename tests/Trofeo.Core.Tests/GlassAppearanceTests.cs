@@ -215,24 +215,96 @@ public class GlassAppearanceTests
     }
 
     [Fact]
-    public void Json_GlassValueNaN_IsClampedOnResolve()
+    public void Json_GlassValueOutOfRangeOrNotFinite_IsClampedAtRead_WithOneWarning()
     {
+        // Décision R11 : aucune valeur non finie ni hors bornes n'entre dans AppearanceSettings.
         var warnings = new List<string>();
 
         var result = Parse(
-            """{"Theme":"liquid-glass-avance","Glass":{"Preset":"personnalise","Values":{"Blur":"NaN","Refraction":9,"CornerRadius":80}}}""", warnings);
+            """{"Theme":"liquid-glass-avance","Font":"Manrope","Glass":{"Preset":"personnalise","Values":{"Blur":"NaN","Fresnel":"Infinity","Tint":"-Infinity","Refraction":9,"CornerRadius":80}}}""",
+            warnings);
 
-        var def = Resolve(result.Layout!.Appearance!);
+        var appearance = result.Layout!.Appearance!;
+        Assert.Equal("liquid-glass-avance", appearance.Theme); // le reste de l'apparence est gardé
+        Assert.Equal("Manrope", appearance.Font);
+        Assert.Equal([LayoutJson.GlassClamped], warnings);
+        Assert.Equal([LayoutJson.GlassClamped], result.Warnings);
+        var values = appearance.Glass!.Values!;
+        Assert.Equal(GlassPresets.Custom, appearance.Glass.Preset);
+        Assert.Equal(Clair.Blur, values.Blur); // NaN : la valeur de Clair
+        Assert.Equal(Clair.Fresnel, values.Fresnel); // infini : la valeur de Clair
+        Assert.Equal(Clair.Tint, values.Tint);
+        Assert.Equal(2f, values.Refraction);
+        Assert.Equal(49f, values.CornerRadius);
+        Assert.Equal(values, values.Clamped(Clair));
 
-        Assert.Empty(warnings);
-        Assert.Equal(Clair.Blur, def.Panel.Glass!.Blur); // NaN : la valeur de Clair
-        Assert.Equal(2f, def.Panel.Glass.Refraction);
-        Assert.Equal(49f, def.Panel.Glass.CornerRadius);
+        var def = Resolve(appearance);
+        Assert.Equal(values, def.Panel.Glass);
         Assert.Equal(49f, def.Theme.CornerRadius);
     }
 
     [Fact]
-    public void Json_GlassWithNaN_CanBeWrittenAgain()
+    public void Json_GlassValuesInRange_AreKeptWithoutWarning()
+    {
+        var warnings = new List<string>();
+
+        var result = Parse(
+            """{"Theme":"liquid-glass-avance","Glass":{"Preset":"personnalise","Values":{"Blur":0.4,"Refraction":1.5,"Bevel":"Dome"}}}""", warnings);
+
+        Assert.Empty(warnings);
+        Assert.Equal(new GlassSettings(Blur: 0.4f, Refraction: 1.5f, Bevel: GlassBevel.Dome), result.Layout!.Appearance!.Glass!.Values);
+    }
+
+    [Fact]
+    public void Json_GlassValuesOfAKnownPreset_AreClampedToo()
+    {
+        // Les valeurs d'un préréglage connu sont ignorées au dessin, mais elles partent quand même vers les hôtes des modules.
+        var warnings = new List<string>();
+
+        var result = Parse("""{"Theme":"liquid-glass-avance","Glass":{"Preset":"givre","Values":{"Blur":"NaN"}}}""", warnings);
+
+        Assert.Equal([LayoutJson.GlassClamped], warnings);
+        Assert.Equal("givre", result.Layout!.Appearance!.Glass!.Preset);
+        Assert.Equal(Clair.Blur, result.Layout.Appearance.Glass.Values!.Blur);
+    }
+
+    [Theory]
+    [InlineData("1e999")]
+    [InlineData("-1e999")]
+    [InlineData("\"NaN\"")]
+    [InlineData("\"Infinity\"")]
+    public void Json_PanelOpacityNotFinite_BecomesNull_WithWarning(string opacity)
+    {
+        var warnings = new List<string>();
+
+        var result = Parse($$"""{"Theme":"pixel","PanelOpacity":{{opacity}},"Font":"VT323"}""", warnings);
+
+        var appearance = result.Layout!.Appearance!;
+        Assert.Equal("pixel", appearance.Theme);
+        Assert.Equal("VT323", appearance.Font);
+        Assert.Null(appearance.PanelOpacity);
+        Assert.Equal([LayoutJson.PanelOpacityInvalid], warnings);
+    }
+
+    [Fact]
+    public void Json_NotFiniteValues_AreAlsoCleanedOnTheLegacyPath()
+    {
+        // Une propriété en double à la racine fait passer par le chemin d'avant (sans lecture indulgente) : même borne.
+        var warnings = new List<string>();
+
+        var result = LayoutJson.Parse(
+            """{"Rotation":0,"Rotation":180,"Views":[{"Id":"7e4b2a91-c3d5-4f08-a6b1-92d0e5f13c48","Name":"Vue 1","Placements":[]}],"Appearance":{"Theme":"liquid-glass-avance","PanelOpacity":1e999,"Glass":{"Preset":"personnalise","Values":{"Blur":"NaN"}}}}""",
+            warnings.Add);
+
+        var appearance = result.Layout!.Appearance!;
+        Assert.Null(appearance.PanelOpacity);
+        Assert.Equal(Clair.Blur, appearance.Glass!.Values!.Blur);
+        Assert.Contains(LayoutJson.GlassClamped, warnings);
+        Assert.Contains(LayoutJson.PanelOpacityInvalid, warnings);
+    }
+
+    [Fact]
+    public void Json_GlassWithNaN_CanBeWrittenAgain_AndIsReadBackFinite()
     {
         var layout = DashboardLayout.Default with
         {
@@ -242,7 +314,28 @@ public class GlassAppearanceTests
 
         var back = LayoutJson.Parse(JsonSerializer.Serialize(layout, LayoutJson.Options), null);
 
-        Assert.True(float.IsNaN(back.Layout!.Appearance!.Glass!.Values!.Blur));
+        Assert.Equal(Clair.Blur, back.Layout!.Appearance!.Glass!.Values!.Blur);
+        Assert.Equal([LayoutJson.GlassClamped], back.Warnings);
+    }
+
+    [Fact]
+    public void Transfer_Import_ClampsTheGlassToo()
+    {
+        var layout = DashboardLayout.Default with
+        {
+            Appearance = new AppearanceSettings(
+                "liquid-glass-avance", float.PositiveInfinity,
+                Glass: new GlassAppearance(GlassPresets.Custom, new GlassSettings(Blur: float.NaN, ZRadius: 500f))),
+        };
+
+        var back = LayoutTransfer.Import(LayoutTransfer.Export(layout));
+
+        var appearance = back.Layout!.Appearance!;
+        Assert.Null(appearance.PanelOpacity);
+        Assert.Equal(Clair.Blur, appearance.Glass!.Values!.Blur);
+        Assert.Equal(100f, appearance.Glass.Values.ZRadius);
+        Assert.Contains(LayoutJson.GlassClamped, back.Warnings);
+        Assert.Contains(LayoutJson.PanelOpacityInvalid, back.Warnings);
     }
 
     [Fact]
