@@ -70,7 +70,7 @@ internal sealed class LiquidGlassLayers : IDisposable
     /// copiée (le fond peut être libéré pendant le calcul) ; la copie et sa version floutée sont libérées dès que plus aucun
     /// calcul ne s'en sert.
     /// </summary>
-    private sealed class Scene(IBackground background, int version, bool sync)
+    private sealed class Scene(IBackground background, int version, bool sync, Action<int> track)
     {
         private readonly object _lock = new();
         private SKImage? _owned;
@@ -90,7 +90,12 @@ internal sealed class LiquidGlassLayers : IDisposable
             lock (_lock)
             {
                 _users++;
-                return _owned ??= Copy(current);
+                if (_owned is null)
+                {
+                    _owned = Copy(current);
+                    track(1);
+                }
+                return _owned;
             }
         }
 
@@ -101,8 +106,12 @@ internal sealed class LiquidGlassLayers : IDisposable
             {
                 if (--_users > 0) return;
 
-                _owned?.Dispose();
-                _owned = null;
+                if (_owned is not null)
+                {
+                    _owned.Dispose();
+                    _owned = null;
+                    track(-1);
+                }
                 DropBlurLocked();
             }
         }
@@ -121,6 +130,7 @@ internal sealed class LiquidGlassLayers : IDisposable
 
                 DropBlurLocked();
                 _blurred = Blur(sharp, sigma);
+                track(1);
                 _sigma = sigma;
                 return _blurred;
             }
@@ -134,8 +144,11 @@ internal sealed class LiquidGlassLayers : IDisposable
 
         private void DropBlurLocked()
         {
-            _blurred?.Dispose();
+            if (_blurred is null) return;
+
+            _blurred.Dispose();
             _blurred = null;
+            track(-1);
         }
 
         private static SKImage Copy(SKImage image)
@@ -176,6 +189,8 @@ internal sealed class LiquidGlassLayers : IDisposable
     private SKColor _panel;
     private int _computations;
     private int _shadowComputations;
+    private int _liveImages;
+    private int _workerFailures;
 
     /// <param name="inBackground">Vrai : les couches d'un fond fixe se calculent sur un fil à part.</param>
     /// <param name="report">Reçoit, sur le fil de l'affichage, l'échec d'un calcul fait sur le fil à part.</param>
@@ -195,6 +210,24 @@ internal sealed class LiquidGlassLayers : IDisposable
 
     /// <summary>Combien de couches d'ombre ont été calculées (tests).</summary>
     internal int ShadowComputations => Volatile.Read(ref _shadowComputations);
+
+    /// <summary>
+    /// Combien d'images sont en vie : couches de verre et d'ombre (posées ou en attente de l'être), copies du fond et copies
+    /// floutées. Retombe à 0 après <see cref="Dispose"/>, une fois le fil à part arrêté (tests).
+    /// </summary>
+    internal int LiveImages => Volatile.Read(ref _liveImages);
+
+    /// <summary>Combien de calculs ont échoué sur le fil à part (tests).</summary>
+    internal int WorkerFailures => Volatile.Read(ref _workerFailures);
+
+    /// <summary>Vrai tant que le fil à part a un calcul en cours ou en attente (tests).</summary>
+    internal bool IsWorking
+    {
+        get
+        {
+            lock (_queueGate) return _draining || _queue.Count > 0;
+        }
+    }
 
     /// <summary>Combien de cases gardent une couche en mémoire (tests).</summary>
     internal int LiveLayers => _slots.Values.Count(s => s.Glass is not null || s.Shadow is not null);
@@ -216,7 +249,7 @@ internal sealed class LiquidGlassLayers : IDisposable
         if (_scene is null || !ReferenceEquals(_scene.Background, background) || _scene.Version != background.Version)
         {
             DropSyncBlur();
-            _scene = new Scene(background, background.Version, sync: !_inBackground || background.IsAnimated);
+            _scene = new Scene(background, background.Version, sync: !_inBackground || background.IsAnimated, Track);
         }
 
         foreach (var slot in _slots.Values) slot.Used = false;
@@ -372,13 +405,13 @@ internal sealed class LiquidGlassLayers : IDisposable
             if (needShadow)
             {
                 var shadow = ComputeShadow(shadowKey, s);
-                slot.Shadow?.Image?.Dispose();
+                Drop(slot.Shadow);
                 slot.Shadow = shadow;
             }
             if (needGlass)
             {
                 var glass = ComputeGlass(glassKey, scene, background.Current);
-                slot.Glass?.Image.Dispose();
+                Drop(slot.Glass);
                 slot.Glass = glass;
             }
             return slot;
@@ -408,6 +441,7 @@ internal sealed class LiquidGlassLayers : IDisposable
         {
             var blurred = scene.Blurred(sharp, LiquidGlassEffect.BlurSigma(key.Settings.Blur));
             var image = _effect.RenderGlass(sharp, blurred, SKPoint.Empty, key.Rect, key.Settings);
+            Track(1);
             try
             {
                 float luminance = MeasureLuminance(sharp, image, key.Rect);
@@ -417,6 +451,7 @@ internal sealed class LiquidGlassLayers : IDisposable
             catch
             {
                 image.Dispose();
+                Track(-1);
                 throw;
             }
         }
@@ -427,6 +462,7 @@ internal sealed class LiquidGlassLayers : IDisposable
         lock (_effectGate)
         {
             var image = _effect.RenderShadow(key.Rect, settings, out var area);
+            if (image is not null) Track(1);
             Interlocked.Increment(ref _shadowComputations);
             return new ShadowLayer(key, image, area);
         }
@@ -513,6 +549,10 @@ internal sealed class LiquidGlassLayers : IDisposable
                     Discard(result);
                 }
             }
+            catch (Exception)
+            {
+                Interlocked.Increment(ref _workerFailures); // rien ne doit arrêter le fil : les calculs suivants se font
+            }
             finally
             {
                 job.Scene.Release();
@@ -552,8 +592,9 @@ internal sealed class LiquidGlassLayers : IDisposable
         }
         catch (Exception ex)
         {
-            glass?.Image.Dispose();
-            shadow?.Image?.Dispose();
+            Interlocked.Increment(ref _workerFailures);
+            Drop(glass);
+            Drop(shadow);
             return new Result(job, null, null, ex);
         }
     }
@@ -588,9 +629,9 @@ internal sealed class LiquidGlassLayers : IDisposable
                 if (job.Superseded && result.Glass is { } interim && slot.Job is { GlassKey: { } wanted }
                     && ReferenceEquals(wanted.Background, interim.Key.Background) && wanted.Version == interim.Key.Version)
                 {
-                    slot.Glass?.Image.Dispose();
+                    Drop(slot.Glass);
                     slot.Glass = interim;
-                    result.Shadow?.Image?.Dispose();
+                    Drop(result.Shadow);
                 }
                 else
                 {
@@ -609,15 +650,33 @@ internal sealed class LiquidGlassLayers : IDisposable
             slot.Job = null;
             if (result.Shadow is { } shadow)
             {
-                slot.Shadow?.Image?.Dispose();
+                Drop(slot.Shadow);
                 slot.Shadow = shadow;
             }
             if (result.Glass is { } glass)
             {
-                slot.Glass?.Image.Dispose();
+                Drop(slot.Glass);
                 slot.Glass = glass;
             }
         }
+    }
+
+    private void Track(int change) => Interlocked.Add(ref _liveImages, change);
+
+    private void Drop(GlassLayer? layer)
+    {
+        if (layer is null) return;
+
+        layer.Image.Dispose();
+        Track(-1);
+    }
+
+    private void Drop(ShadowLayer? layer)
+    {
+        if (layer?.Image is not { } image) return;
+
+        image.Dispose();
+        Track(-1);
     }
 
     private static void Cancel(Slot slot)
@@ -628,18 +687,18 @@ internal sealed class LiquidGlassLayers : IDisposable
         slot.Job = null;
     }
 
-    private static void Free(Slot slot)
+    private void Free(Slot slot)
     {
         Cancel(slot);
-        slot.Glass?.Image.Dispose();
-        slot.Shadow?.Image?.Dispose();
+        Drop(slot.Glass);
+        Drop(slot.Shadow);
         slot.Glass = null;
         slot.Shadow = null;
     }
 
-    private static void Discard(Result result)
+    private void Discard(Result result)
     {
-        result.Glass?.Image.Dispose();
-        result.Shadow?.Image?.Dispose();
+        Drop(result.Glass);
+        Drop(result.Shadow);
     }
 }

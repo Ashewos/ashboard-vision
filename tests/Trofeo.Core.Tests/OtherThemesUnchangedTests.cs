@@ -14,6 +14,18 @@ namespace Trofeo.Core.Tests;
 /// </summary>
 public class OtherThemesUnchangedTests
 {
+    /// <summary>
+    /// Les empreintes ont été relevées sous Windows x64. Ailleurs (Linux), un arrondi différent de Skia changerait l'empreinte
+    /// sans que le rendu ait bougé à l'œil : le test y est ignoré, pas en échec.
+    /// </summary>
+    private sealed class WindowsFactAttribute : FactAttribute
+    {
+        public WindowsFactAttribute()
+        {
+            if (!OperatingSystem.IsWindows()) Skip = "Empreintes relevées sous Windows x64 seulement.";
+        }
+    }
+
     private static readonly DateTimeOffset Now = new(2026, 11, 14, 12, 0, 0, TimeSpan.Zero);
 
     /// <summary>Les empreintes de référence, par thème et par scène.</summary>
@@ -93,7 +105,7 @@ public class OtherThemesUnchangedTests
         return result;
     }
 
-    [Fact]
+    [WindowsFact]
     public void OtherThemes_AreUnchanged()
     {
         var actual = new SortedDictionary<string, string>();

@@ -66,6 +66,17 @@ internal static class PanelPainter
             theme.Panel.Kind == PanelKind.Glass ? GlassSheenLuminance : 0f);
     }
 
+    /// <summary>
+    /// Le rayon des angles du panneau sur <paramref name="rect"/>. Pour « Liquid Glass avancé », c'est celui du verre
+    /// (<see cref="GlassSettings.CornerRadius"/>), borné comme dans l'effet à la moitié du plus petit côté : le rognage du
+    /// module, la teinte et le panneau d'erreur suivent ainsi la forme du verre, même si le thème n'est pas passé par
+    /// <see cref="AppearanceResolver"/> (qui recopie ce rayon dans <c>Theme.CornerRadius</c>). Les autres thèmes : le leur, tel quel.
+    /// </summary>
+    public static float CornerRadius(ThemeDefinition theme, SKRect rect) =>
+        theme.Panel is { Kind: PanelKind.LiquidGlass, Glass: { } glass }
+            ? Math.Max(0f, Math.Min(glass.CornerRadius, Math.Min(rect.Width, rect.Height) / 2f))
+            : theme.Theme.CornerRadius;
+
     /// <summary>Le rognage d'un module : le contour du panneau (arrondi, ou angles vifs en Pixel).</summary>
     public static void ClipToPanel(SKCanvas canvas, SKRect rect, ThemeDefinition theme)
     {
@@ -75,7 +86,7 @@ internal static class PanelPainter
             return;
         }
 
-        using var clip = new SKRoundRect(rect, theme.Theme.CornerRadius);
+        using var clip = new SKRoundRect(rect, CornerRadius(theme, rect));
         canvas.ClipRoundRect(clip, SKClipOperation.Intersect, true);
     }
 
@@ -167,7 +178,7 @@ internal static class PanelPainter
             return;
         }
 
-        float radius = Math.Min(def.Panel.Glass?.CornerRadius ?? def.Theme.CornerRadius, Math.Min(rect.Width, rect.Height) / 2f);
+        float radius = Math.Min(CornerRadius(def, rect), Math.Min(rect.Width, rect.Height) / 2f);
         var inner = rect;
         inner.Inflate(-0.5f, -0.5f);
         if (inner.Width <= 0f || inner.Height <= 0f)

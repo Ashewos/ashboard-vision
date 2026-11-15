@@ -627,32 +627,124 @@ public class FrameComposerTests
         Assert.Equal(2, composer.GlassComputations);
     }
 
+    /// <summary>Attend l'arrêt du fil à part, puis vérifie qu'il n'a rien laissé : aucune image en vie, aucun calcul en échec.</summary>
+    private static void AssertNothingLeft(LiquidGlassLayers layers)
+    {
+        Assert.True(SpinWait.SpinUntil(() => !layers.IsWorking, TimeSpan.FromSeconds(30)), "le fil à part ne s'arrête pas");
+        Assert.Equal(0, layers.WorkerFailures);
+        Assert.Equal(0, layers.LiveImages);
+        Assert.Equal(0, layers.LiveLayers);
+    }
+
     [Fact]
-    public void BackgroundMode_DisposedWhileComputing_DoesNotThrow()
+    public void BackgroundMode_DisposedWhileComputing_LeavesNothingAndDoesNotFail()
     {
         var placements = DashboardLayout.Default.Views[0].Placements;
         for (int i = 0; i < 5; i++)
         {
-            var background = new AuroraBackground();
+            var background = new FixedImageBackground(GlassTesting.Detailed());
             var composer = new FrameComposer(backgroundGlass: true);
-            composer.Compose(placements, GlassTesting.NoModules, GlassTesting.Advanced(), background, GlassTesting.T0).Dispose();
+            composer.Compose(placements, GlassTesting.NoModules, GlassTesting.Advanced(GlassPresets.Givre), background, GlassTesting.T0).Dispose();
+            var layers = composer.Glass!;
+            Assert.True(layers.IsWorking); // cinq cases viennent de partir : le fil à part est en plein calcul
+            Assert.True(layers.LiveImages > 0); // au moins la copie du fond
 
             // Comme le service : le compositeur d'abord, puis le fond, sans attendre le fil à part.
             composer.Dispose();
             background.Dispose();
+
+            AssertNothingLeft(layers);
         }
     }
 
     [Fact]
     public void BackgroundMode_ThemeLeftWhileComputing_DropsTheLateLayers()
     {
-        var placements = GlassTesting.TwoCases();
-        using var background = new AuroraBackground();
+        var placements = DashboardLayout.Default.Views[0].Placements;
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
         using var composer = new FrameComposer(backgroundGlass: true);
 
-        composer.Compose(placements, GlassTesting.NoModules, GlassTesting.Advanced(), background, GlassTesting.T0).Dispose();
+        composer.Compose(placements, GlassTesting.NoModules, GlassTesting.Advanced(GlassPresets.Givre), background, GlassTesting.T0).Dispose();
+        var layers = composer.Glass!;
+        Assert.True(layers.IsWorking);
+
         composer.Compose(placements, GlassTesting.NoModules, Themes.LiquidGlass, background, GlassTesting.T0).Dispose();
 
+        Assert.Null(composer.Glass);
         Assert.Equal(0, composer.GlassLayers);
+        AssertNothingLeft(layers); // la couche finie après le départ du thème a bien été libérée
+    }
+
+    [Fact]
+    public void BackgroundMode_AfterTheLayersArrive_OnlyTheLayersStayAlive()
+    {
+        var placements = GlassTesting.TwoCases();
+        using var background = new FixedImageBackground(GlassTesting.Detailed());
+        using var composer = new FrameComposer(backgroundGlass: true);
+
+        composer.Compose(placements, GlassTesting.NoModules, GlassTesting.Advanced(GlassPresets.Givre), background, GlassTesting.T0).Dispose();
+        var layers = composer.Glass!;
+        Assert.True(SpinWait.SpinUntil(() => !layers.IsWorking, TimeSpan.FromSeconds(30)));
+        composer.Compose(placements, GlassTesting.NoModules, GlassTesting.Advanced(GlassPresets.Givre), background, GlassTesting.T0).Dispose();
+
+        // Deux verres et deux ombres : la copie du fond et son flou sont partis avec le dernier calcul.
+        Assert.Equal(4, layers.LiveImages);
+        Assert.Equal(0, layers.WorkerFailures);
+    }
+
+    /// <summary>Distance signée au rectangle arrondi (négative dedans), au centre du pixel.</summary>
+    private static double RoundRectDistance(SKRectI rect, double radius, int x, int y)
+    {
+        double px = Math.Abs(x + 0.5 - (rect.Left + rect.Right) / 2.0) - rect.Width / 2.0 + radius;
+        double py = Math.Abs(y + 0.5 - (rect.Top + rect.Bottom) / 2.0) - rect.Height / 2.0 + radius;
+        double outside = Math.Sqrt(Math.Max(px, 0) * Math.Max(px, 0) + Math.Max(py, 0) * Math.Max(py, 0));
+        return outside + Math.Min(Math.Max(px, py), 0) - radius;
+    }
+
+    [Fact]
+    public void AdvancedTheme_GlassRadius_ClipsTheModuleAndTheErrorPanel()
+    {
+        // Un thème qui n'est pas passé par AppearanceResolver : le rayon des cases est resté à 30, celui du verre est à 49.
+        var def = GlassTesting.Advanced(change: s => s with { CornerRadius = 49f, ShadowOpacity = 1f, ShadowSpread = 20f });
+        Assert.Equal(30f, def.Theme.CornerRadius);
+        var id = Guid.NewGuid();
+        var placements = new[] { Place(id, 2, 1, 4, 2) };
+        var rect = GridGeometry.ModuleRect(2, 1, 4, 2, def.Grid);
+        var filling = FillModule(SKColors.Lime);
+        var junk = new FakeModule((canvas, ctx) =>
+        {
+            canvas.DrawRect(ctx.Bounds, new SKPaint { Color = SKColors.Lime });
+            throw new InvalidOperationException("raté");
+        });
+        using var background = new ColorBackground(new SKColor(200, 200, 200));
+        using var composer = new FrameComposer(new RateLimitedErrorLog(TimeProvider.System, _ => { }));
+
+        using var filled = composer.Compose(placements, new Dictionary<Guid, IModule> { [id] = filling }, def, background, DateTimeOffset.UnixEpoch);
+        using var broken = composer.Compose(placements, new Dictionary<Guid, IModule> { [id] = junk }, def, background, DateTimeOffset.UnixEpoch);
+        using var clean = composer.Compose(placements, new Dictionary<Guid, IModule>(), def, background, DateTimeOffset.UnixEpoch);
+
+        // Hors du verre arrondi à 49 (à plus d'un pixel du bord), rien ne vient du module ni du panneau d'erreur : on y voit
+        // le fond et l'ombre de la case, comme sans module.
+        int slivers = 0, shadowed = 0;
+        for (int y = rect.Top; y < rect.Bottom; y++)
+            for (int x = rect.Left; x < rect.Right; x++)
+            {
+                if (RoundRectDistance(rect, 49, x, y) <= 1.0) continue;
+
+                Assert.Equal(clean.GetPixel(x, y), filled.GetPixel(x, y));
+                Assert.Equal(clean.GetPixel(x, y), broken.GetPixel(x, y));
+                if (RoundRectDistance(rect, 30, x, y) < -1.0)
+                {
+                    slivers++; // dans l'ancien rognage à 30, hors du verre à 49
+                    if (clean.GetPixel(x, y) != new SKColor(200, 200, 200)) shadowed++;
+                }
+            }
+
+        Assert.True(slivers > 100, $"pixels entre les deux rayons : {slivers}");
+        Assert.Equal(slivers, shadowed); // l'ombre de la case y est, et le panneau d'erreur ne l'a pas effacée
+
+        // Dedans, le module remplit bien la case.
+        Assert.Equal(SKColors.Lime, filled.GetPixel((rect.Left + rect.Right) / 2, (rect.Top + rect.Bottom) / 2));
+        Assert.Equal(SKColors.Lime, filled.GetPixel(rect.Left + 20, rect.Top + 20)); // dans le coin, à l'intérieur du rayon de 49
     }
 }

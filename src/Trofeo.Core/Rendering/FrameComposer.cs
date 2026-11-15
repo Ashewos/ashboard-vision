@@ -39,6 +39,9 @@ public sealed class FrameComposer : IDisposable
     /// </summary>
     public event Action? GlassReady;
 
+    /// <summary>Les couches de « Liquid Glass avancé » en service ; <c>null</c> hors de ce thème (tests).</summary>
+    internal LiquidGlassLayers? Glass => _glass;
+
     /// <summary>Combien de couches de verre ont été calculées depuis que le thème « Liquid Glass avancé » est composé (tests).</summary>
     internal int GlassComputations => _glass?.Computations ?? 0;
 
@@ -187,8 +190,13 @@ public sealed class FrameComposer : IDisposable
                 return;
             }
 
-            // Le verre de la case se calcule encore sur le fil à part : en attendant, le verre simple de Liquid Glass.
-            theme = theme with { Panel = Themes.LiquidGlass.Panel };
+            // Le verre de la case se calcule encore sur le fil à part : en attendant, le verre simple de Liquid Glass, à la
+            // forme du verre attendu.
+            theme = theme with
+            {
+                Panel = Themes.LiquidGlass.Panel,
+                Theme = theme.Theme with { CornerRadius = PanelPainter.CornerRadius(theme, rect) },
+            };
         }
 
         var blurred = theme.Panel.Kind == PanelKind.Glass ? _backdrop.Get(background, theme.Panel) : null;
