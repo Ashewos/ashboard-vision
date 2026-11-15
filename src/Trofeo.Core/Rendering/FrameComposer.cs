@@ -10,6 +10,20 @@ public sealed class FrameComposer : IDisposable
 {
     private const string ErrorText = "Erreur du module";
 
+    /// <summary>Combien d'éléments choisis une case peut noter par image ; les suivants sont ignorés.</summary>
+    internal const int MaxSelections = 64;
+
+    /// <summary>Les éléments choisis qu'un module note pendant son dessin, relatifs à sa case.</summary>
+    private sealed class SelectionList : ISelectionSink
+    {
+        public List<SKRect> Rects { get; } = [];
+
+        public void Add(SKRect caseLocalRect)
+        {
+            if (Rects.Count < MaxSelections) Rects.Add(caseLocalRect);
+        }
+    }
+
     private readonly RateLimitedErrorLog _errors;
     private readonly Backdrop _backdrop = new();
     private readonly PanelAlphaSmoother _alpha = new(); // opacité des panneaux sur un fond animé, par rectangle
@@ -48,6 +62,9 @@ public sealed class FrameComposer : IDisposable
     /// <summary>Combien de couches d'ombre ont été calculées (tests).</summary>
     internal int GlassShadowComputations => _glass?.ShadowComputations ?? 0;
 
+    /// <summary>Combien de pastilles de verre ont été calculées (tests).</summary>
+    internal int GlassPillComputations => _glass?.PillComputations ?? 0;
+
     /// <summary>Combien de cases gardent une couche de verre ou d'ombre en mémoire (tests).</summary>
     internal int GlassLayers => _glass?.LiveLayers ?? 0;
 
@@ -77,7 +94,9 @@ public sealed class FrameComposer : IDisposable
     /// <summary>
     /// Peint le fond, puis pour chaque case de <paramref name="placements"/> (les cases d'une vue) son panneau (mat, verre ou pixel, selon le thème) et le rendu du
     /// module, rogné à la forme du panneau (1920 × 462). En « Liquid Glass avancé », les ombres de toutes les cases passent
-    /// d'abord, puis chaque case pose son verre, sa teinte et son module.
+    /// d'abord, puis chaque case pose son verre, sa teinte et son module. Quand le thème confie au service la pastille de
+    /// l'élément choisi (<c>Theme.ServiceDrawsSelection</c>), le dessin du module est enregistré, ses pastilles sont peintes,
+    /// puis il est rejoué par-dessus : les pastilles passent sous tout ce que le module dessine.
     /// </summary>
     public SKBitmap Compose(
         IReadOnlyList<ModulePlacement> placements,
@@ -90,6 +109,7 @@ public sealed class FrameComposer : IDisposable
         try
         {
             using var canvas = new SKCanvas(bitmap);
+            using var pixels = bitmap.PeekPixels();
             DrawBackground(canvas, background);
 
             LiquidGlassLayers? glass = null;
@@ -111,6 +131,12 @@ public sealed class FrameComposer : IDisposable
 
                 if (!modules.TryGetValue(placement.InstanceId, out var module))
                 {
+                    continue;
+                }
+
+                if (theme.Theme.ServiceDrawsSelection)
+                {
+                    RenderOverSelections(canvas, pixels, placement, module, rect, theme, background, now);
                     continue;
                 }
 
@@ -148,6 +174,89 @@ public sealed class FrameComposer : IDisposable
         _backdrop.Dispose();
         _legacyBackground?.Dispose();
         _legacyBackground = null;
+    }
+
+    /// <summary>
+    /// Le dessin d'un module quand le service dessine la pastille de ses éléments choisis : le module dessine dans un
+    /// enregistrement, où <see cref="ModuleDrawing.DrawSelection"/> ne fait que noter des rectangles ; les pastilles sont peintes
+    /// sur la case, puis l'enregistrement est rejoué par-dessus, rogné à la forme du panneau. Un module qui échoue n'a ni
+    /// pastille ni dessin : le panneau d'erreur.
+    /// </summary>
+    private void RenderOverSelections(
+        SKCanvas canvas, SKPixmap pixels, ModulePlacement placement, IModule module, SKRect rect, ThemeDefinition theme,
+        IBackground background, DateTimeOffset now)
+    {
+        var context = ModulePlace.Context(placement, theme, now);
+        var selections = new SelectionList();
+        SKPicture picture;
+        try
+        {
+            using var recorder = new SKPictureRecorder();
+            var recording = recorder.BeginRecording(SKRect.Create(GridGeometry.Width, GridGeometry.Height));
+            module.Render(recording, context with { Selections = selections });
+            picture = recorder.EndRecording();
+        }
+        catch (Exception ex)
+        {
+            _errors.Report($"Échec du rendu du module {placement.TypeId} ({placement.InstanceId}) : {ex}");
+            PaintErrorPanel(canvas, rect, theme, background, now);
+            return;
+        }
+
+        using (picture)
+        {
+            int saved = canvas.Save();
+            try
+            {
+                foreach (var local in selections.Rects)
+                {
+                    var pill = local;
+                    pill.Offset(context.Bounds.Left, context.Bounds.Top);
+                    PaintSelection(canvas, pixels, rect, pill, theme);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Une pastille qui échoue ne prive pas le module de son dessin.
+                _errors.Report($"Échec du dessin de la pastille du module {placement.TypeId} ({placement.InstanceId}) : {ex}");
+            }
+            finally
+            {
+                canvas.RestoreToCount(saved);
+            }
+
+            saved = canvas.Save();
+            try
+            {
+                PanelPainter.ClipToPanel(canvas, rect, theme); // même forme que le panneau
+                canvas.DrawPicture(picture);
+            }
+            finally
+            {
+                canvas.RestoreToCount(saved);
+            }
+        }
+    }
+
+    /// <summary>
+    /// La pastille d'un élément choisi, coupée à la case : en verre avec « Liquid Glass avancé », sinon (le drapeau sur un thème
+    /// d'un autre panneau) la pilule claire de <see cref="ModuleDrawing.DrawLocalSelection"/>.
+    /// </summary>
+    private void PaintSelection(SKCanvas canvas, SKPixmap pixels, SKRect rect, SKRect pill, ThemeDefinition theme)
+    {
+        if (theme.Panel.Kind == PanelKind.LiquidGlass && _glass is { } glass)
+        {
+            glass.PaintPill(canvas, pixels, rect, pill);
+            return;
+        }
+
+        var shape = SKRect.Intersect(pill, rect);
+        if (!(shape.Width >= 4f) || !(shape.Height >= 4f)) return;
+
+        canvas.Save();
+        PanelPainter.ClipToPanel(canvas, rect, theme);
+        ModuleDrawing.DrawLocalSelection(canvas, shape, theme.Theme);
+        canvas.Restore();
     }
 
     private LiquidGlassLayers NewGlassLayers()

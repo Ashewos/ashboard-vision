@@ -11,6 +11,8 @@ namespace Trofeo.Core.Rendering;
 /// par-dessus, à chaque image.</item>
 /// <item>L'ombre ne dépend que du rectangle et de ses quatre réglages : un fond animé ne la recalcule pas.</item>
 /// <item>La copie floutée du fond se fait à pleine taille (voir <see cref="Blur"/>) et ne vit que le temps des calculs.</item>
+/// <item>Les pastilles des éléments choisis (<see cref="PaintPill"/>) déforment la case telle qu'elle vient d'être peinte, et
+/// sont gardées tant que ses pixels ne changent pas.</item>
 /// </list>
 /// Une image se compose entre <see cref="BeginFrame"/> et <see cref="EndFrame"/>, sur un seul fil (celui de l'affichage).
 /// Avec <c>inBackground</c>, les couches d'un fond fixe se calculent sur un fil à part : en attendant, la case garde sa couche
@@ -34,13 +36,33 @@ internal sealed class LiquidGlassLayers : IDisposable
     /// <summary><paramref name="Image"/> est <c>null</c> quand l'ombre est invisible (opacité nulle).</summary>
     private sealed record ShadowLayer(ShadowKey Key, SKImage? Image, SKRect Area);
 
-    /// <summary>Ce qu'une case garde : ses deux couches, et le calcul en route sur le fil à part.</summary>
+    /// <summary>Une pastille gardée : sa forme (calée sur les pixels, coupée à la case), ses réglages et son image.</summary>
+    private sealed class Pill(SKRect shape, GlassSettings settings, SKImage image)
+    {
+        public SKRect Shape => shape;
+        public GlassSettings Settings => settings;
+        public SKImage Image => image;
+        public bool Used = true;
+    }
+
+    /// <summary>Ce qu'une case garde : ses deux couches, le calcul en route sur le fil à part, et ses pastilles.</summary>
     private sealed class Slot
     {
         public GlassLayer? Glass;
         public ShadowLayer? Shadow;
         public Job? Job;
         public bool Used;
+
+        /// <summary>
+        /// Les pixels de la case telle qu'elle était peinte (fond, ombres, verre, teinte) quand ses pastilles ont été calculées,
+        /// sur <see cref="SceneArea"/>, lignes serrées. <c>null</c> tant que la case n'a pas de pastille.
+        /// </summary>
+        public byte[]? Scene;
+        public SKRectI SceneArea;
+
+        /// <summary>Vrai quand <see cref="Scene"/> a déjà été comparée à l'image en cours : elle vaut pour toutes ses pastilles.</summary>
+        public bool SceneChecked;
+        public List<Pill>? Pills;
     }
 
     /// <summary>Un calcul confié au fil à part. Une clé absente : cette couche-là n'est pas à refaire.</summary>
@@ -174,6 +196,9 @@ internal sealed class LiquidGlassLayers : IDisposable
     private readonly bool _inBackground;
     private readonly LiquidGlassEffect _effect = new();
     private readonly object _effectGate = new(); // l'effet et le flou : un seul fil à la fois
+
+    // L'effet des pastilles n'appartient qu'au fil de l'affichage : une pastille n'attend jamais le fil à part.
+    private LiquidGlassEffect? _pillEffect;
     private readonly Dictionary<SKRect, Slot> _slots = [];
 
     // Le fil à part : sa file, ses résultats, et s'il tourne.
@@ -189,6 +214,7 @@ internal sealed class LiquidGlassLayers : IDisposable
     private SKColor _panel;
     private int _computations;
     private int _shadowComputations;
+    private int _pillComputations;
     private int _liveImages;
     private int _workerFailures;
 
@@ -211,9 +237,12 @@ internal sealed class LiquidGlassLayers : IDisposable
     /// <summary>Combien de couches d'ombre ont été calculées (tests).</summary>
     internal int ShadowComputations => Volatile.Read(ref _shadowComputations);
 
+    /// <summary>Combien de pastilles ont été calculées (tests).</summary>
+    internal int PillComputations => _pillComputations;
+
     /// <summary>
-    /// Combien d'images sont en vie : couches de verre et d'ombre (posées ou en attente de l'être), copies du fond et copies
-    /// floutées. Retombe à 0 après <see cref="Dispose"/>, une fois le fil à part arrêté (tests).
+    /// Combien d'images sont en vie : couches de verre et d'ombre (posées ou en attente de l'être), pastilles, copies du fond
+    /// et copies floutées. Retombe à 0 après <see cref="Dispose"/>, une fois le fil à part arrêté (tests).
     /// </summary>
     internal int LiveImages => Volatile.Read(ref _liveImages);
 
@@ -252,7 +281,15 @@ internal sealed class LiquidGlassLayers : IDisposable
             _scene = new Scene(background, background.Version, sync: !_inBackground || background.IsAnimated, Track);
         }
 
-        foreach (var slot in _slots.Values) slot.Used = false;
+        foreach (var slot in _slots.Values)
+        {
+            slot.Used = false;
+            slot.SceneChecked = false;
+            if (slot.Pills is { } pills)
+            {
+                foreach (var pill in pills) pill.Used = false;
+            }
+        }
         Collect();
     }
 
@@ -282,6 +319,81 @@ internal sealed class LiquidGlassLayers : IDisposable
         if (Ensure(rect)?.Glass is { } glass)
         {
             canvas.DrawImage(glass.Image, glass.Key.Rect.Left, glass.Key.Rect.Top);
+        }
+    }
+
+    /// <summary>
+    /// Peint la pastille de verre d'un élément choisi de la case <paramref name="caseRect"/> : le même programme que le verre de
+    /// la case, en pilule (rayon : la moitié de sa hauteur ; biseau : celui du réglage, ramené à cette moitié au plus), sans
+    /// ombre portée. À appeler après le panneau de la case et avant le dessin du module.
+    /// <list type="bullet">
+    /// <item>La pastille déforme la case telle qu'elle est peinte dans <paramref name="frame"/> au premier appel de l'image
+    /// pour cette case (fond, ombres, verre ou verre simple d'attente, teinte) : ni le contenu du module, ni une autre
+    /// pastille. Au-delà des bords de la case, elle lit le bord.</item>
+    /// <item>Elle est coupée à la case : sa forme est l'intersection de <paramref name="pill"/> (calé sur les pixels) et de la
+    /// case, et rien n'est peint hors du contour arrondi de la case. Moins de 4 px de large ou de haut, ou un rectangle qui
+    /// n'est pas fait de nombres finis : ignorée.</item>
+    /// <item>Elle est gardée tant que les pixels de la case, sa forme et les réglages du verre ne changent pas : les pixels
+    /// sont comparés un à un à chaque image. Une pastille ne peut donc pas rester celle d'une autre teinte, d'un autre fond
+    /// ou d'un autre verre. Elle est libérée à la première image qui ne la demande plus.</item>
+    /// <item>Le calcul se fait sur place, avec un effet qui n'appartient qu'à ce fil : jamais d'attente du fil à part.</item>
+    /// </list>
+    /// </summary>
+    /// <param name="canvas">La toile de l'image, sans transformation : ses coordonnées sont celles de <paramref name="frame"/>.</param>
+    /// <param name="frame">Les pixels sur lesquels <paramref name="canvas"/> dessine (4 octets par pixel).</param>
+    /// <param name="caseRect">Le rectangle de la case, à l'écran.</param>
+    /// <param name="pill">Le rectangle de l'élément choisi, à l'écran.</param>
+    public void PaintPill(SKCanvas canvas, SKPixmap frame, SKRect caseRect, SKRect pill)
+    {
+        ArgumentNullException.ThrowIfNull(canvas);
+        ArgumentNullException.ThrowIfNull(frame);
+        if (frame.BytesPerPixel != 4) throw new ArgumentException("L'image doit avoir 4 octets par pixel.", nameof(frame));
+        if (_scene is null) throw new InvalidOperationException("BeginFrame n'a pas été appelé.");
+
+        if (!IsFinite(pill) || !IsFinite(caseRect)) return;
+
+        var area = Snap(caseRect);
+        var shape = SKRect.Intersect(Snap(pill), area);
+        var sceneArea = SKRectI.Intersect(SKRectI.Round(area), SKRectI.Create(frame.Width, frame.Height));
+        shape = SKRect.Intersect(shape, sceneArea);
+        if (!(shape.Width >= MinPillSide) || !(shape.Height >= MinPillSide)) return;
+        if (Ensure(caseRect) is not { } slot) return;
+
+        if (!slot.SceneChecked)
+        {
+            if (slot.Scene is null || slot.SceneArea != sceneArea || !SameScene(frame, sceneArea, slot.Scene))
+            {
+                // La case n'est plus peinte comme avant : ses pastilles sont à refaire.
+                var previous = slot.Scene;
+                DropPills(slot);
+                slot.Scene = CopyScene(frame, sceneArea, previous);
+                slot.SceneArea = sceneArea;
+            }
+            slot.SceneChecked = true;
+        }
+
+        float half = shape.Height / 2f;
+        var settings = _settings with { CornerRadius = half, ZRadius = Math.Min(_settings.ZRadius, half), ShadowOpacity = 0f };
+        var pills = slot.Pills ??= [];
+        var kept = pills.Find(p => p.Shape == shape && p.Settings == settings);
+        if (kept is null)
+        {
+            kept = new Pill(shape, settings, ComputePill(slot.Scene!, slot.SceneArea, frame, shape, settings));
+            pills.Add(kept);
+        }
+        kept.Used = true;
+
+        int saved = canvas.Save();
+        try
+        {
+            float radius = Math.Max(0f, Math.Min(_settings.CornerRadius, Math.Min(area.Width, area.Height) / 2f));
+            using var clip = new SKRoundRect(area, radius);
+            canvas.ClipRoundRect(clip, SKClipOperation.Intersect, true);
+            canvas.DrawImage(kept.Image, shape.Left, shape.Top);
+        }
+        finally
+        {
+            canvas.RestoreToCount(saved);
         }
     }
 
@@ -318,6 +430,21 @@ internal sealed class LiquidGlassLayers : IDisposable
             }
         }
 
+        // Les pastilles que cette image n'a pas demandées (l'élément choisi a changé) ; sans pastille, la copie de la case part aussi.
+        foreach (var slot in _slots.Values)
+        {
+            if (slot.Pills is not { } pills) continue;
+
+            for (int i = pills.Count - 1; i >= 0; i--)
+            {
+                if (pills[i].Used) continue;
+
+                Drop(pills[i]);
+                pills.RemoveAt(i);
+            }
+            if (pills.Count == 0) DropPills(slot);
+        }
+
         // Sur un fond fixe, toutes les couches de l'image sont faites : la copie floutée ne sert plus.
         if (_background is { IsAnimated: false }) DropSyncBlur();
     }
@@ -351,6 +478,8 @@ internal sealed class LiquidGlassLayers : IDisposable
 
         // Un calcul en cours sur le fil à part finit d'abord : l'effet n'est jamais libéré sous lui.
         lock (_effectGate) _effect.Dispose();
+        _pillEffect?.Dispose();
+        _pillEffect = null;
     }
 
     /// <summary>
@@ -374,6 +503,75 @@ internal sealed class LiquidGlassLayers : IDisposable
         MathF.Round(rect.Left), MathF.Round(rect.Top), MathF.Round(rect.Right), MathF.Round(rect.Bottom));
 
     private static bool HasNoSurface(SKRect rect) => rect.Width <= 0f || rect.Height <= 0f;
+
+    private static bool IsFinite(SKRect rect) =>
+        float.IsFinite(rect.Left) && float.IsFinite(rect.Top) && float.IsFinite(rect.Right) && float.IsFinite(rect.Bottom);
+
+    // ---- Les pastilles ----
+
+    /// <summary>En dessous de 4 px de large ou de haut, une pastille est ignorée.</summary>
+    private const float MinPillSide = 4f;
+
+    /// <summary>Vrai si les pixels de <paramref name="area"/> dans l'image sont exactement ceux de <paramref name="scene"/>.</summary>
+    private static bool SameScene(SKPixmap frame, SKRectI area, byte[] scene)
+    {
+        ReadOnlySpan<byte> pixels = frame.GetPixelSpan();
+        int row = area.Width * 4;
+        if (scene.Length != row * area.Height) return false;
+
+        for (int y = 0; y < area.Height; y++)
+        {
+            var line = pixels.Slice((area.Top + y) * frame.RowBytes + area.Left * 4, row);
+            if (!line.SequenceEqual(scene.AsSpan(y * row, row))) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Copie les pixels de <paramref name="area"/>, lignes serrées, dans <paramref name="reuse"/> s'il a la bonne taille.</summary>
+    private static byte[] CopyScene(SKPixmap frame, SKRectI area, byte[]? reuse)
+    {
+        ReadOnlySpan<byte> pixels = frame.GetPixelSpan();
+        int row = area.Width * 4;
+        var scene = reuse is not null && reuse.Length == row * area.Height ? reuse : new byte[row * area.Height];
+        for (int y = 0; y < area.Height; y++)
+        {
+            pixels.Slice((area.Top + y) * frame.RowBytes + area.Left * 4, row).CopyTo(scene.AsSpan(y * row, row));
+        }
+        return scene;
+    }
+
+    /// <summary>La pastille de <paramref name="shape"/>, qui déforme la case de <paramref name="scene"/>. Fil de l'affichage.</summary>
+    private SKImage ComputePill(byte[] scene, SKRectI area, SKPixmap frame, SKRect shape, GlassSettings settings)
+    {
+        var info = new SKImageInfo(area.Width, area.Height, frame.ColorType, frame.AlphaType);
+        using var sharp = SKImage.FromPixelCopy(info, scene, area.Width * 4)
+            ?? throw new InvalidOperationException("Impossible de copier la case pour sa pastille.");
+        float sigma = LiquidGlassEffect.BlurSigma(settings.Blur);
+        using var blurred = sigma > 0f ? Blur(sharp, sigma) : null;
+
+        var effect = _pillEffect ??= new LiquidGlassEffect();
+        var image = effect.RenderGlass(sharp, blurred ?? sharp, new SKPoint(area.Left, area.Top), shape, settings);
+        Track(1);
+        _pillComputations++;
+        return image;
+    }
+
+    private void Drop(Pill pill)
+    {
+        pill.Image.Dispose();
+        Track(-1);
+    }
+
+    /// <summary>Libère les pastilles de la case et la copie de ses pixels.</summary>
+    private void DropPills(Slot slot)
+    {
+        if (slot.Pills is { } pills)
+        {
+            foreach (var pill in pills) Drop(pill);
+            pills.Clear();
+        }
+        slot.Scene = null;
+    }
 
     /// <summary>
     /// La case de <paramref name="rect"/>, marquée comme utilisée par cette image, ses couches calculées sur place ou
@@ -694,6 +892,7 @@ internal sealed class LiquidGlassLayers : IDisposable
         Drop(slot.Shadow);
         slot.Glass = null;
         slot.Shadow = null;
+        DropPills(slot);
     }
 
     private void Discard(Result result)
