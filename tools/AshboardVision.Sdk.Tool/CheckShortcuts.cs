@@ -18,8 +18,11 @@ internal static partial class CheckShortcuts
     /// <summary>L'écart entre deux appuis, pendant lequel on regarde si le module a levé une exception ou arrêté l'hôte.</summary>
     private static readonly TimeSpan Pause = TimeSpan.FromMilliseconds(300);
 
-    /// <summary>Le temps de regarder encore, après le dernier appui, avant de conclure que tout va bien.</summary>
-    private static readonly TimeSpan LastObservation = TimeSpan.FromSeconds(1);
+    /// <summary>
+    /// Le temps de regarder encore, après le dernier appui, avant de conclure que tout va bien : 3 s, pour qu'une exception levée
+    /// sur une machine chargée ait le temps d'arriver au journal (1 s n'a pas suffi une fois sur la machine d'intégration).
+    /// </summary>
+    private static readonly TimeSpan LastObservation = TimeSpan.FromSeconds(3);
 
     public static async Task RunAsync(
         ModuleManifest manifest, CheckSession session, CheckCase checkCase, CheckLog log, CheckReport report, CancellationToken ct)

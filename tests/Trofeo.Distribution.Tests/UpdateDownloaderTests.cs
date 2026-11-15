@@ -243,14 +243,16 @@ public sealed class UpdateDownloaderTests
     public async Task Download_SlowButSteady_IsNotInterrupted()
     {
         // Le délai se relance à chaque bloc lu : un téléchargement lent mais régulier va au bout, même plus long que le délai.
+        // 6 blocs espacés de 300 ms (1,8 s en tout) pour un délai de 1 s : chaque attente garde 700 ms de marge, assez pour une
+        // machine d'intégration chargée (la marge de 120 ms d'avant y a manqué une fois).
         using var dir = new TempDir();
         var handler = new FakeHandler(request => IsChecksum(request)
             ? FakeHandler.Text(Hex(Setup))
             : new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StreamContent(new TricklingStream(Setup, chunk: 50_000, pause: TimeSpan.FromMilliseconds(80))),
+                Content = new StreamContent(new TricklingStream(Setup, chunk: 50_000, pause: TimeSpan.FromMilliseconds(300))),
             });
-        var downloader = new UpdateDownloader(handler.Client(), ShortIdle);
+        var downloader = new UpdateDownloader(handler.Client(), TimeSpan.FromSeconds(1));
 
         var path = await downloader.DownloadAsync(Release(), dir.Path, null, CancellationToken.None);
 
