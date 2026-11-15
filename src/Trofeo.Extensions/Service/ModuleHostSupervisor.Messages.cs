@@ -195,7 +195,7 @@ public sealed partial class ModuleHostSupervisor
         }
 
         connection.Post(new FrameDone(frame.InstanceId, frame.Buffer));
-        slot.Owner.Publish(slot, image, frame.Animating);
+        slot.Owner.Publish(slot, image, frame.Animating, frame.Selections);
     }
 
     private void OnLog(Log log)

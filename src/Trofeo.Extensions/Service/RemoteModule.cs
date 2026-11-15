@@ -1,5 +1,6 @@
 using System.Text.Json;
 using SkiaSharp;
+using Trofeo.Extensions.Protocol;
 using Trofeo.ModuleKit;
 
 namespace Trofeo.Extensions.Service;
@@ -36,6 +37,7 @@ public sealed class RemoteModule : IModule, IHideableModule
     private readonly TimeProvider _time;
     private readonly object _gate = new();
     private SKBitmap? _front;
+    private SKRect[] _frontSelections = [];
     private bool _animating;
     private ModuleStatus _hostStatus = new(ModuleHealth.Online);
     private string? _supervisorMessage;
@@ -148,6 +150,17 @@ public sealed class RemoteModule : IModule, IHideableModule
             status = _status;
             if (_front is { } image)
             {
+                // Les éléments choisis que le module a notés en dessinant cette image (dans le thème « Liquid Glass avancé », le compositeur
+                // en fait des pastilles, peintes sous l'image). Les rectangles sont ceux de l'image, posée sans mise à l'échelle au coin de
+                // la case : ils sont déjà relatifs à la case, comme le puits les attend. Hors ligne, ceux de la dernière image restent.
+                if (ctx.Selections is { } sink)
+                {
+                    foreach (var selection in _frontSelections)
+                    {
+                        sink.Add(selection);
+                    }
+                }
+
                 // En panne, la dernière image reste mais s'efface derrière le message.
                 using var paint = status.Health == ModuleHealth.Offline ? new SKPaint { Color = SKColors.White.WithAlpha(90) } : null;
                 canvas.DrawBitmap(image, ctx.Bounds.Left, ctx.Bounds.Top, paint);
@@ -242,9 +255,10 @@ public sealed class RemoteModule : IModule, IHideableModule
 
     /// <summary>
     /// Pose une image copiée dans la case (la précédente revient à <paramref name="slot"/> pour la copie suivante) et redemande un dessin.
-    /// Faux si la case est refermée ou si l'image n'est plus celle de sa taille actuelle.
+    /// Faux si la case est refermée ou si l'image n'est plus celle de sa taille actuelle. Les <paramref name="selections"/> de l'hôte
+    /// (entrée hostile) sont validées (<see cref="ValidateSelections"/>) et gardées avec l'image qu'elles accompagnent.
     /// </summary>
-    internal bool Publish(InstanceSlot slot, SKBitmap image, bool animating)
+    internal bool Publish(InstanceSlot slot, SKBitmap image, bool animating, IReadOnlyList<SelectionRect>? selections = null)
     {
         SKBitmap? replaced;
         bool statusChanged;
@@ -258,6 +272,7 @@ public sealed class RemoteModule : IModule, IHideableModule
 
             replaced = _front;
             _front = image;
+            _frontSelections = ValidateSelections(selections, image.Width, image.Height);
             Interlocked.Increment(ref _framesReceived);
             _animating = animating;
             _awaiting = false;
@@ -270,6 +285,49 @@ public sealed class RemoteModule : IModule, IHideableModule
         slot.Recycle(replaced);
         Raise(statusChanged, newImage: true); // cachée, la case garde l'image sans réveiller l'affichage (voir Raise)
         return true;
+    }
+
+    /// <summary>
+    /// Ce que le service garde des rectangles d'éléments choisis annoncés par l'hôte : on ignore ceux qui sont absents, qui ont un
+    /// nombre non fini ou une largeur ou une hauteur nulle ou négative ; chacun est coupé à l'image (<c>[0, largeur] × [0, hauteur]</c>),
+    /// et ce qui n'a plus de surface après la coupe est ignoré. On ne garde que les <see cref="Frame.MaxSelections"/> premiers.
+    /// </summary>
+    internal static SKRect[] ValidateSelections(IReadOnlyList<SelectionRect>? selections, int imageWidth, int imageHeight)
+    {
+        if (selections is null || selections.Count == 0)
+        {
+            return [];
+        }
+
+        var kept = new List<SKRect>(Math.Min(selections.Count, Frame.MaxSelections));
+        foreach (var selection in selections)
+        {
+            if (kept.Count >= Frame.MaxSelections)
+            {
+                break;
+            }
+
+            if (selection is null
+                || !float.IsFinite(selection.X) || !float.IsFinite(selection.Y)
+                || !float.IsFinite(selection.Width) || !float.IsFinite(selection.Height)
+                || selection.Width <= 0f || selection.Height <= 0f)
+            {
+                continue;
+            }
+
+            var left = Math.Max(selection.X, 0f);
+            var top = Math.Max(selection.Y, 0f);
+            var right = Math.Min(selection.X + selection.Width, imageWidth); // une somme qui déborde donne l'infini : la coupe la ramène à l'image
+            var bottom = Math.Min(selection.Y + selection.Height, imageHeight);
+            if (!(right > left) || !(bottom > top))
+            {
+                continue;
+            }
+
+            kept.Add(new SKRect(left, top, right, bottom));
+        }
+
+        return [.. kept];
     }
 
     /// <summary>Une image n'a pas été copiée (débit dépassé), mais l'hôte dit toujours si le module est animé.</summary>

@@ -368,6 +368,7 @@ internal sealed class InstanceRenderer : IAsyncDisposable
     private void Draw(int buffer)
     {
         var drawn = false;
+        var selections = new SelectionCollector();
         try
         {
             var canvas = _surfaces[buffer].Canvas;
@@ -375,11 +376,15 @@ internal sealed class InstanceRenderer : IAsyncDisposable
             try
             {
                 canvas.Clear(SKColors.Transparent);
-                _module!.Render(canvas, new ModuleRenderContext(new SKRect(0, 0, _width, _height), _grid, _host.Theme, _textScale, DateTimeOffset.Now));
+                _module!.Render(canvas, new ModuleRenderContext(new SKRect(0, 0, _width, _height), _grid, _host.Theme, _textScale, DateTimeOffset.Now)
+                {
+                    Selections = selections,
+                });
             }
             finally
             {
                 canvas.RestoreToCount(saved);
+                selections.Close(); // un module qui garde le contexte n'ajoute plus rien après son dessin
             }
 
             canvas.Flush();
@@ -411,7 +416,55 @@ internal sealed class InstanceRenderer : IAsyncDisposable
         }
 
         Recover();
-        _host.Link.Post(new Frame(_id, buffer, ReadAnimating()));
+        _host.Link.Post(new Frame(_id, buffer, ReadAnimating(), selections.Take()));
+    }
+
+    /// <summary>
+    /// Recueille les éléments choisis que le module note avec <c>ModuleDrawing.DrawSelection</c> pendant un dessin : au plus
+    /// <see cref="Frame.MaxSelections"/>, et jamais un rectangle vide ou non fini (le JSON ne sait pas écrire un <c>NaN</c> : un seul
+    /// ferait échouer l'envoi de l'image). Les rectangles sont relatifs à la case, qui est ici toute l'image.
+    /// </summary>
+    private sealed class SelectionCollector : ISelectionSink
+    {
+        private readonly object _gate = new();
+        private readonly List<SelectionRect> _rects = [];
+        private bool _closed;
+
+        public void Add(SKRect caseLocalRect)
+        {
+            var width = caseLocalRect.Right - caseLocalRect.Left;
+            var height = caseLocalRect.Bottom - caseLocalRect.Top;
+            if (!float.IsFinite(caseLocalRect.Left) || !float.IsFinite(caseLocalRect.Top) || !float.IsFinite(width) || !float.IsFinite(height)
+                || !(width > 0f) || !(height > 0f))
+            {
+                return;
+            }
+
+            lock (_gate)
+            {
+                if (!_closed && _rects.Count < Frame.MaxSelections)
+                {
+                    _rects.Add(new SelectionRect(caseLocalRect.Left, caseLocalRect.Top, width, height));
+                }
+            }
+        }
+
+        public void Close()
+        {
+            lock (_gate)
+            {
+                _closed = true;
+            }
+        }
+
+        /// <summary>Les rectangles notés, ou <c>null</c> s'il n'y en a pas (la propriété n'est alors pas écrite sur le fil).</summary>
+        public IReadOnlyList<SelectionRect>? Take()
+        {
+            lock (_gate)
+            {
+                return _rects.Count == 0 ? null : [.. _rects];
+            }
+        }
     }
 
     private bool ReadAnimating()
