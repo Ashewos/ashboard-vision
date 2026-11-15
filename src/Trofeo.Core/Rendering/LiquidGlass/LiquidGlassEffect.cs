@@ -152,15 +152,64 @@ internal sealed class LiquidGlassEffect : IDisposable
         _shadow.Dispose();
     }
 
-    /// <summary>Exécute le programme sur une image de cette taille, par le processeur, en alpha prémultiplié.</summary>
-    private static SKImage Render(SKShader shader, int width, int height)
+    /// <summary>
+    /// Le nombre de bandes par défaut : un cœur logique de moins que la machine (le fil de l'affichage et le reste du système
+    /// gardent de la place), 8 au plus. 1 sur une machine à un ou deux cœurs.
+    /// </summary>
+    internal static int DefaultStrips { get; } = Math.Clamp(Environment.ProcessorCount - 1, 1, 8);
+
+    /// <summary>Une bande fait au moins 16 lignes : en dessous, la mise en route d'un fil coûte plus qu'elle ne rapporte.</summary>
+    internal const int MinStripRows = 16;
+
+    /// <summary>
+    /// En combien de bandes horizontales, calculées en parallèle sur autant de cœurs, une image est découpée au plus
+    /// (<see cref="DefaultStrips"/> par défaut ; 1 : tout sur le fil appelant). Chaque pixel du programme ne dépend que de sa
+    /// position : le résultat est le même au pixel près, quel que soit le découpage.
+    /// </summary>
+    internal int Strips { get; init; } = DefaultStrips;
+
+    /// <summary>
+    /// Exécute le programme sur une image de cette taille, par le processeur, en alpha prémultiplié. L'image est découpée en
+    /// bandes horizontales (voir <see cref="Strips"/>), chacune peinte sur sa part des mêmes pixels par son propre fil.
+    /// </summary>
+    private SKImage Render(SKShader shader, int width, int height)
     {
         var info = new SKImageInfo(width, height, SKImageInfo.PlatformColorType, SKAlphaType.Premul);
-        using var surface = SKSurface.Create(info)
-            ?? throw new InvalidOperationException($"Impossible de créer une surface de {width} × {height} pour le verre.");
-        using var paint = new SKPaint { Shader = shader, BlendMode = SKBlendMode.Src };
-        surface.Canvas.DrawPaint(paint);
-        return surface.Snapshot();
+        int strips = Math.Clamp(height / MinStripRows, 1, Math.Max(1, Strips));
+        if (strips == 1)
+        {
+            using var surface = SKSurface.Create(info)
+                ?? throw new InvalidOperationException($"Impossible de créer une surface de {width} × {height} pour le verre.");
+            using var paint = new SKPaint { Shader = shader, BlendMode = SKBlendMode.Src };
+            surface.Canvas.DrawPaint(paint);
+            return surface.Snapshot();
+        }
+
+        var bitmap = new SKBitmap(info);
+        try
+        {
+            if (bitmap.GetPixels() is var pixels && pixels == IntPtr.Zero)
+            {
+                throw new InvalidOperationException($"Impossible de réserver {width} × {height} pixels pour le verre.");
+            }
+            int rowBytes = bitmap.RowBytes;
+            Parallel.For(0, strips, new ParallelOptions { MaxDegreeOfParallelism = strips }, i =>
+            {
+                int top = (int)((long)height * i / strips);
+                int bottom = (int)((long)height * (i + 1) / strips);
+                using var surface = SKSurface.Create(info.WithSize(width, bottom - top), pixels + top * rowBytes, rowBytes)
+                    ?? throw new InvalidOperationException($"Impossible de créer la bande {top}–{bottom} du verre.");
+                // La bande voit les mêmes coordonnées que l'image entière : sa première ligne est la ligne « top ».
+                surface.Canvas.Translate(0, -top);
+                using var paint = new SKPaint { Shader = shader, BlendMode = SKBlendMode.Src };
+                surface.Canvas.DrawPaint(paint);
+            });
+            return BackgroundSupport.Freeze(bitmap); // les pixels passent à l'image
+        }
+        finally
+        {
+            bitmap.Dispose();
+        }
     }
 
     private static SKRuntimeEffect Compile(string section, IReadOnlyDictionary<string, string> sections)

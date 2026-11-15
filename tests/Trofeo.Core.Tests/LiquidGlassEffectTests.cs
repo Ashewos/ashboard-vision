@@ -177,6 +177,41 @@ public class LiquidGlassEffectTests
         Assert.True(Gain(198) > center + 40, $"bord bas {Gain(198)}, centre {center}");
     }
 
+    [Theory]
+    [InlineData(800, 200, 8)]
+    [InlineData(333, 117, 8)] // une hauteur qui ne se partage pas juste
+    [InlineData(200, 120, 3)]
+    [InlineData(120, 20, 8)] // une seule bande de 16 lignes au moins : tout sur le fil appelant
+    public void Strips_GiveTheSamePixels_AsOneSurface(int width, int height, int strips)
+    {
+        var shape = SKRect.Create(100, 100, width, height);
+        var settings = GlassPresets.Find(GlassPresets.Prisme)!;
+        using var scene = Stripes();
+        using var single = new LiquidGlassEffect { Strips = 1 };
+        using var parallel = new LiquidGlassEffect { Strips = strips };
+
+        using (var one = SKBitmap.FromImage(single.RenderGlass(scene, scene, SKPoint.Empty, shape, settings)))
+        using (var many = SKBitmap.FromImage(parallel.RenderGlass(scene, scene, SKPoint.Empty, shape, settings)))
+        {
+            Assert.Equal(one.Bytes, many.Bytes);
+        }
+
+        using var oneShadow = single.RenderShadow(shape, settings with { ShadowOpacity = 0.5f }, out var areaOne)!;
+        using var manyShadow = parallel.RenderShadow(shape, settings with { ShadowOpacity = 0.5f }, out var areaMany)!;
+        Assert.Equal(areaOne, areaMany);
+        using var a = SKBitmap.FromImage(oneShadow);
+        using var b = SKBitmap.FromImage(manyShadow);
+        Assert.Equal(a.Bytes, b.Bytes);
+    }
+
+    [Fact]
+    public void DefaultStrips_LeavesOneCore_AtMostEight()
+    {
+        Assert.Equal(Math.Clamp(Environment.ProcessorCount - 1, 1, 8), LiquidGlassEffect.DefaultStrips);
+        using var effect = new LiquidGlassEffect();
+        Assert.Equal(LiquidGlassEffect.DefaultStrips, effect.Strips);
+    }
+
     [Fact]
     public void Chroma_SplitsChannelsAtEdges()
     {
