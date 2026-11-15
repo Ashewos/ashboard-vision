@@ -430,7 +430,7 @@ internal sealed class InstanceRenderer : IAsyncDisposable
         private readonly List<SelectionRect> _rects = [];
         private bool _closed;
 
-        public void Add(SKRect caseLocalRect)
+        public void Add(SKRect caseLocalRect, float opacity = 1f)
         {
             var width = caseLocalRect.Right - caseLocalRect.Left;
             var height = caseLocalRect.Bottom - caseLocalRect.Top;

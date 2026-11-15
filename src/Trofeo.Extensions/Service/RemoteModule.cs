@@ -31,6 +31,9 @@ public sealed class RemoteModule : IModule, IHideableModule
     /// <summary>Combien de changements d'état annoncés par l'hôte sont pris par fenêtre de <see cref="StatusWindow"/> ; les suivants attendent la fin de la fenêtre (le dernier gagne).</summary>
     internal const int MaxStatusChangesPerWindow = 4;
 
+    /// <summary>L'alpha (sur 255) dont est voilée la dernière image d'une case en panne ; ses pastilles le sont avec la même valeur.</summary>
+    internal const byte OfflineVeilAlpha = 90;
+
     internal static readonly TimeSpan StatusWindow = TimeSpan.FromSeconds(1);
 
     private readonly ModuleHostSupervisor _owner;
@@ -153,16 +156,18 @@ public sealed class RemoteModule : IModule, IHideableModule
                 // Les éléments choisis que le module a notés en dessinant cette image (dans le thème « Liquid Glass avancé », le compositeur
                 // en fait des pastilles, peintes sous l'image). Les rectangles sont ceux de l'image, posée sans mise à l'échelle au coin de
                 // la case : ils sont déjà relatifs à la case, comme le puits les attend. Hors ligne, ceux de la dernière image restent.
+                var offline = status.Health == ModuleHealth.Offline;
                 if (ctx.Selections is { } sink)
                 {
+                    var opacity = offline ? OfflineVeilAlpha / 255f : 1f; // la pastille est voilée comme l'image
                     foreach (var selection in _frontSelections)
                     {
-                        sink.Add(selection);
+                        sink.Add(selection, opacity);
                     }
                 }
 
                 // En panne, la dernière image reste mais s'efface derrière le message.
-                using var paint = status.Health == ModuleHealth.Offline ? new SKPaint { Color = SKColors.White.WithAlpha(90) } : null;
+                using var paint = offline ? new SKPaint { Color = SKColors.White.WithAlpha(OfflineVeilAlpha) } : null;
                 canvas.DrawBitmap(image, ctx.Bounds.Left, ctx.Bounds.Top, paint);
             }
         }

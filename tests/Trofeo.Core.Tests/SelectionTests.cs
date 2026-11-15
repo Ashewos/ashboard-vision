@@ -18,7 +18,7 @@ public class SelectionTests(ITestOutputHelper output)
     private sealed class Sink : ISelectionSink
     {
         public List<SKRect> Rects { get; } = [];
-        public void Add(SKRect caseLocalRect) => Rects.Add(caseLocalRect);
+        public void Add(SKRect caseLocalRect, float opacity = 1f) => Rects.Add(caseLocalRect);
     }
 
     private static readonly SKRect Bounds = SKRect.Create(40, 30, 300, 200);

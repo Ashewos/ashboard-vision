@@ -20,7 +20,13 @@ public sealed class RemoteModuleSelectionTests : IAsyncLifetime
     {
         public List<SKRect> Rects { get; } = [];
 
-        public void Add(SKRect caseLocalRect) => Rects.Add(caseLocalRect);
+        public List<float> Opacities { get; } = [];
+
+        public void Add(SKRect caseLocalRect, float opacity = 1f)
+        {
+            Rects.Add(caseLocalRect);
+            Opacities.Add(opacity);
+        }
     }
 
     private readonly ModuleSandbox _folders = new();
@@ -154,7 +160,7 @@ public sealed class RemoteModuleSelectionTests : IAsyncLifetime
 
     private sealed class CallbackSink(Action onAdd) : ISelectionSink
     {
-        public void Add(SKRect caseLocalRect) => onAdd();
+        public void Add(SKRect caseLocalRect, float opacity = 1f) => onAdd();
     }
 
     // ---- La chaîne complète ----
@@ -167,7 +173,13 @@ public sealed class RemoteModuleSelectionTests : IAsyncLifetime
         await host.SendFrameAsync(open, 0, SKColors.Green, selections: [new SelectionRect(4, 6, 40, 12), new SelectionRect(50, 20, 100, 100)]);
         await TestWait.UntilAsync(() => module.FramesReceived == 1);
 
-        Assert.Equal([new SKRect(4, 6, 44, 18), new SKRect(50, 20, 96, 48)], SelectionsOf(rig, module));
+        var online = new Sink();
+        using (rig.Draw(module, sink: online))
+        {
+        }
+
+        Assert.Equal([new SKRect(4, 6, 44, 18), new SKRect(50, 20, 96, 48)], online.Rects);
+        Assert.Equal([1f, 1f], online.Opacities); // en ligne : des pastilles pleines
     }
 
     [WindowsHostFact]
@@ -180,8 +192,14 @@ public sealed class RemoteModuleSelectionTests : IAsyncLifetime
         host.Exit(1);
         await TestWait.UntilAsync(() => module.Status == new ModuleStatus(ModuleHealth.Offline, ModuleHostSupervisor.HostStoppedText));
 
-        // La dernière image reste (voilée) avec ses pastilles ; la case ne peut plus en changer.
-        Assert.Equal([new SKRect(4, 6, 44, 18)], SelectionsOf(rig, module));
+        // La dernière image reste (voilée) avec ses pastilles, voilées du même alpha ; la case ne peut plus en changer.
+        var sink = new Sink();
+        using (rig.Draw(module, sink: sink))
+        {
+        }
+
+        Assert.Equal([new SKRect(4, 6, 44, 18)], sink.Rects);
+        Assert.Equal([RemoteModule.OfflineVeilAlpha / 255f], sink.Opacities);
         Assert.Equal([new SKRect(4, 6, 44, 18)], SelectionsOf(rig, module));
         using var bitmap = rig.Draw(module);
         var veiled = bitmap.GetPixel(10 + 5, 10 + 5);

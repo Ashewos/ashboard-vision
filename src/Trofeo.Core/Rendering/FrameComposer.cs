@@ -19,11 +19,13 @@ public sealed class FrameComposer : IDisposable
     /// <summary>Les éléments choisis qu'un module note pendant son dessin, relatifs à sa case.</summary>
     private sealed class SelectionList : ISelectionSink
     {
-        public List<SKRect> Rects { get; } = [];
+        public List<(SKRect Rect, float Opacity)> Rects { get; } = [];
 
-        public void Add(SKRect caseLocalRect)
+        public void Add(SKRect caseLocalRect, float opacity = 1f)
         {
-            if (Rects.Count < MaxPillsPerCase) Rects.Add(caseLocalRect);
+            if (Rects.Count >= MaxPillsPerCase) return;
+
+            Rects.Add((caseLocalRect, float.IsFinite(opacity) ? Math.Clamp(opacity, 0f, 1f) : 1f));
         }
     }
 
@@ -211,11 +213,11 @@ public sealed class FrameComposer : IDisposable
             int saved = canvas.Save();
             try
             {
-                foreach (var local in selections.Rects)
+                foreach (var (local, opacity) in selections.Rects)
                 {
                     var pill = local;
                     pill.Offset(context.Bounds.Left, context.Bounds.Top);
-                    PaintSelection(canvas, pixels, rect, pill, theme);
+                    PaintSelection(canvas, pixels, rect, pill, opacity, theme);
                 }
             }
             catch (Exception ex)
@@ -243,10 +245,29 @@ public sealed class FrameComposer : IDisposable
 
     /// <summary>
     /// La pastille d'un élément choisi, coupée à la case : en verre avec « Liquid Glass avancé », sinon (le drapeau sur un thème
-    /// d'un autre panneau) la pilule claire de <see cref="ModuleDrawing.DrawLocalSelection"/>.
+    /// d'un autre panneau) la pilule claire de <see cref="ModuleDrawing.DrawLocalSelection"/>. Une <paramref name="opacity"/> inférieure à 1
+    /// (l'image du module est voilée) pose la pastille dans un calque de cette opacité ; à 1, le chemin est celui d'avant.
     /// </summary>
-    private void PaintSelection(SKCanvas canvas, SKPixmap pixels, SKRect rect, SKRect pill, ThemeDefinition theme)
+    private void PaintSelection(SKCanvas canvas, SKPixmap pixels, SKRect rect, SKRect pill, float opacity, ThemeDefinition theme)
     {
+        if (opacity < 1f)
+        {
+            if (!(opacity > 0f)) return;
+
+            using var veil = new SKPaint { Color = SKColors.White.WithAlpha((byte)Math.Round(opacity * 255f)) };
+            int layer = canvas.SaveLayer(rect, veil);
+            try
+            {
+                PaintSelection(canvas, pixels, rect, pill, 1f, theme);
+            }
+            finally
+            {
+                canvas.RestoreToCount(layer);
+            }
+
+            return;
+        }
+
         if (theme.Panel.Kind == PanelKind.LiquidGlass && _glass is { } glass)
         {
             glass.PaintPill(canvas, pixels, rect, pill);

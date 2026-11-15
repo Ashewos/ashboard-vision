@@ -22,7 +22,7 @@ public sealed class CommunitySelectionParityTests(ITestOutputHelper output) : IA
     {
         public List<SKRect> Rects { get; } = [];
 
-        public void Add(SKRect caseLocalRect) => Rects.Add(caseLocalRect);
+        public void Add(SKRect caseLocalRect, float opacity = 1f) => Rects.Add(caseLocalRect);
     }
 
     /// <summary>Un fond fixe de 1920 × 462 plein de détails, pour que le verre et la pastille se voient.</summary>
@@ -180,5 +180,63 @@ public sealed class CommunitySelectionParityTests(ITestOutputHelper output) : IA
         Assert.True(pillPixels > 500, $"la pastille ne se voit pas : {pillPixels}");
         Assert.True(largest <= 1, $"{different} pixels diffèrent, de {largest} au plus");
         Assert.Equal(0, different);
+    }
+
+    /// <summary>Hors ligne, la dernière image est voilée ; sa pastille l'est avec le même alpha (point de vigilance 5).</summary>
+    [WindowsHostFact]
+    public async Task RemoteModule_Offline_PillVeiledLikeImage()
+    {
+        var theme = Themes.LiquidGlassAdvanced;
+        var now = new DateTimeOffset(2026, 11, 14, 12, 0, 0, TimeSpan.Zero);
+        var placement = new ModulePlacement(
+            Guid.NewGuid(), "fake", 0, 0, 4, 2, TextSize.Normal, JsonDocument.Parse("{}").RootElement.Clone());
+        var bounds = ModulePlace.Rect(placement, theme);
+        using var background = new FixedBackground();
+
+        // La case sans pastille : le verre seul.
+        using var bareComposer = new FrameComposer();
+        using var bare = bareComposer.Compose(
+            [placement], new Dictionary<Guid, IModule> { [placement.InstanceId] = new FakeModule((canvas, c) => { }) }, theme, background, now);
+
+        var factory = new FakeHostFactory();
+        var rig = new SupervisorRig(ModuleSandbox.Ready(_folders.SmallModule(), ModuleSandbox.Manifest(entry: "module.dll")), factory);
+        _rigs.Add(rig);
+        var remote = rig.Open(placement.InstanceId);
+        using var composer = new FrameComposer();
+        var modules = new Dictionary<Guid, IModule> { [placement.InstanceId] = remote };
+        composer.Compose([placement], modules, theme, background, now).Dispose();
+
+        var host = await factory.WaitForStartAsync();
+        var open = await host.WaitAsync<Open>();
+        using var image = new SKBitmap(new SKImageInfo(open.Width, open.Height, SKColorType.Bgra8888, SKAlphaType.Premul)); // transparente : seule la pastille se voit
+        await host.SendFrameAsync(open, 0, image, [new SelectionRect(20, 10, 220, 46)]); // en haut, loin du message centré
+        await TestWait.UntilAsync(() => remote.FramesReceived == 1);
+        using var online = composer.Compose([placement], modules, theme, background, now);
+
+        host.Exit(1);
+        await TestWait.UntilAsync(() => remote.Status.Health == ModuleHealth.Offline);
+        using var offline = composer.Compose([placement], modules, theme, background, now);
+
+        var alpha = RemoteModule.OfflineVeilAlpha / 255f;
+        var pill = SKRect.Create(bounds.Left + 20, bounds.Top + 10, 220, 46);
+        int pillPixels = 0, veiled = 0, worst = 0;
+        for (var y = (int)pill.Top; y < pill.Bottom; y++)
+        {
+            for (var x = (int)pill.Left; x < pill.Right; x++)
+            {
+                SKColor b = bare.GetPixel(x, y), on = online.GetPixel(x, y), off = offline.GetPixel(x, y);
+                if (on == b) continue;
+
+                pillPixels++;
+                if (off != on && off != b) veiled++;
+                worst = Math.Max(worst, Math.Max(Math.Max(Math.Abs(Expect(b.Red, on.Red) - off.Red), Math.Abs(Expect(b.Green, on.Green) - off.Green)), Math.Abs(Expect(b.Blue, on.Blue) - off.Blue)));
+            }
+        }
+
+        int Expect(byte back, byte front) => (int)Math.Round(back + ((front - back) * alpha));
+        output.WriteLine($"pastille : {pillPixels} pixels, voilés : {veiled}, écart au mélange attendu : {worst}");
+        Assert.True(pillPixels > 500, $"la pastille ne se voit pas : {pillPixels}");
+        Assert.True(veiled > pillPixels / 2, $"la pastille hors ligne n'est ni absente ni pleine : {veiled} / {pillPixels}");
+        Assert.True(worst <= 3, $"la pastille voilée devrait être le mélange du fond et de la pastille : écart {worst}");
     }
 }
