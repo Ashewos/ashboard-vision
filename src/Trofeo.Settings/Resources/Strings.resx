@@ -334,7 +334,7 @@
     <comment>Nom du thème Liquid Glass avancé.</comment>
   </data>
   <data name="AppearanceThemeLiquidGlassAdvancedText" xml:space="preserve">
-    <value>Le verre d'iOS : le fond se déforme sur les bords, avec reflets et franges de couleur. Il demande plus au processeur, surtout avec un fond animé ou une vidéo.</value>
+    <value>Verre d'iOS, plus gourmand en processeur.</value>
     <comment>Phrase de la carte Liquid Glass avancé ; prévient de la consommation.</comment>
   </data>
   <data name="AppearanceGlass" xml:space="preserve">

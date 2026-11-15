@@ -82,8 +82,8 @@ public sealed class AppearanceGlassTests : IDisposable
         Assert.Equal(["classique", "liquid-glass", Advanced, "pixel"], tab.Themes.Select(t => t.Id));
         var card = tab.Themes[2];
         Assert.Equal("Liquid Glass avancé", card.Name);
-        Assert.Contains("processeur", card.Description);
-        Assert.Contains("fond animé ou une vidéo", card.Description);
+        // Une seule ligne, comme les autres cartes (demande d'Alex, 15/11/2026) ; elle prévient toujours de la consommation.
+        Assert.Equal("Verre d'iOS, plus gourmand en processeur.", card.Description);
     }
 
     [Fact]
