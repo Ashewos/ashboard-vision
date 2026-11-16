@@ -1,4 +1,5 @@
 using SkiaSharp;
+using Vortice.Direct3D12;
 using Trofeo.Core.Rendering;
 using Trofeo.Display.Gpu;
 using Trofeo.TestDoubles;
@@ -34,55 +35,11 @@ public class D3D12GpuDeviceTests
         var sections = LiquidGlassEffect.ReadSections();
         using var effect = SKRuntimeEffect.CreateShader(sections["common"] + "\n" + sections["glass"], out var errors);
         Assert.True(effect is not null, errors);
+        var info = new SKImageInfo(64, 32, SKColorType.Bgra8888, SKAlphaType.Premul);
 
         using var device = GpuTestSupport.Warp();
-        var info = new SKImageInfo(64, 32, SKColorType.Bgra8888, SKAlphaType.Premul);
-        using var sceneSurface = device.CreateSurface(info);
-        using (var gradient = new SKPaint
-        {
-            Shader = SKShader.CreateLinearGradient(new SKPoint(0, 0), new SKPoint(64, 0), [SKColors.DarkBlue, SKColors.Orange], SKShaderTileMode.Clamp),
-        })
-        {
-            sceneSurface.Canvas.DrawPaint(gradient);
-        }
-        using var scene = sceneSurface.Snapshot();
+        using var bitmap = RenderGlass(effect!, info, device);
 
-        var shape = new SKRect(8, 6, 56, 26);
-        var sampling = new SKSamplingOptions(SKFilterMode.Linear);
-        using var sharp = scene.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, sampling);
-        using var blurred = scene.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, sampling);
-        using var uniforms = new SKRuntimeEffectUniforms(effect!);
-        uniforms["u_origin"] = new[] { shape.Left, shape.Top };
-        uniforms["u_size"] = new[] { shape.Width, shape.Height };
-        uniforms["u_radius"] = 6f;
-        uniforms["u_refract"] = 0.69f;
-        uniforms["u_chroma"] = 0.05f;
-        uniforms["u_edgeHL"] = 0.3f;
-        uniforms["u_spec"] = 0.4f;
-        uniforms["u_fresnel"] = 1f;
-        uniforms["u_distort"] = 0f;
-        uniforms["u_alpha"] = 1f;
-        uniforms["u_sat"] = 0.2f;
-        uniforms["u_tint"] = 0f;
-        uniforms["u_zRadius"] = 10f;
-        uniforms["u_brightness"] = 0.05f;
-        uniforms["u_bevelMode"] = 0f;
-        using var children = new SKRuntimeEffectChildren(effect!);
-        children["u_sharp"] = sharp;
-        children["u_blurred"] = blurred;
-
-        // Le programme rend en coordonnées locales au verre : on le décale sur la case.
-        using var shader = effect!.ToShader(uniforms, children, SKMatrix.CreateTranslation(shape.Left, shape.Top));
-        using var target = device.CreateSurface(info);
-        target.Canvas.Clear(SKColors.Black);
-        using (var paint = new SKPaint { Shader = shader })
-        {
-            target.Canvas.DrawRect(shape, paint);
-        }
-        device.Submit();
-
-        using var bitmap = new SKBitmap(info);
-        Assert.True(target.ReadPixels(info, bitmap.GetPixels(), bitmap.RowBytes, 0, 0));
         Assert.NotEqual(SKColors.Black, bitmap.GetPixel(32, 16)); // le verre a laissé voir le fond
         Assert.Equal(SKColors.Black, bitmap.GetPixel(1, 1));      // hors du verre, le fond noir reste
         Assert.False(device.IsLost);
@@ -179,6 +136,41 @@ public class D3D12GpuDeviceTests
         device.Dispose();
         device.Dispose(); // un second appel ne fait rien
         Assert.Throws<ObjectDisposedException>(() => device.CreateSurface(info));
+    }
+
+    [WarpFact]
+    public void Warp_AbandonedContext_IsLost()
+    {
+        var device = GpuTestSupport.Warp();
+        var info = new SKImageInfo(16, 16, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+        device.Context.AbandonContext();
+
+        Assert.True(device.IsLost);
+        Assert.NotNull(device.LostReason);
+        Assert.Contains("abandonné", device.LostReason);
+        Assert.Throws<GpuLostException>(() => device.CreateSurface(info));
+        Assert.Throws<GpuLostException>(device.Submit);
+        device.PurgeUnused(); // sur une carte perdue, ne fait rien
+        Assert.Null(Record.Exception(device.Dispose)); // prend la branche « abandonné » sans rien lever
+        Assert.Null(Record.Exception(device.Dispose));
+    }
+
+    [WarpFact]
+    public void Warp_RemovedDevice_IsLost()
+    {
+        var device = GpuTestSupport.Warp();
+        var info = new SKImageInfo(16, 16, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using (var device5 = device.Device.QueryInterface<ID3D12Device5>())
+        {
+            device5.RemoveDevice(); // simule le retrait de la carte ou la panne du pilote
+        }
+
+        Assert.True(device.IsLost);
+        Assert.NotNull(device.LostReason);
+        Assert.Contains("retirée", device.LostReason);
+        Assert.Throws<GpuLostException>(() => device.CreateSurface(info));
+        Assert.Null(Record.Exception(device.Dispose));
     }
 
     [Fact]
