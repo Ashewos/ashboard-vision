@@ -66,6 +66,19 @@ public sealed class SettingsTabCommunityTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_KeepsThisPcsAcceleration_NotTheOneOfTheFile()
+    {
+        // L'accélération tient à la carte graphique de CE PC : un fichier reçu (même à la main) ne la change pas.
+        var mine = new AccelerationSettings(false, new GpuAdapterId(0x10DE, 0x2F04, 0x12345678, "NVIDIA GeForce RTX 5070"), true, false);
+        var tab = Open(DashboardLayout.SingleView(180, []) with { Acceleration = mine }, out var document);
+
+        await ImportAsync(tab, DashboardLayout.SingleView(180, []) with { Acceleration = new AccelerationSettings(true, null, true, true) });
+
+        Assert.Equal(mine, document.Current.Acceleration);
+        Assert.Equal(mine, new LayoutStore(document.FilePath).Load().Acceleration);
+    }
+
+    [Fact]
     public async Task Import_ModuleWithoutPortNorSecret_KeepsTheImportedSettings()
     {
         _link.SetTypes([.. SampleData.Types(), MinecraftType([new NumberField("count", "Nombre", 1, 10, 3)])]);

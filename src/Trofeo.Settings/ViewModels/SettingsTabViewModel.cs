@@ -459,7 +459,8 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
             // Un fichier reçu ne choisit pas où part une clé de ce PC : les réglages des modules à secret restent ceux de ce PC.
             var (protectedLayout, keptNames) = KeepLocalSecretSettings(imported, current);
             kept = keptNames;
-            return protectedLayout with { Rotation = current.Rotation };
+            // L'accélération matérielle tient aussi à CE PC (sa carte graphique) : elle reste la mienne.
+            return protectedLayout with { Rotation = current.Rotation, Acceleration = current.Acceleration };
         }).ConfigureAwait(true);
 
         if (backupError is not null)

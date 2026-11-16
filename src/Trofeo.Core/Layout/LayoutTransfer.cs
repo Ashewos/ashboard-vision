@@ -13,12 +13,14 @@ public static class LayoutTransfer
 
     /// <summary>
     /// <c>{"Format": Format, "Layout": {...}}</c>. La disposition ne contient que des réglages : les secrets (clés,
-    /// jetons) vivent dans le coffre, pas dans <c>layout.json</c>, et ne sont donc jamais exportés.
+    /// jetons) vivent dans le coffre, pas dans <c>layout.json</c>, et ne sont donc jamais exportés. L'accélération
+    /// matérielle (<see cref="DashboardLayout.Acceleration"/>) est propre à ce PC : elle n'est pas exportée non plus.
     /// Le format de partage ne change pas avec les vues : une disposition d'avant les vues (<c>Placements</c> à la
     /// racine) s'importe comme une seule vue « Vue 1 ».
     /// </summary>
     public static string Export(DashboardLayout layout) =>
-        JsonSerializer.Serialize(new Dictionary<string, object> { ["Format"] = Format, ["Layout"] = layout }, LayoutJson.Options);
+        JsonSerializer.Serialize(
+            new Dictionary<string, object> { ["Format"] = Format, ["Layout"] = layout with { Acceleration = null } }, LayoutJson.Options);
 
     /// <summary>
     /// Même validation que <see cref="LayoutStore.TryLoad"/>. Un fichier qui n'est pas du JSON, n'a pas la bonne
@@ -31,9 +33,11 @@ public static class LayoutTransfer
         {
             if (JsonNode.Parse(json) is not JsonObject root ||
                 root["Format"] is not JsonValue format || !format.TryGetValue<string>(out var name) || name != Format ||
-                root["Layout"] is not JsonObject)
+                root["Layout"] is not JsonObject shared)
                 return Refused();
-            layout = root["Layout"];
+            // Un fichier reçu ne règle pas l'accélération de ce PC : elle est écartée avant la lecture (sans avertissement).
+            shared.Remove(nameof(DashboardLayout.Acceleration));
+            layout = shared;
         }
         catch (Exception)
         {

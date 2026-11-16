@@ -18,9 +18,14 @@ namespace Trofeo.Core.Layout;
 /// disposition) : aucun. Leurs emplacements ne sont pas contrôlés sur le damier. L'étagère est commune à toutes les vues.
 /// </param>
 /// <param name="MaxFps">Plafond d'images par seconde (1 à 12) ; <c>null</c> : celui du service.</param>
+/// <param name="Acceleration">
+/// Accélération matérielle, propre à ce PC (jamais exportée ni importée) ; <c>null</c> (ancienne disposition ou réglage
+/// illisible) : <see cref="AccelerationSettings.Default"/>. Absente du fichier tant qu'elle est <c>null</c>.
+/// </param>
 public sealed record DashboardLayout(
     int Rotation, IReadOnlyList<LayoutView> Views, IReadOnlyList<ShortcutBinding>? Shortcuts = null,
-    AppearanceSettings? Appearance = null, IReadOnlyList<ModulePlacement>? Shelf = null, int? MaxFps = null)
+    AppearanceSettings? Appearance = null, IReadOnlyList<ModulePlacement>? Shelf = null, int? MaxFps = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccelerationSettings? Acceleration = null)
 {
     /// <summary>
     /// Identifiant de la vue unique de la disposition par défaut, et de celle d'une ancienne disposition migrée : constant,

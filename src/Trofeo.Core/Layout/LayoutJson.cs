@@ -45,6 +45,9 @@ internal static class LayoutJson
         "Opacité des panneaux illisible dans layout.json : opacité du thème utilisée.";
 
     internal const string MaxFpsInvalid ="Plafond d'images invalide : 12 images/s utilisées.";
+    internal static string AccelerationInvalid(string field) =>
+        $"Réglage d'accélération illisible ({field}) : valeur par défaut utilisée.";
+
     internal const string ShortcutsDropped = "Raccourcis illisibles dans layout.json : raccourcis par défaut utilisés.";
     internal const string ViewsDropped = "Vues illisibles dans layout.json : elles sont ignorées.";
     internal const string Unreadable = "Le fichier layout.json est illisible (JSON invalide).";
@@ -107,6 +110,7 @@ internal static class LayoutJson
             var hasAppearance = Take(root, nameof(DashboardLayout.Appearance), out var appearance);
             var hasShortcuts = Take(root, nameof(DashboardLayout.Shortcuts), out var shortcuts);
             Take(root, nameof(DashboardLayout.MaxFps), out var maxFps);
+            Take(root, nameof(DashboardLayout.Acceleration), out var acceleration);
             viewsPresent = Take(root, nameof(DashboardLayout.Views), out var views);
             Take(root, LegacyPlacements, out var legacyPlacements);
             if (root[nameof(DashboardLayout.Shelf)] is JsonArray shelfNodes) DropBadNames(shelfNodes, warn);
@@ -121,6 +125,7 @@ internal static class LayoutJson
                 Appearance = hasAppearance ? ReadAppearance(appearance, warn) : null,
                 Shortcuts = hasShortcuts ? ReadShortcuts(shortcuts, warn) : null,
                 MaxFps = ReadMaxFps(maxFps, warn),
+                Acceleration = ReadAcceleration(acceleration, warn),
             };
         }
         catch (ArgumentException)
@@ -137,7 +142,7 @@ internal static class LayoutJson
             return new DashboardLayout(
                 legacy.Rotation, Normalize(views, warn), DropNullShortcuts(legacy.Shortcuts, warn), Sanitize(legacy.Appearance, warn),
                 legacy.Shelf is null ? null : [.. legacy.Shelf.Select(p => p is null ? p! : CleanCaseName(p, warn))],
-                CheckMaxFps(legacy.MaxFps, warn));
+                CheckMaxFps(legacy.MaxFps, warn), ReadAcceleration(legacy.Acceleration, warn));
         }
     }
 
@@ -148,7 +153,7 @@ internal static class LayoutJson
     private sealed record LegacyWire(
         int Rotation, IReadOnlyList<LayoutView>? Views, IReadOnlyList<ModulePlacement>? Placements,
         IReadOnlyList<ShortcutBinding>? Shortcuts, AppearanceSettings? Appearance, IReadOnlyList<ModulePlacement>? Shelf,
-        int? MaxFps);
+        int? MaxFps, JsonNode? Acceleration);
 
     /// <summary>
     /// Lit les vues avec indulgence : une entrée qui n'est pas un objet est écartée, un nom absent devient « Vue n »,
@@ -405,6 +410,58 @@ internal static class LayoutJson
 
         warn(MaxFpsInvalid);
         return null;
+    }
+
+    /// <summary>
+    /// Lit l'accélération champ par champ : un champ absent prend sa valeur par défaut sans rien dire, un champ du mauvais
+    /// type la prend avec un avertissement. <c>Adapter</c> à <c>null</c> est voulu (Automatique). Un réglage qui n'est pas
+    /// un objet est écarté en entier (<c>null</c>, comme absent).
+    /// </summary>
+    private static AccelerationSettings? ReadAcceleration(JsonNode? node, Action<string> warn)
+    {
+        if (node is null) return null; // absent, ou null voulu
+
+        if (node is not JsonObject fields)
+        {
+            warn(AccelerationInvalid(nameof(DashboardLayout.Acceleration)));
+            return null;
+        }
+
+        var defaults = AccelerationSettings.Default;
+
+        bool ReadFlag(string name, bool fallback)
+        {
+            if (!fields.TryGetPropertyValue(name, out var flagNode)) return fallback;
+            if (flagNode is JsonValue value && value.TryGetValue<bool>(out var flag)) return flag;
+
+            warn(AccelerationInvalid(name));
+            return fallback;
+        }
+
+        var adapter = defaults.Adapter;
+        if (fields.TryGetPropertyValue(nameof(AccelerationSettings.Adapter), out var adapterNode) && adapterNode is not null)
+        {
+            try
+            {
+                adapter = adapterNode.Deserialize<GpuAdapterId>(Options);
+            }
+            catch (Exception)
+            {
+                // Mauvais type JSON : Automatique, avec l'avertissement ci-dessous.
+                adapter = null;
+            }
+
+            if (adapter?.Name is null)
+            {
+                adapter = defaults.Adapter;
+                warn(AccelerationInvalid(nameof(AccelerationSettings.Adapter)));
+            }
+        }
+
+        return new AccelerationSettings(
+            ReadFlag(nameof(AccelerationSettings.Enabled), defaults.Enabled), adapter,
+            ReadFlag(nameof(AccelerationSettings.Drawing), defaults.Drawing),
+            ReadFlag(nameof(AccelerationSettings.VideoDecoding), defaults.VideoDecoding));
     }
 
     private static int? CheckMaxFps(int? maxFps, Action<string> warn)

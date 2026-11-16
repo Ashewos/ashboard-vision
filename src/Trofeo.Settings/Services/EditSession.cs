@@ -274,6 +274,7 @@ public sealed class EditSession : IDisposable
     internal static bool Same(DashboardLayout a, DashboardLayout b) =>
         a.Rotation == b.Rotation
         && a.MaxFps == b.MaxFps
+        && Equals(a.Acceleration, b.Acceleration)
         && Equals(a.Appearance, b.Appearance)
         && ReferenceEquals(a.Shortcuts, b.Shortcuts)
         && a.Views.Count == b.Views.Count
