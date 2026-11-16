@@ -21,6 +21,9 @@
   <ItemGroup>
     <!-- Lecture des fonds vidéo (Media Foundation). MIT ; avec ses dépendances (SharpGen.Runtime, Vortice.DirectX, Vortice.Mathematics), environ 1,2 Mo de DLL dans le dossier de sortie. -->
     <PackageReference Include="Vortice.MediaFoundation" Version="3.8.3" />
+    <!-- Direct3D 12 et DXGI : l'appareil de la carte graphique pour Skia (MIT, mêmes dépendances que ci-dessus). -->
+    <PackageReference Include="Vortice.Direct3D12" Version="3.8.3" />
+    <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
   </ItemGroup>
 
   <ItemGroup>

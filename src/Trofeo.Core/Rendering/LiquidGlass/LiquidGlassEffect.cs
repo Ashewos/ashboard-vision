@@ -228,7 +228,7 @@ internal sealed class LiquidGlassEffect : IDisposable
     }
 
     /// <summary>Lit la ressource embarquée et la découpe en sections, d'après ses lignes <c>//#section nom</c>.</summary>
-    private static Dictionary<string, string> ReadSections()
+    internal static Dictionary<string, string> ReadSections()
     {
         using var stream = typeof(LiquidGlassEffect).Assembly.GetManifestResourceStream(ResourceName)
             ?? throw new InvalidOperationException($"Ressource introuvable : {ResourceName}");
