@@ -26,7 +26,7 @@
   - Messages en français, avec les préfixes `feat(…)`, `fix(…)`, `test` et `docs`.
   - Ils se terminent par `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` (ou la ligne du modèle qui a fait le travail).
   - Les fichiers sont ajoutés un par un. Jamais `docs/guide-personnalisation.md`, `.claude/launch.json`, `apercus-accueil-b/`, `apercus-*` ni `.superpowers/`.
-- **Modèles.** Implémenteurs et relecteurs sur Sonnet, effort élevé. Relecture finale de la branche sur Fable 5.2.
+- **Modèles.** Implémenteurs et relecteurs sur Sonnet, effort élevé. Relecture finale de la branche sur Opus (Fable n'est plus disponible).
 - **Textes et code.** Les textes affichés sont en français et tutoient. Les noms de code sont en anglais, les commentaires en français.
 - **Le service et la fenêtre d'Alex** ne sont jamais arrêtés ni lancés.
 - **Valeurs fixées.**
