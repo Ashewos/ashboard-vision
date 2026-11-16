@@ -18,7 +18,7 @@ Composants sous licence MIT, avec leur mention de droits d'auteur :
   - CommunityToolkit.Mvvm                                Copyright (c) .NET Foundation and Contributors
   - SkiaSharp, HarfBuzzSharp et leurs bibliothèques natives
                                                          Copyright (c) 2015-2016 Xamarin, Inc. ; (c) 2017-2018 Microsoft Corporation
-  - Vortice.DirectX, Vortice.Direct3D12, Vortice.DXGI, Vortice.MediaFoundation, Vortice.Mathematics
+  - Vortice.DirectX, Vortice.Direct3D12, Vortice.Direct3D11, Vortice.DXGI, Vortice.MediaFoundation, Vortice.Mathematics
                                                          Copyright (c) Amer Koleci and Contributors
   - SharpGen.Runtime, SharpGen.Runtime.COM               Copyright (c) 2010-2017 Alexandre Mutel, 2017-2023 Jeremy Koritzinsky,
                                                          2023-2024 Amer Koleci

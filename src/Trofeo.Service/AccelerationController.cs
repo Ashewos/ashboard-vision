@@ -114,6 +114,27 @@ public sealed class AccelerationController : IDisposable
     /// <summary>La carte qui décode les vidéos ; <c>null</c> : le processeur les décode.</summary>
     public GpuAdapterInfo? VideoAdapter => _video;
 
+    /// <summary>
+    /// La carte qui décoderait les vidéos avec <paramref name="settings"/> (<c>null</c> : le processeur), sans rien changer : aucun
+    /// appareil n'est ouvert, aucun événement n'est levé. Avec les réglages en place, c'est <see cref="VideoAdapter"/> (qui tient compte
+    /// d'une panne ou d'une carte trop lente) ; avec d'autres, la carte que <see cref="Apply"/> prendrait, pannes oubliées. Le service
+    /// s'en sert pour ouvrir (ou rouvrir) la vidéo avant que la boucle applique les réglages. Sûr depuis n'importe quel fil, y compris
+    /// celui des rechargements : ne prend le verrou que pour lire.
+    /// </summary>
+    public GpuAdapterInfo? VideoAdapterFor(AccelerationSettings? settings)
+    {
+        settings ??= AccelerationSettings.Default;
+        if (!settings.Enabled || !settings.VideoDecoding) return null;
+
+        lock (_gate)
+        {
+            if (_disposed || _factory is null) return null;
+            if (_settings is not null && _settings.Equals(settings)) return _video;
+        }
+
+        return GpuAdapterChoice.Resolve(settings, ListAdapters(), _ => { }); // l'avertissement d'une carte absente viendra avec Apply
+    }
+
     /// <summary>L'état à montrer, remplacé d'un bloc à chaque changement.</summary>
     public AccelerationStatus Status => _status;
 

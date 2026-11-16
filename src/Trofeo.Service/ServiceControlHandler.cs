@@ -38,10 +38,16 @@ namespace Trofeo.Display;
 /// son fond (une vidéo ne repart pas de zéro, une image n'est pas rouverte).
 /// </param>
 /// <param name="updates">Les mises à jour ; <c>null</c> : le service tourne sans (l'état reste « inconnu » et rien ne s'installe).</param>
+/// <param name="videoDecoder">
+/// Le LUID de la carte qui doit décoder la vidéo de cette disposition (<c>null</c> : le processeur). Quand la vidéo en place se décode
+/// ailleurs (réglages de l'accélération changés, carte tombée en panne), le rechargement refait le fond même si l'apparence est la
+/// même. <c>null</c> (le délégué) : la carte des vidéos ne compte pas.
+/// </param>
 public sealed class ServiceControlHandler(
     LayoutStore store, DisplayLoop loop, ModuleRegistry registry, Func<ScreenInfo> screen, Func<SensorInfo> sensors,
     ProcessMeter meter, Func<DashboardLayout, LoopConfig?, LoopConfig> buildConfig, IHotkeyHost? hotkeys, ICommunityModules community,
-    WarningSink? buildWarnings = null, LoopConfig? initialConfig = null, UpdateService? updates = null)
+    WarningSink? buildWarnings = null, LoopConfig? initialConfig = null, UpdateService? updates = null,
+    Func<DashboardLayout, long?>? videoDecoder = null)
     : IControlHandler, IDisposable
 {
     /// <summary>Le plafond d'images de la boucle (<see cref="DisplayLoop"/>) : un hôte de module n'a aucune raison d'en écrire davantage.</summary>
@@ -125,9 +131,11 @@ public sealed class ServiceControlHandler(
             var warnings = new List<string>(loaded.Warnings);
 
             LoopConfig config;
-            if (_applied is { } applied && Equals(layout.Appearance, _appliedAppearance))
+            if (_applied is { } applied && Equals(layout.Appearance, _appliedAppearance)
+                && (videoDecoder is null || !LoopConfigFactory.DecoderIsStale(applied, videoDecoder(layout), out _)))
             {
-                // Même apparence : mêmes instances de thème et de fond, la boucle n'en change aucun.
+                // Même apparence : mêmes instances de thème et de fond, la boucle n'en change aucun (sauf une vidéo qui se décode
+                // sur une autre carte que celle voulue : elle est rouverte plus bas).
                 config = new LoopConfig(layout, applied.Theme, applied.Background)
                 {
                     BackgroundWarnings = applied.BackgroundWarnings,

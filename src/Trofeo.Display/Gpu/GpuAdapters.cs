@@ -34,6 +34,22 @@ public static class GpuAdapters
         return result;
     }
 
+    /// <summary>
+    /// La carte matérielle de LUID <paramref name="luid"/> (à libérer par l'appelant), ou <c>null</c> si elle n'existe plus. Sert à
+    /// ouvrir sur la même carte l'appareil Direct3D 11 du décodage vidéo que Direct3D 12 pour Skia.
+    /// </summary>
+    internal static IDXGIAdapter1? OpenByLuid(long luid)
+    {
+        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory6>();
+        for (uint i = 0; factory.EnumAdapterByGpuPreference(i, GpuPreference.MinimumPower, out IDXGIAdapter1? adapter).Success; i++)
+        {
+            if (Describe(adapter!)?.Luid == luid) return adapter;
+            adapter!.Dispose();
+        }
+
+        return null;
+    }
+
     /// <summary>La description d'une carte, ou <c>null</c> pour une carte logicielle.</summary>
     internal static GpuAdapterInfo? Describe(IDXGIAdapter1 adapter)
     {
@@ -48,6 +64,7 @@ public static class GpuAdapters
     {
         var id = new GpuAdapterId(unchecked((int)d.VendorId), unchecked((int)d.DeviceId), unchecked((int)d.SubsystemId), d.Description);
         long luid = ((long)d.Luid.HighPart << 32) | d.Luid.LowPart;
-        return new GpuAdapterInfo(id, luid, (long)d.DedicatedVideoMemory);
+        // Par ulong, pas par uint : une carte de plus de 4 Go ferait déborder la conversion (et vider toute la liste).
+        return new GpuAdapterInfo(id, luid, (long)(ulong)d.DedicatedVideoMemory);
     }
 }

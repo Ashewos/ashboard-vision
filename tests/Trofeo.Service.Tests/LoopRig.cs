@@ -57,6 +57,26 @@ internal sealed class TrackedBackground(SKColor color) : IBackground
     }
 }
 
+/// <summary>Une vidéo qui dit où elle en est et sur quelle carte elle se décode.</summary>
+internal sealed class SeekableVideo(TimeSpan position, long? decoderLuid) : IBackground, ISeekableBackground
+{
+    private readonly ColorBackground _inner = new(SKColors.Red);
+    public bool Disposed { get; private set; }
+    public TimeSpan Position { get; } = position;
+    public long? DecoderLuid { get; } = decoderLuid;
+    public bool IsAnimated => true;
+    public SKImage Current => _inner.Current;
+    public int Version => 1;
+    public bool Advance(TimeSpan elapsed) => false;
+    public TimeSpan? UntilNextFrame => TimeSpan.FromMilliseconds(80);
+
+    public void Dispose()
+    {
+        Disposed = true;
+        _inner.Dispose();
+    }
+}
+
 /// <summary>Banc d'essai de la boucle avec deux types de modules (« fake » et « other ») dont les instances sont suivies.</summary>
 internal sealed class LoopRig : IDisposable
 {

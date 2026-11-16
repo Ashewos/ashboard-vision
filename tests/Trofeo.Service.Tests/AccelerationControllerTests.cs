@@ -155,6 +155,77 @@ public sealed class AccelerationControllerTests : IDisposable
     }
 
     [Fact]
+    public void VideoAdapterFor_NewSettings_ResolvesLikeApplyWithoutChangingAnything()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        var device = _controller.DrawingDevice;
+        var changes = _choiceChanges;
+        var createdBefore = _factory.Created.Count;
+
+        var wanted = _controller.VideoAdapterFor(new AccelerationSettings(Adapter: Discrete.Id));
+
+        Assert.Equal(Discrete, wanted);
+        Assert.Equal(Integrated, _controller.VideoAdapter);      // rien n'a changé
+        Assert.Same(device, _controller.DrawingDevice);
+        Assert.Equal(changes, _choiceChanges);                    // aucun événement
+        Assert.Equal(createdBefore, _factory.Created.Count);      // aucun appareil ouvert
+        Assert.Equal(Discrete, ApplyAndRead(new AccelerationSettings(Adapter: Discrete.Id))); // c'est bien ce qu'Apply prend ensuite
+    }
+
+    private GpuAdapterInfo? ApplyAndRead(AccelerationSettings settings)
+    {
+        _controller.Apply(settings);
+        return _controller.VideoAdapter;
+    }
+
+    [Fact]
+    public void VideoAdapterFor_OffOrNoVideoDecoding_IsNull()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+
+        Assert.Null(_controller.VideoAdapterFor(new AccelerationSettings(Enabled: false)));
+        Assert.Null(_controller.VideoAdapterFor(new AccelerationSettings(VideoDecoding: false)));
+        Assert.Equal(Integrated, _controller.VideoAdapterFor(new AccelerationSettings(Drawing: false))); // le dessin n'entre pas en compte
+        Assert.Equal(Integrated, _controller.VideoAdapterFor(null));                                       // pas de réglages : les réglages par défaut
+    }
+
+    [Fact]
+    public void VideoAdapterFor_CurrentSettings_FollowsTheFallbackAndSlowState()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        Slow(100); // la première carte est trop lente : la suivante prend le relais
+        _controller.Tick();
+        Assert.Equal(Discrete, _controller.VideoAdapter);
+
+        // Les mêmes réglages que ceux en place : la réponse est celle de l'état courant, pas celle d'un choix tout neuf.
+        Assert.Equal(Discrete, _controller.VideoAdapterFor(AccelerationSettings.Default));
+
+        _controller.ReportFailure("pilote planté");
+        Assert.Null(_controller.VideoAdapter);
+        Assert.Null(_controller.VideoAdapterFor(AccelerationSettings.Default));                           // en panne : le processeur décode
+        Assert.Equal(Integrated, _controller.VideoAdapterFor(new AccelerationSettings(VideoDecoding: true, Drawing: false))); // d'autres réglages repartent de zéro
+    }
+
+    [Fact]
+    public void VideoAdapterFor_SavedCardGone_IsTheAutomaticCardWithoutWarning()
+    {
+        var gone = new GpuAdapterId(0x10DE, 99, 1, "NVIDIA RTX 3080");
+
+        var wanted = _controller.VideoAdapterFor(new AccelerationSettings(Adapter: gone));
+
+        Assert.Equal(Integrated, wanted);
+        Assert.Empty(_log); // l'avertissement viendra avec Apply : ici on ne fait que calculer
+    }
+
+    [Fact]
+    public void VideoAdapterFor_WithoutFactory_IsNull()
+    {
+        using var controller = new AccelerationController(null, _time, _log.Add);
+
+        Assert.Null(controller.VideoAdapterFor(AccelerationSettings.Default));
+    }
+
+    [Fact]
     public void Apply_SameSettings_KeepsTheDevice()
     {
         _controller.Apply(AccelerationSettings.Default);

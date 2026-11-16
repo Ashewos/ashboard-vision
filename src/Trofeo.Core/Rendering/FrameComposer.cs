@@ -61,6 +61,13 @@ public sealed class FrameComposer : IDisposable
     private SKSurface? _target;
     private bool _gpuFailed;
 
+    // L'image du fond quand elle est déjà sur la carte (vidéo décodée par la carte) : gardée tant que le fond et sa version ne
+    // changent pas, libérée avec le compositeur (donc avant l'appareil).
+    private SKImage? _backgroundFrame;
+    private IBackground? _backgroundFrameFor;
+    private int _backgroundFrameVersion;
+    private bool _onGpuPass;                    // vrai pendant une composition sur la carte
+
     // Les couches de « Liquid Glass avancé » : créées à la première image de ce thème, libérées dès qu'un autre thème est composé.
     private LiquidGlassLayers? _glass;
 
@@ -202,6 +209,7 @@ public sealed class FrameComposer : IDisposable
     {
         var gpu = _gpu!;
         SKBitmap? bitmap = null;
+        _onGpuPass = true;
         try
         {
             _backdrop.Device = gpu;
@@ -241,6 +249,10 @@ public sealed class FrameComposer : IDisposable
             bitmap?.Dispose();
             throw;
         }
+        finally
+        {
+            _onGpuPass = false;
+        }
     }
 
     private static void ThrowIfLost(IGpuDevice gpu)
@@ -255,6 +267,7 @@ public sealed class FrameComposer : IDisposable
 
         _gpuFailed = true;
         _backdrop.Device = null;
+        DropBackgroundFrame();
         DropGlass(); // ses couches sont des images de la carte : elles partent avec elle, le processeur refera les siennes
         try
         {
@@ -332,6 +345,7 @@ public sealed class FrameComposer : IDisposable
     public void Dispose()
     {
         DropGlass();
+        DropBackgroundFrame();
         _target?.Dispose();
         _target = null;
         _backdrop.Dispose();
@@ -618,11 +632,41 @@ public sealed class FrameComposer : IDisposable
         _glass = null;
     }
 
-    // L'image courante du fond n'est jamais gardée : elle n'est valable que pour cette image de l'écran.
-    private static void DrawBackground(SKCanvas canvas, IBackground background)
+    // Sur la carte, une vidéo décodée par la carte est prise telle quelle (aucune copie par le processeur) ; sinon c'est Current.
+    private void DrawBackground(SKCanvas canvas, IBackground background)
     {
         using var paint = new SKPaint { BlendMode = SKBlendMode.Src };
-        canvas.DrawImage(background.Current, 0, 0, paint);
+        canvas.DrawImage(GpuBackgroundFrame(background) ?? background.Current, 0, 0, paint);
+    }
+
+    /// <summary>
+    /// L'image du fond déjà sur la carte, ou <c>null</c> (fond du processeur, autre carte, composition sur le processeur). Calculée
+    /// une fois par image du fond, gardée jusqu'à la suivante.
+    /// </summary>
+    private SKImage? GpuBackgroundFrame(IBackground background)
+    {
+        if (!_onGpuPass || _gpu is null || background is not IGpuFrameSource source) return null;
+
+        if (_backgroundFrame is not null && ReferenceEquals(_backgroundFrameFor, background) && _backgroundFrameVersion == background.Version)
+        {
+            return _backgroundFrame;
+        }
+
+        DropBackgroundFrame();
+        _backgroundFrame = source.TryGetGpuFrame(_gpu);
+        if (_backgroundFrame is not null)
+        {
+            _backgroundFrameFor = background;
+            _backgroundFrameVersion = background.Version;
+        }
+        return _backgroundFrame;
+    }
+
+    private void DropBackgroundFrame()
+    {
+        _backgroundFrame?.Dispose();
+        _backgroundFrame = null;
+        _backgroundFrameFor = null;
     }
 
     /// <summary>

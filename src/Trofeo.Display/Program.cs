@@ -227,9 +227,17 @@ static class Program
             Warn(message);
             buildWarnings.Warn(message);
         };
-        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current) =>
-            LoopConfigFactory.Build(
-                next, new SkiaSystemFonts(), path => MediaFoundationBackground.TryOpen(path, warnAndCollect), warnAndCollect, current);
+        // La vidéo se décode sur la carte que les réglages de cette disposition donneraient (sans rien changer au contrôleur : il n'est
+        // appliqué que par la boucle). Une vidéo gardée qui se décode ailleurs est rouverte à sa position, une fois ; le rechargement que
+        // lève ensuite le contrôleur la trouve déjà sur la bonne carte.
+        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current)
+        {
+            var videoCard = acceleration.VideoAdapterFor(next.Acceleration);
+            return LoopConfigFactory.Build(
+                next, new SkiaSystemFonts(),
+                (path, startAt) => MediaFoundationBackground.TryOpen(path, warnAndCollect, new VideoDecodeOptions(videoCard, startAt)),
+                warnAndCollect, current, videoCard?.Luid);
+        }
 
         // Les hôtes des modules complémentaires suivent le plafond d'images et l'apparence de la disposition : au démarrage ici, puis
         // à chaque rechargement par le handler (BuildConfig ne tourne que si l'apparence change).
@@ -275,7 +283,8 @@ static class Program
             var meter = new ProcessMeter(SampleProcess, TimeProvider.System, Environment.ProcessorCount);
             using var handler = new ServiceControlHandler(
                 store, loop, registry, () => ServiceControlHandler.ToScreenInfo(screen.Status), () => ReadSensors(sensorPipe),
-                meter, BuildConfig, hotkeys?.Host, community, buildWarnings, config, updates);
+                meter, BuildConfig, hotkeys?.Host, community, buildWarnings, config, updates,
+                videoDecoder: next => acceleration.VideoAdapterFor(next.Acceleration)?.Luid);
 
             // La carte des vidéos change (panne, nouvel essai, carte trop lente) : la disposition est relue comme pour un rechargement
             // demandé par la fenêtre. Sur un autre fil : l'événement peut venir du fil de la boucle, qui ne doit pas s'y attendre.

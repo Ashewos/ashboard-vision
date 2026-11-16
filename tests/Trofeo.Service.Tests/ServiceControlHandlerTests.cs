@@ -105,7 +105,8 @@ public sealed partial class ServiceControlHandlerTests
         public Rig(
             DashboardLayout? layout = null, Func<ScreenInfo>? screen = null, Func<SensorInfo>? sensors = null,
             Func<DashboardLayout, LoopConfig?, LoopConfig>? build = null, LoopConfig? initialConfig = null, UpdateService? updates = null,
-            IReadOnlyList<CommunityEntry>? communityEntries = null, bool withoutHotkeys = false)
+            IReadOnlyList<CommunityEntry>? communityEntries = null, bool withoutHotkeys = false,
+            Func<DashboardLayout, long?>? videoDecoder = null)
         {
             Directory.CreateDirectory(_dir);
             LayoutPath = Path.Combine(_dir, "layout.json");
@@ -122,7 +123,7 @@ public sealed partial class ServiceControlHandlerTests
                 sensors ?? (() => new SensorInfo(true, false, false)),
                 new ProcessMeter(() => (TimeSpan.Zero, 1, 2), LoopRig.Time, 4),
                 build ?? ((layout, current) => LoopConfigFactory.Build(layout, new NoSystemFonts(), null, Sink.Warn, current)),
-                withoutHotkeys ? null : Hotkeys, Community, Sink, initialConfig, updates);
+                withoutHotkeys ? null : Hotkeys, Community, Sink, initialConfig, updates, videoDecoder);
         }
 
         public string LayoutPath { get; }
@@ -371,7 +372,7 @@ public sealed partial class ServiceControlHandlerTests
     {
         var opened = 0;
         var videos = new List<TrackedBackground>();
-        using var rig = new Rig(build: (layout, current) => LoopConfigFactory.Build(layout, new NoSystemFonts(), _ =>
+        using var rig = new Rig(build: (layout, current) => LoopConfigFactory.Build(layout, new NoSystemFonts(), (_, _) =>
         {
             opened++;
             var video = new TrackedBackground(SKColors.Red);
@@ -392,6 +393,40 @@ public sealed partial class ServiceControlHandlerTests
         Assert.Equal(1, opened);
         Assert.False(videos[0].Disposed);
         Assert.Equal(0.5f, rig.LoopRig.Loop.Layout.Appearance!.PanelOpacity);
+    }
+
+    [Fact]
+    public async Task Reload_VideoOnAnotherCard_ReopensTheVideoAtPositionEvenWithTheSameAppearance()
+    {
+        // Les réglages de l'accélération changent la carte qui décode, pas l'apparence : le rechargement refait quand même la vidéo.
+        long? card = null;
+        var positions = new List<TimeSpan>();
+        var videos = new List<SeekableVideo>();
+        using var rig = new Rig(
+            build: (layout, current) => LoopConfigFactory.Build(layout, new NoSystemFonts(), (_, at) =>
+            {
+                positions.Add(at);
+                var opened = new SeekableVideo(TimeSpan.FromSeconds(4), card);
+                videos.Add(opened);
+                return opened;
+            }, _ => { }, current, card),
+            videoDecoder: _ => card);
+        var appearance = new AppearanceSettings("classique", Background: new BackgroundSettings(BackgroundKind.Video, Path: "clip.mp4"));
+        rig.Store.Save(Layout(Place(A, "fake")) with { Appearance = appearance });
+        await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));
+
+        await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None)); // rien n'a changé : la vidéo reste
+        Assert.Single(positions);
+
+        card = 42;
+        var changed = await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));
+        Assert.True(changed.Applied);
+        Assert.Equal([TimeSpan.Zero, TimeSpan.FromSeconds(4)], positions); // rouverte à la position de l'ancienne
+        Assert.True(videos[0].Disposed);                                   // la boucle a libéré l'ancienne
+
+        await rig.Pump(rig.Handler.ReloadAsync(CancellationToken.None));   // le rechargement du contrôleur : déjà sur la bonne carte
+        Assert.Equal(2, positions.Count);
+        Assert.False(videos[1].Disposed);
     }
 
     [Fact]
