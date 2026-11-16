@@ -34,6 +34,12 @@ public sealed class FakeGpuDevice : IGpuDevice
     /// <summary>Perd la carte tout de suite.</summary>
     public void Lose(string reason = "Carte graphique de test perdue.") => _lostReason ??= reason;
 
+    /// <summary>Vrai une fois l'appareil libéré : de quoi vérifier que le service ne laisse rien derrière lui.</summary>
+    public bool IsDisposed { get; private set; }
+
+    /// <summary>Combien de fois <see cref="Dispose"/> a été appelée.</summary>
+    public int DisposeCount { get; private set; }
+
     public string AdapterName => "Carte de test";
 
     public bool IsLost => _lostReason is not null;
@@ -68,5 +74,7 @@ public sealed class FakeGpuDevice : IGpuDevice
 
     public void Dispose()
     {
+        IsDisposed = true;
+        DisposeCount++;
     }
 }
