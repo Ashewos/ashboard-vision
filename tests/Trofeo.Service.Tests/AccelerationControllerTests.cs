@@ -280,6 +280,98 @@ public sealed class AccelerationControllerTests : IDisposable
     }
 
     [Fact]
+    public void Failure_RetryFindsTheCardAgainUnderANewLuid()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("mise à jour du pilote");
+
+        // Le pilote revient : même carte (mêmes identifiants), mais un autre LUID.
+        var back = Integrated with { Luid = 999 };
+        _factory.Adapters[0] = back;
+        _time.Advance(TimeSpan.FromMinutes(5));
+
+        Assert.True(_controller.Tick());
+        Assert.Equal(back, _factory.Created[^1].Adapter);
+        Assert.Same(_factory.Created[^1].Device, _controller.DrawingDevice);
+        Assert.Equal(back, _controller.VideoAdapter);
+        Assert.Equal(back, _controller.Status.Adapters[0]); // la liste montrée à la fenêtre est à jour
+        Assert.Null(_controller.Status.Problem);
+    }
+
+    [Fact]
+    public void Failure_RetryWithNoCardLeft_TriesAgainLater()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("carte retirée");
+        _factory.Adapters.Clear();
+
+        _time.Advance(TimeSpan.FromMinutes(5));
+        Assert.False(_controller.Tick());
+        Assert.Null(_controller.DrawingDevice);
+        Assert.StartsWith("La carte graphique n'a pas pu démarrer", _controller.Status.Problem);
+        Assert.False(_controller.Status.Available);
+
+        _factory.Adapters.Add(Integrated);
+        _time.Advance(TimeSpan.FromMinutes(5));
+        Assert.True(_controller.Tick());
+        Assert.NotNull(_controller.DrawingDevice);
+    }
+
+    [Fact]
+    public void Failure_AfterAnHourWithoutProblem_RetriesCountFromZeroAgain()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("première panne");
+        _time.Advance(TimeSpan.FromMinutes(5));
+        Assert.True(_controller.Tick()); // le premier essai réussit
+        Assert.Equal(2, _factory.Created.Count);
+
+        // Une heure sans panne : la carte tourne, les Tick passent (ici toutes les minutes).
+        for (var minute = 0; minute < 60; minute++)
+        {
+            _time.Advance(TimeSpan.FromMinutes(1));
+            Assert.False(_controller.Tick());
+        }
+
+        // Une nouvelle panne a de nouveau ses trois essais.
+        _controller.ReportFailure("seconde panne");
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            _time.Advance(TimeSpan.FromMinutes(5));
+            Assert.True(_controller.Tick());
+            Assert.Equal(2 + attempt, _factory.Created.Count);
+            _controller.ReportFailure($"encore {attempt}");
+        }
+
+        _time.Advance(TimeSpan.FromHours(1));
+        Assert.False(_controller.Tick());
+        Assert.Equal(5, _factory.Created.Count);
+    }
+
+    [Fact]
+    public void Failure_BeforeAnHourWithoutProblem_KeepsCounting()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("première panne");
+        _time.Advance(TimeSpan.FromMinutes(5));
+        _controller.Tick();
+        _time.Advance(TimeSpan.FromMinutes(59));
+        _controller.Tick();
+
+        _controller.ReportFailure("seconde panne"); // le compte continue : il reste deux essais
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            _time.Advance(TimeSpan.FromMinutes(5));
+            Assert.True(_controller.Tick());
+            _controller.ReportFailure($"encore {attempt}");
+        }
+
+        _time.Advance(TimeSpan.FromHours(1));
+        Assert.False(_controller.Tick());
+        Assert.Equal(4, _factory.Created.Count);
+    }
+
+    [Fact]
     public void Auto_TooSlow_TriesNextCardThenCpu()
     {
         _controller.Apply(AccelerationSettings.Default);

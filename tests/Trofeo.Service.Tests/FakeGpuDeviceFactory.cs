@@ -29,6 +29,9 @@ internal sealed class FakeGpuDeviceFactory : IGpuDeviceFactory
     {
         if (FailCreate) throw new GpuLostException(FailReason);
 
+        // Comme Direct3D 12 : la carte se retrouve par son LUID, valable pour une séance Windows seulement.
+        if (!Adapters.Any(a => a.Luid == adapter.Luid)) throw new GpuLostException($"La carte graphique « {adapter.Id.Name} » n'est plus là.");
+
         var device = new FakeGpuDevice();
         Created.Add((adapter, device));
         return device;

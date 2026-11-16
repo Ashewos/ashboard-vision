@@ -51,8 +51,11 @@ public sealed class AccelerationController : IDisposable
     /// <summary>Le délai entre une panne (ou un essai raté) et le nouvel essai.</summary>
     private static readonly TimeSpan RetryInterval = TimeSpan.FromMinutes(5);
 
-    /// <summary>Combien de nouveaux essais après une panne, au plus, tant que les réglages ne changent pas.</summary>
+    /// <summary>Combien de nouveaux essais de suite après une panne, au plus, tant que les réglages ne changent pas.</summary>
     private const int MaxRetries = 3;
+
+    /// <summary>Un appareil qui tourne sans panne pendant ce temps remet le compte des essais à zéro : une panne plus tardive retrouve ses trois essais.</summary>
+    private static readonly TimeSpan HealthyRunReset = TimeSpan.FromHours(1);
 
     /// <summary>La durée sur laquelle on moyenne le temps de dessin d'une image.</summary>
     private static readonly TimeSpan SlowWindow = TimeSpan.FromSeconds(10);
@@ -83,6 +86,7 @@ public sealed class AccelerationController : IDisposable
     private string? _notice;
     private int _retries;
     private long? _retryFrom;                       // l'instant de la panne : le nouvel essai a lieu 5 min plus tard
+    private long? _healthySince;                    // l'instant où l'appareil en place a été ouvert
     private long? _windowStart;
     private double _windowMilliseconds;
     private int _windowSamples;
@@ -185,7 +189,12 @@ public sealed class AccelerationController : IDisposable
             _suspended = false;
             _failure = null;
             _log($"Accélération matérielle : nouvel essai de la carte graphique ({_retries}/{MaxRetries}).");
-            Settle();
+            RetryCard();
+        }
+
+        if (_device is not null && _retries > 0 && _healthySince is { } opened && _time.GetElapsedTime(opened) >= HealthyRunReset)
+        {
+            _retries = 0; // une heure sans panne : un nouvel échec aura de nouveau tous ses essais
         }
 
         JudgeSpeed();
@@ -281,6 +290,27 @@ public sealed class AccelerationController : IDisposable
         _log(warning);
     }
 
+    /// <summary>
+    /// Un nouvel essai après une panne : les cartes sont relues d'abord. Le LUID d'une carte ne vaut que pour une séance Windows
+    /// (il change après une mise à jour du pilote ou un arrêt et un redémarrage de la carte), et la fabrique retrouve la carte par
+    /// lui : la carte gardée en mémoire ne se retrouverait plus. On cherche donc la même carte (mêmes identifiants, puis même nom)
+    /// dans la liste fraîche ; absente, la carte automatique la remplace, avec la mention habituelle.
+    /// </summary>
+    private void RetryCard()
+    {
+        _adapters = ListAdapters();
+        var wanted = _candidate is null ? _settings! : new AccelerationSettings(Adapter: _candidate.Id);
+        _candidate = GpuAdapterChoice.Resolve(wanted, _adapters, WarnAbsent);
+        _autoPick = _settings!.Adapter is null || _notice is not null;
+        if (_candidate is null)
+        {
+            Suspend($"La carte graphique n'a pas pu démarrer (aucune carte graphique trouvée) : {CpuDrawing}.");
+            return;
+        }
+
+        Settle();
+    }
+
     /// <summary>Met l'appareil de dessin en accord avec les réglages et la carte voulue : en ouvre un, garde celui qui convient, retire les autres.</summary>
     private void Settle()
     {
@@ -293,6 +323,7 @@ public sealed class AccelerationController : IDisposable
         {
             _device = _factory!.Create(_candidate!);
             _deviceAdapter = _candidate;
+            _healthySince = _time.GetTimestamp();
             ResetWindow();
         }
         catch (Exception ex)
@@ -371,6 +402,7 @@ public sealed class AccelerationController : IDisposable
         _retired.Add(device);
         _device = null;
         _deviceAdapter = null;
+        _healthySince = null;
     }
 
     /// <summary>Calcule la carte des vidéos et l'état à montrer d'après tout ce qui précède.</summary>
