@@ -42,7 +42,7 @@
 - **Les outils restent sur le processeur** : `Trofeo.ThemePreview`, `Trofeo.SettingsPreview`, `ModuleTestHost` du SDK et `ashboard-module check` ne reçoivent jamais d'appareil.
 - **Un seul fil par `GRContext`.** Toute la composition (écran, aperçus des vues cachées, glissement) se fait déjà sur le fil de la boucle d'affichage : l'appareil de dessin n'est utilisé que là. En mode carte, le verre avancé se calcule sur ce fil (sans le fil de calcul à part).
 - **Tests sans carte.** La recette GitHub n'a pas de carte graphique : les tests Direct3D 12 tournent sur WARP (`D3D12GpuDevice.CreateWarp()`), et sont sautés avec un message clair si Direct3D 12 n'existe pas. Les tests qui exigent une vraie carte (décodage vidéo matériel) sont sautés sans carte matérielle.
-- **Licences.** Les paquets Vortice ajoutés (Direct3D12, DXGI, Direct3D11 ; MIT) vont dans `LICENCES-TIERCES` et sont vérifiés par `installer/build.ps1` comme les autres (la vérification existe depuis le plan 9 : y ajouter les noms).
+- **Licences.** Les paquets Vortice ajoutés (Direct3D12, DXGI, Direct3D11 ; MIT) sont cités dans `installer/LICENCES-TIERCES.txt`, comme Vortice.MediaFoundation.
 
 ## Points de vigilance
 
@@ -85,7 +85,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 
 **Fichiers :**
 - Créer : `src/Trofeo.Core/Rendering/IGpuDevice.cs` (interface et `GpuLostException`), `src/Trofeo.Display/Gpu/GpuAdapters.cs`, `src/Trofeo.Display/Gpu/D3D12GpuDevice.cs`, `src/Trofeo.Service/GpuAdapterInfo.cs`
-- Modifier : `src/Trofeo.Display/Trofeo.Display.csproj` (Vortice.Direct3D12 et Vortice.DXGI 3.8.3), `LICENCES-TIERCES`, `installer/build.ps1` (vérification des licences)
+- Modifier : `src/Trofeo.Display/Trofeo.Display.csproj` (Vortice.Direct3D12 et Vortice.DXGI 3.8.3), `installer/LICENCES-TIERCES.txt`
 - Tests : `tests/Trofeo.Display.Tests/D3D12GpuDeviceTests.cs`, `tests/Trofeo.Display.Tests/GpuTestSupport.cs`, `tests/Trofeo.TestDoubles/ImageDiff.cs`
 
 **Interfaces :**
@@ -230,7 +230,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 
 **Fichiers :**
 - Créer : `src/Trofeo.Display/Video/VideoDecodeOptions.cs`, `src/Trofeo.Display/Video/SharedVideoFrame.cs` (texture partagée Direct3D 11 → 12 et barrière)
-- Modifier : `src/Trofeo.Display/Video/MediaFoundationBackground.cs`, `src/Trofeo.Core/Rendering/Backgrounds/IBackground.cs` (deux interfaces), `src/Trofeo.Core/Rendering/FrameComposer.cs` (`DrawBackground`), `src/Trofeo.Service/LoopConfigFactory.cs`, `src/Trofeo.Display/Program.cs`, `src/Trofeo.Display/Trofeo.Display.csproj` (Vortice.Direct3D11 3.8.3), `LICENCES-TIERCES`, `installer/build.ps1`
+- Modifier : `src/Trofeo.Display/Video/MediaFoundationBackground.cs`, `src/Trofeo.Core/Rendering/Backgrounds/IBackground.cs` (deux interfaces), `src/Trofeo.Core/Rendering/FrameComposer.cs` (`DrawBackground`), `src/Trofeo.Service/LoopConfigFactory.cs`, `src/Trofeo.Display/Program.cs`, `src/Trofeo.Display/Trofeo.Display.csproj` (Vortice.Direct3D11 3.8.3), `installer/LICENCES-TIERCES.txt`
 - Tests : `tests/Trofeo.Display.Tests/GpuVideoTests.cs`, `tests/Trofeo.Service.Tests/` (`LoopConfigFactory`)
 
 **Interfaces :**
