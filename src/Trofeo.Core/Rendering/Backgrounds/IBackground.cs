@@ -38,6 +38,13 @@ public interface ISeekableBackground
     /// Seule la carte qui décode réellement compte : un décodage par la carte qui a échoué à l'ouverture donne <c>null</c>.
     /// </summary>
     long? DecoderLuid { get; }
+
+    /// <summary>
+    /// La carte qui a refusé de décoder cette vidéo (à l'ouverture, ou en cours de lecture) et que le processeur a remplacée ;
+    /// <c>null</c> si aucune. Tant que la carte voulue est celle-là, rouvrir la vidéo ne servirait qu'à échouer de nouveau : le service
+    /// ne la rouvre que si la carte voulue change.
+    /// </summary>
+    long? RefusedLuid { get; }
 }
 
 /// <summary>

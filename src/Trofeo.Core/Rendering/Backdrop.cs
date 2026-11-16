@@ -40,6 +40,13 @@ internal sealed class Backdrop : IDisposable
     private PanelLook? _blurLook;
 
     private IGpuDevice? _device;
+    private SKSurface? _shrinkSurface;      // sur la carte : le fond réduit au quart, relu en 480 × 116 (la seule copie sur le processeur)
+
+    /// <summary>
+    /// L'image du fond déjà sur la carte (vidéo décodée par la carte), ou <c>null</c>. Sur la carte, la copie réduite se fait à partir
+    /// d'elle : l'image entière ne passe jamais sur le processeur, seuls 480 × 116 pixels y reviennent.
+    /// </summary>
+    public Func<IBackground, SKImage?>? GpuFrame { get; set; }
 
     /// <summary>Nombre de fois que la copie floutée a été recalculée.</summary>
     internal int Computations { get; private set; }
@@ -194,15 +201,34 @@ internal sealed class Backdrop : IDisposable
             return;
         }
 
-        Shrunk(background.Current, _small);
+        if (!ShrinkOnGpu(background)) Shrunk(background.Current, _small);
         _luminances.Clear();
         _smallFor = background;
         _smallVersion = background.Version;
     }
 
+    /// <summary>
+    /// Réduit au quart l'image de la carte du fond, sur la carte, puis rapatrie le résultat (480 × 116) dans la copie nette. Faux si le
+    /// fond n'a pas d'image sur la carte : l'appelant réduit alors <see cref="IBackground.Current"/>.
+    /// </summary>
+    private bool ShrinkOnGpu(IBackground background)
+    {
+        if (_device is null || GpuFrame?.Invoke(background) is not { } frame) return false;
+
+        _shrinkSurface ??= _device.CreateSurface(SmallInfo);
+        var canvas = _shrinkSurface.Canvas;
+        canvas.Clear(SKColors.Transparent);
+        using var paint = new SKPaint { BlendMode = SKBlendMode.Src };
+        canvas.DrawImage(frame, new SKRect(0, 0, frame.Width, frame.Height), new SKRect(0, 0, Width, Height), Shrink, paint);
+        return _shrinkSurface.ReadPixels(SmallInfo, _small.GetPixels(), _small.RowBytes, 0, 0);
+    }
+
     /// <summary>Jette la copie floutée et sa surface ; elles se refont à la prochaine demande.</summary>
     private void DropBlur()
     {
+        _shrinkSurface?.Dispose();
+        _shrinkSurface = null;
+        _smallFor = null; // la copie réduite se refait aussi : elle venait de l'ancien appareil (ou du processeur)
         _blurred?.Dispose();
         _surface?.Dispose();
         _blurred = null;

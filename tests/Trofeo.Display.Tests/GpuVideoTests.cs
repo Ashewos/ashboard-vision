@@ -1,9 +1,11 @@
 using SkiaSharp;
 using Trofeo.Core.Layout;
 using Trofeo.Core.Rendering;
+using Trofeo.TestDoubles;
 using Trofeo.Display.Gpu;
 using Trofeo.Display.Video;
 using Trofeo.ModuleKit;
+using Vortice.MediaFoundation;
 using Xunit.Abstractions;
 
 namespace Trofeo.Display.Tests;
@@ -66,6 +68,10 @@ public sealed class GpuVideoTests(GpuVideoTests.VideoFixture fixture, ITestOutpu
     /// <summary>Un cas par carte matérielle (au moins un, pour que la théorie existe même sans carte : elle est alors sautée).</summary>
     public static IEnumerable<object[]> CardIndexes() =>
         Enumerable.Range(0, Math.Max(1, Cards.Value.Count)).Select(i => new object[] { i });
+
+    /// <summary>Chaque carte matérielle avec chacun des quatre thèmes (indice dans <see cref="Themes.All"/>).</summary>
+    public static IEnumerable<object[]> CardsAndThemes() =>
+        CardIndexes().SelectMany(card => Enumerable.Range(0, Themes.All.Count).Select(theme => new object[] { card[0], theme }));
 
     private static GpuAdapterInfo Card(int index) => Cards.Value[index];
 
@@ -244,6 +250,74 @@ public sealed class GpuVideoTests(GpuVideoTests.VideoFixture fixture, ITestOutpu
         Assert.Equal(0, gpu.CpuReadbacks);
     }
 
+    [HardwareGpuTheory, MemberData(nameof(CardsAndThemes))]
+    public void GpuDecode_ComposerWithPanel_NeverReadsTheFullFrameBack(int index, int themeIndex)
+    {
+        // Un module avec son panneau, garde de lisibilité allumée : le flou du verre, la luminance et le verre avancé partent de l'image
+        // de la carte. Seule la copie réduite (480 × 116) revient sur le processeur, jamais l'image décodée entière.
+        var card = Card(index);
+        var theme = Themes.All[themeIndex] with { LegibilityGuard = true };
+        var placement = DashboardLayout.Default.Views[0].Placements[0];
+        var modules = new Dictionary<Guid, IModule>
+        {
+            [placement.InstanceId] = new FakeModule((canvas, ctx) =>
+            {
+                using var paint = new SKPaint { Color = SKColors.White, IsAntialias = true };
+                canvas.DrawCircle(ctx.Bounds.MidX, ctx.Bounds.MidY, 20, paint);
+            }),
+        };
+        using var device = D3D12GpuDevice.Create(card);
+        using var gpu = OpenOn(fixture.VideoPath, card, TimeSpan.Zero);
+        using var composer = new FrameComposer(new RateLimitedErrorLog(TimeProvider.System, _ => { }), gpu: device);
+        composer.GpuFailed += reason => Assert.Fail(reason);
+
+        foreach (var second in new[] { 0.0, 0.5, 1.0, 1.5 })
+        {
+            if (second > 0) Assert.True(gpu.Advance(TimeSpan.FromSeconds(second)));
+            using var frame = composer.Compose([placement], modules, theme, gpu, DateTimeOffset.UnixEpoch);
+            Assert.True(composer.UsesGpu);
+            Assert.NotEqual(SKColors.Black, frame.GetPixel(GridGeometry.Width / 2, 5)); // la vidéo est à l'écran, hors du panneau
+        }
+
+        output.WriteLine($"{card.Id.Name}, thème {theme.Theme.Id} : rapatriements de l'image entière = {gpu.CpuReadbacks}");
+        Assert.Equal(0, gpu.CpuReadbacks);
+    }
+
+    [HardwareGpuTheory, MemberData(nameof(CardIndexes))]
+    public void GpuFailureFlagWhilePlaying_ResumesOnCpuAndKeepsAdvancing(int index)
+    {
+        // Le lecteur signale une erreur de lecture pendant le décodage par la carte : la vidéo ne se fige pas, elle reprend par le processeur.
+        var card = Card(index);
+        var warnings = new List<string>();
+        using var video = OpenOn(fixture.VideoPath, card, TimeSpan.Zero, warnings);
+        video.Advance(TimeSpan.FromSeconds(1));
+        var fired = false;
+        video.FlagsFault = flags =>
+        {
+            if (fired) return flags;
+            fired = true;
+            return flags | SourceReaderFlag.Error;
+        };
+
+        Assert.True(video.Advance(TimeSpan.FromSeconds(1.5)));
+
+        Assert.True(fired);
+        Assert.Null(video.DecoderLuid);
+        Assert.Equal(card.Luid, video.RefusedLuid);
+        Assert.True(video.IsAnimated);
+        Assert.Contains("erreur de lecture", Assert.Single(warnings));
+        using var resumed = SKBitmap.FromImage(video.Current);
+        var best = new[] { 1.4, 1.5, 1.6 }
+            .Select(t => { using var reference = CpuFrameAt(fixture.VideoPath, TimeSpan.FromSeconds(t)); return Compare(reference, resumed, 6).Mean; })
+            .Min();
+        Assert.True(best < 1.0, $"écart {best:0.000}");
+
+        var version = video.Version;
+        Assert.True(video.Advance(TimeSpan.FromSeconds(2.5)));
+        Assert.NotEqual(version, video.Version); // la lecture continue sur le processeur
+        Assert.Single(warnings); // et sans autre avertissement
+    }
+
     [HardwareGpuTheory, MemberData(nameof(CardIndexes))]
     public void GpuDecode_CpuDrawing_CurrentWorks(int index)
     {
@@ -319,6 +393,7 @@ public sealed class GpuVideoTests(GpuVideoTests.VideoFixture fixture, ITestOutpu
         using var video = Assert.IsType<MediaFoundationBackground>(MediaFoundationBackground.TryOpen(fixture.VideoPath, warnings.Add, options));
 
         Assert.Null(video.DecoderLuid); // elle est décodée par le processeur
+        Assert.Equal(card.Luid, video.RefusedLuid); // et la carte refusée est retenue : le service ne rouvre pas la vidéo pour elle
         Assert.True(video.IsAnimated);
         Assert.Equal(GridGeometry.Width, video.Current.Width);
         var warning = Assert.Single(warnings);
@@ -354,6 +429,7 @@ public sealed class GpuVideoTests(GpuVideoTests.VideoFixture fixture, ITestOutpu
             MediaFoundationBackground.TryOpen(fixture.VideoPath, warnings.Add, new VideoDecodeOptions(missing, TimeSpan.Zero)));
 
         Assert.Null(video.DecoderLuid);
+        Assert.Equal(missing.Luid, video.RefusedLuid);
         Assert.Equal(GridGeometry.Width, video.Current.Width);
         Assert.Single(warnings);
         Assert.Contains("carte graphique", warnings[0]);
@@ -379,6 +455,7 @@ public sealed class GpuVideoTests(GpuVideoTests.VideoFixture fixture, ITestOutpu
         video.ReadFault = null;
 
         Assert.Null(video.DecoderLuid);
+        Assert.Equal(card.Luid, video.RefusedLuid);
         Assert.True(video.IsAnimated);
         var warning = Assert.Single(warnings);
         Assert.Contains("carte retirée", warning);

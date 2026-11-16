@@ -92,6 +92,7 @@ public sealed class FrameComposer : IDisposable
         _errors = errors ?? new RateLimitedErrorLog(TimeProvider.System);
         _backgroundGlass = backgroundGlass;
         _gpu = gpu;
+        _backdrop.GpuFrame = GpuBackgroundFrame; // le flou et la luminance partent de l'image de la carte, pas du fond sur le processeur
     }
 
     /// <summary>Vrai tant que l'appareil donné à la construction marche : les images se dessinent sur la carte, verre avancé compris.</summary>
@@ -613,6 +614,7 @@ public sealed class FrameComposer : IDisposable
     private LiquidGlassLayers NewGlassLayers(bool onGpu)
     {
         var layers = new LiquidGlassLayers(_backgroundGlass, _errors.Report, onGpu ? _gpu : null);
+        if (onGpu) layers.GpuBackgroundFrame = GpuBackgroundFrame;
         layers.Ready += OnGlassReady;
         return layers;
     }
@@ -696,13 +698,13 @@ public sealed class FrameComposer : IDisposable
         var blurred = theme.Panel.Kind == PanelKind.Glass ? _backdrop.Get(background, theme.Panel) : null;
         if (!theme.LegibilityGuard)
         {
-            PanelPainter.Paint(canvas, rect, theme, blurred, background.Current);
+            PanelPainter.Paint(canvas, rect, theme, blurred, null); // garde coupée : le fond ne sert pas (et ne se rapatrie pas)
             return;
         }
 
         float target = PanelPainter.TargetAlpha(theme, _backdrop.BrightestLuminance(background, rect));
         float alpha = background.IsAnimated ? _alpha.Smooth(rect, target, now) : target;
-        PanelPainter.Paint(canvas, rect, theme, blurred, background.Current, alpha: alpha);
+        PanelPainter.Paint(canvas, rect, theme, blurred, null, alpha: alpha); // l'opacité est donnée : le fond ne sert pas
     }
 
     /// <summary>
@@ -722,7 +724,7 @@ public sealed class FrameComposer : IDisposable
             alpha = background.IsAnimated ? _alpha.Smooth(rect, target, now) : target;
         }
 
-        PanelPainter.Paint(canvas, rect, theme, null, background.Current, alpha: alpha);
+        PanelPainter.Paint(canvas, rect, theme, null, null, alpha: alpha);
     }
 
     /// <summary>Efface ce que le module a pu peindre avant d'échouer, puis affiche le message d'erreur.</summary>

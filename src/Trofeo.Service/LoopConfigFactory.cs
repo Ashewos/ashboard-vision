@@ -75,11 +75,14 @@ public static class LoopConfigFactory
     /// <summary>
     /// Vrai si le fond de <paramref name="current"/> est une vidéo qui se décode ailleurs que sur la carte voulue
     /// (<paramref name="wantedLuid"/>, <c>null</c> : le processeur) : elle est à rouvrir, à <paramref name="position"/>.
-    /// Le fond de repli du thème, une image, une couleur : jamais (ils ne se décodent pas sur une carte).
+    /// Le fond de repli du thème, une image, une couleur : jamais (ils ne se décodent pas sur une carte). Une vidéo que la carte voulue
+    /// a déjà refusée (<see cref="ISeekableBackground.RefusedLuid"/>) n'est pas rouverte pour elle.
     /// </summary>
     public static bool DecoderIsStale(LoopConfig current, long? wantedLuid, out TimeSpan position)
     {
-        if (current.Background is ISeekableBackground seekable && !current.BackgroundIsThemeFallback && seekable.DecoderLuid != wantedLuid)
+        // Une carte qui a refusé ce fichier n'est pas réessayée tant qu'elle reste la carte voulue (un autre choix de carte, oui).
+        if (current.Background is ISeekableBackground seekable && !current.BackgroundIsThemeFallback
+            && seekable.DecoderLuid != wantedLuid && !(wantedLuid is not null && wantedLuid == seekable.RefusedLuid))
         {
             position = seekable.Position;
             return true;

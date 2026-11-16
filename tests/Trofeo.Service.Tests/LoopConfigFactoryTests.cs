@@ -94,11 +94,12 @@ public sealed class LoopConfigFactoryTests
         public List<SeekableVideo> Videos { get; } = [];
         public TimeSpan PositionOfNext { get; set; } = TimeSpan.FromSeconds(1.5);
         public long? LuidOfNext { get; set; }
+        public long? RefusedOfNext { get; set; }
 
         public IBackground? Open(string path, TimeSpan startAt)
         {
             Opened.Add((path, startAt));
-            var video = new SeekableVideo(PositionOfNext, LuidOfNext);
+            var video = new SeekableVideo(PositionOfNext, LuidOfNext, RefusedOfNext);
             Videos.Add(video);
             return video;
         }
@@ -161,6 +162,40 @@ public sealed class LoopConfigFactoryTests
         Assert.Single(opener.Opened);
         Assert.False(opener.Videos[0].Disposed);
         current.Background.Dispose();
+    }
+
+    [Fact]
+    public void RefusedCard_VideoIsNotReopenedWhileTheWantedCardStaysTheSame()
+    {
+        // La carte 42 a refusé ce fichier (la vidéo se décode sur le processeur) : chaque rechargement n'y retourne pas.
+        var opener = new VideoOpener { LuidOfNext = null, RefusedOfNext = 42 };
+        var appearance = new AppearanceSettings(Background: VideoSettings);
+        var current = LoopConfigFactory.Build(With(appearance), new NoSystemFonts(), opener.Open, _ => { }, videoDecoderLuid: 42);
+
+        var next = LoopConfigFactory.Build(With(appearance), new NoSystemFonts(), opener.Open, _ => { }, current, videoDecoderLuid: 42);
+
+        Assert.Same(current.Background, next.Background);
+        Assert.Single(opener.Opened);
+        Assert.False(opener.Videos[0].Disposed);
+        current.Background.Dispose();
+    }
+
+    [Fact]
+    public void RefusedCard_VideoIsReopenedAtPositionWhenTheWantedCardChanges()
+    {
+        var opener = new VideoOpener { LuidOfNext = null, RefusedOfNext = 42, PositionOfNext = TimeSpan.FromSeconds(6) };
+        var appearance = new AppearanceSettings(Background: VideoSettings);
+        var current = LoopConfigFactory.Build(With(appearance), new NoSystemFonts(), opener.Open, _ => { }, videoDecoderLuid: 42);
+        opener.RefusedOfNext = null;
+        opener.LuidOfNext = 7;
+
+        var next = LoopConfigFactory.Build(With(appearance), new NoSystemFonts(), opener.Open, _ => { }, current, videoDecoderLuid: 7);
+
+        Assert.Equal(2, opener.Opened.Count);
+        Assert.Equal(TimeSpan.FromSeconds(6), opener.Opened[1].StartAt);
+        Assert.NotSame(current.Background, next.Background);
+        current.Background.Dispose();
+        next.Background.Dispose();
     }
 
     [Fact]

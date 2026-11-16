@@ -252,6 +252,12 @@ internal sealed class LiquidGlassLayers : IDisposable
 
     private readonly Action<string>? _report;
 
+    /// <summary>
+    /// L'image du fond déjà sur la carte (vidéo décodée par la carte), que le verre prend à la place de <see cref="IBackground.Current"/>
+    /// : l'image entière ne repasse pas par le processeur. Posé par le compositeur quand le verre est sur la carte.
+    /// </summary>
+    internal Func<IBackground, SKImage?>? GpuBackgroundFrame { get; set; }
+
     /// <summary>Une couche calculée sur le fil à part est prête. Levé depuis ce fil.</summary>
     public event Action? Ready;
 
@@ -760,7 +766,7 @@ internal sealed class LiquidGlassLayers : IDisposable
             }
             if (needGlass)
             {
-                var glass = ComputeGlass(glassKey, scene, background.Current);
+                var glass = ComputeGlass(glassKey, scene, (_gpu is null ? null : GpuBackgroundFrame?.Invoke(background)) ?? background.Current);
                 Drop(slot.Glass);
                 slot.Glass = glass;
             }

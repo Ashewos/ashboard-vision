@@ -58,12 +58,13 @@ internal sealed class TrackedBackground(SKColor color) : IBackground
 }
 
 /// <summary>Une vidéo qui dit où elle en est et sur quelle carte elle se décode.</summary>
-internal sealed class SeekableVideo(TimeSpan position, long? decoderLuid) : IBackground, ISeekableBackground
+internal sealed class SeekableVideo(TimeSpan position, long? decoderLuid, long? refusedLuid = null) : IBackground, ISeekableBackground
 {
     private readonly ColorBackground _inner = new(SKColors.Red);
     public bool Disposed { get; private set; }
     public TimeSpan Position { get; } = position;
     public long? DecoderLuid { get; } = decoderLuid;
+    public long? RefusedLuid { get; } = refusedLuid;
     public bool IsAnimated => true;
     public SKImage Current => _inner.Current;
     public int Version => 1;

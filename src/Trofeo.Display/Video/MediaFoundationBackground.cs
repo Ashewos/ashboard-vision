@@ -52,6 +52,7 @@ public sealed class MediaFoundationBackground : IBackground, ISeekableBackground
     private D3D11VideoDevice? _gpu;     // la carte qui décode : le décodeur y dépose ses images ; null : le processeur décode
     private SharedVideoFrame? _shared;  // décodage par la carte : l'image courante, sur la carte
     private int _cpuVersion;            // décodage par la carte : la version dont _current est le rapatriement
+    private bool _playing;              // ouverture réussie : une panne de la carte n'est plus un échec d'ouverture (la lecture reprend par le processeur)
     private bool _interopFailed;        // la texture partagée n'a pas pu s'ouvrir sur Direct3D 12 : le compositeur passe par Current
     private TimeSpan _lastNow;          // le dernier temps écoulé donné à Advance
     private TimeSpan? _skipBefore;      // après une reprise : les échantillons qui finissent avant ce temps (absolu) sont jetés
@@ -115,6 +116,7 @@ public sealed class MediaFoundationBackground : IBackground, ISeekableBackground
         var background = TryOpenOnce(path, warn, tuning, options, null, out var cause);
         if (background is not null)
         {
+            if (options.Adapter is { } refused) background.RefusedLuid = refused.Luid; // la carte n'a pas pu décoder ce fichier
             // La carte n'a pas pu décoder, le processeur y arrive : on le dit (le fond, lui, joue).
             if (gpuCause is not null)
                 warn?.Invoke($"Décodage par la carte graphique impossible pour {path} ({gpuCause}) : la vidéo est décodée par le processeur.");
@@ -147,6 +149,7 @@ public sealed class MediaFoundationBackground : IBackground, ISeekableBackground
                 if (background.ReadFirstFrame())
                 {
                     background._warn = warn;
+                    background._playing = true;
                     background.PublishPosition();
                     if (background._tuningFailure is { } refused)
                     {
@@ -406,13 +409,14 @@ public sealed class MediaFoundationBackground : IBackground, ISeekableBackground
         for (int empty = 0; empty < MaxEmptyReads;)
         {
             var sample = _reader!.ReadSample(SourceReaderIndex.FirstVideoStream, SourceReaderControlFlag.None, out _, out var flags, out long time);
+            if (FlagsFault is not null) flags = FlagsFault(flags);
 
             if (flags.HasFlag(SourceReaderFlag.CurrentMediaTypeChanged)) ReadFormat();
 
             if (flags.HasFlag(SourceReaderFlag.Error))
             {
                 sample?.Dispose();
-                Fail("le lecteur Media Foundation a signalé une erreur de lecture");
+                FailRead("le lecteur Media Foundation a signalé une erreur de lecture");
                 return;
             }
 
@@ -430,7 +434,7 @@ public sealed class MediaFoundationBackground : IBackground, ISeekableBackground
                 }
                 if (_frameEnd <= TimeSpan.Zero)
                 {
-                    Fail("fin du fichier atteinte sans aucune image"); // ou revenu au début sans rien lire
+                    FailRead("fin du fichier atteinte sans aucune image"); // ou revenu au début sans rien lire
                     return;
                 }
                 _loopLength = _frameEnd;
@@ -468,7 +472,20 @@ public sealed class MediaFoundationBackground : IBackground, ISeekableBackground
             return;
         }
 
-        Fail($"{MaxEmptyReads} échantillons vides de suite"); // que des trous : on ne tourne pas dans le vide
+        FailRead($"{MaxEmptyReads} échantillons vides de suite"); // que des trous : on ne tourne pas dans le vide
+    }
+
+    /// <summary>
+    /// Une panne de lecture. Pendant la lecture par la carte, c'est la carte qu'on soupçonne : la panne remonte jusqu'à
+    /// <see cref="AdvanceCore"/>, qui reprend par le processeur à la même position (au lieu de figer la vidéo pour de bon).
+    /// Sur le processeur, ou pendant l'ouverture (que <see cref="TryOpen(string, Action{string}?, DecoderTuning, VideoDecodeOptions)"/>
+    /// retente sur le processeur), c'est <see cref="Fail"/>.
+    /// </summary>
+    private void FailRead(string cause)
+    {
+        if (_gpu is not null && _playing) throw new InvalidOperationException(cause);
+
+        Fail(cause);
     }
 
     /// <summary>
@@ -676,6 +693,7 @@ public sealed class MediaFoundationBackground : IBackground, ISeekableBackground
     private bool FallBackToCpu(string cause, TimeSpan now)
     {
         var position = ComputePosition();
+        RefusedLuid = _gpu?.Luid ?? RefusedLuid;
         _warn?.Invoke($"Le décodage de la vidéo par la carte graphique a échoué : {_path} ({cause}). La lecture reprend par le processeur.");
 
         _sample?.Dispose();
@@ -735,6 +753,9 @@ public sealed class MediaFoundationBackground : IBackground, ISeekableBackground
 
     /// <summary>La carte qui décode (son LUID) ; <c>null</c> : le processeur décode, ou la carte a lâché et la lecture est reprise par le processeur.</summary>
     public long? DecoderLuid => _gpu?.Luid;
+
+    /// <summary>La carte qui a refusé cette vidéo (à l'ouverture ou en cours de lecture) ; <c>null</c> si aucune.</summary>
+    public long? RefusedLuid { get; private set; }
 
     /// <summary>Pour les tests : combien de fois l'image décodée par la carte a été rapatriée sur le processeur.</summary>
     internal int CpuReadbacks { get; private set; }
@@ -813,6 +834,9 @@ public sealed class MediaFoundationBackground : IBackground, ISeekableBackground
 
     /// <summary>Pour les tests : appelé avant chaque lecture d'échantillon ; s'il lève, la lecture échoue comme si le décodeur lâchait.</summary>
     internal Action? ReadFault { get; set; }
+
+    /// <summary>Pour les tests : change les indicateurs rendus par le lecteur après chaque lecture (par exemple pour simuler <c>Error</c> ou une fin de flux).</summary>
+    internal Func<SourceReaderFlag, SourceReaderFlag>? FlagsFault { get; set; }
 
     /// <summary>Nombre de flux du fichier, et parmi eux ceux que le lecteur décode. Pour les tests : un seul, la vidéo.</summary>
     internal int StreamCount => CountStreams(selectedOnly: false);

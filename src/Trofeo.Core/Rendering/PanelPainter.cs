@@ -21,16 +21,20 @@ internal static class PanelPainter
     /// Peint le panneau sous le module (avant son rendu).
     /// </summary>
     /// <param name="backdrop">Le fond flouté de <see cref="Backdrop.Get"/> ; null hors verre.</param>
-    /// <param name="background">Le fond net de l'écran ; sert à mesurer la luminance quand elle n'est pas donnée.</param>
+    /// <param name="background">
+    /// Le fond net de l'écran ; sert à mesurer la luminance quand elle n'est pas donnée. <c>null</c> accepté quand l'appelant donne
+    /// <paramref name="alpha"/> ou <paramref name="backdropLuminance"/>, ou que la garde est coupée : le compositeur n'a alors pas à
+    /// calculer l'image du fond (une vidéo décodée par la carte ne se rapatrie pas pour rien).
+    /// </param>
     /// <param name="backdropLuminance">Luminance de la zone la plus claire du fond sous <paramref name="rect"/> (<see cref="Backdrop.BrightestLuminance(IBackground, SKRect)"/>) ; sinon mesurée sur <paramref name="background"/>. Inutile quand la garde est coupée.</param>
     /// <param name="alpha">L'opacité à appliquer, quand l'appelant l'a lissée dans le temps ; sinon celle de <see cref="TargetAlpha"/>.</param>
     public static void Paint(
-        SKCanvas canvas, SKRect rect, ThemeDefinition theme, SKImage? backdrop, SKImage background,
+        SKCanvas canvas, SKRect rect, ThemeDefinition theme, SKImage? backdrop, SKImage? background,
         float? backdropLuminance = null, float? alpha = null)
     {
         var look = theme.Panel;
         float applied = alpha
-            ?? TargetAlpha(theme, theme.LegibilityGuard ? backdropLuminance ?? MeasureOnce(background, rect) : 0f);
+            ?? TargetAlpha(theme, theme.LegibilityGuard ? backdropLuminance ?? MeasureOnce(background ?? throw new ArgumentNullException(nameof(background)), rect) : 0f);
 
         switch (look.Kind)
         {
