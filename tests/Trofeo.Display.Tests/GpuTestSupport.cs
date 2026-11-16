@@ -10,6 +10,13 @@ internal static class GpuTestSupport
 {
     internal const string SkipMessage = "Direct3D 12 absent";
 
+    /// <summary>
+    /// Les classes de tests qui ouvrent un appareil WARP se rangent dans cette collection, donc ne tournent jamais en même temps :
+    /// les tests de carte perdue (<c>RemoveDevice</c>) font aussi tomber, ou refuser, les appareils WARP que les autres classes
+    /// ouvrent au même moment (« Direct3D 12 absent », code 0x887A0005).
+    /// </summary>
+    internal const string CollectionName = "Gpu";
+
     private static readonly Lazy<bool> WarpAvailable = new(() =>
     {
         if (!OperatingSystem.IsWindows()) return false;

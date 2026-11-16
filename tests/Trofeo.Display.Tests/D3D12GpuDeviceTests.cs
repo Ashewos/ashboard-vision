@@ -7,6 +7,7 @@ using Trofeo.TestDoubles;
 namespace Trofeo.Display.Tests;
 
 /// <summary>L'appareil Direct3D 12 pour Skia, essayé sur WARP (carte logicielle de Windows).</summary>
+[Collection(GpuTestSupport.CollectionName)]
 public class D3D12GpuDeviceTests
 {
     [WarpFact]

@@ -14,10 +14,16 @@ internal sealed class LiquidGlassEffect : IDisposable
 
     private readonly SKRuntimeEffect _glass;
     private readonly SKRuntimeEffect _shadow;
+    private readonly IGpuDevice? _gpu;
 
     /// <summary>Compile les deux programmes. Une erreur de compilation lève <see cref="InvalidOperationException"/> avec le message de Skia.</summary>
-    public LiquidGlassEffect()
+    /// <param name="gpu">
+    /// La carte qui exécute les programmes : chaque image est alors dessinée d'un bloc sur une surface de la carte (pas de bandes)
+    /// et rendue comme image de la carte. <c>null</c> : le processeur, comme avant la carte. L'effet ne sert que le fil de l'appareil.
+    /// </param>
+    public LiquidGlassEffect(IGpuDevice? gpu = null)
     {
+        _gpu = gpu;
         var sections = ReadSections();
         _glass = Compile("glass", sections);
         try
@@ -169,12 +175,21 @@ internal sealed class LiquidGlassEffect : IDisposable
     internal int Strips { get; init; } = DefaultStrips;
 
     /// <summary>
-    /// Exécute le programme sur une image de cette taille, par le processeur, en alpha prémultiplié. L'image est découpée en
-    /// bandes horizontales (voir <see cref="Strips"/>), chacune peinte sur sa part des mêmes pixels par son propre fil.
+    /// Exécute le programme sur une image de cette taille, en alpha prémultiplié. Sur la carte, tout se dessine d'un bloc et
+    /// l'image rendue reste sur la carte. Par le processeur, l'image est découpée en bandes horizontales (voir
+    /// <see cref="Strips"/>), chacune peinte sur sa part des mêmes pixels par son propre fil.
     /// </summary>
     private SKImage Render(SKShader shader, int width, int height)
     {
         var info = new SKImageInfo(width, height, SKImageInfo.PlatformColorType, SKAlphaType.Premul);
+        if (_gpu is not null)
+        {
+            using var target = _gpu.CreateSurface(info);
+            using var gpuPaint = new SKPaint { Shader = shader, BlendMode = SKBlendMode.Src };
+            target.Canvas.DrawPaint(gpuPaint);
+            return target.Snapshot();
+        }
+
         int strips = Math.Clamp(height / MinStripRows, 1, Math.Max(1, Strips));
         if (strips == 1)
         {

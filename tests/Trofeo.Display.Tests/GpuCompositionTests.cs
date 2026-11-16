@@ -11,6 +11,7 @@ namespace Trofeo.Display.Tests;
 /// La composition de l'image sur la carte (WARP) donne la même image que sur le processeur, à la tolérance près :
 /// 99,9 % des pixels à 4/255 au plus par couleur, écart moyen sous 0,5/255.
 /// </summary>
+[Collection(GpuTestSupport.CollectionName)]
 public class GpuCompositionTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 16, 12, 0, 0, TimeSpan.Zero);

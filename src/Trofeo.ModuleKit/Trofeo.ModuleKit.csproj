@@ -24,6 +24,7 @@
     <InternalsVisibleTo Include="Trofeo.ModuleHost.Tests" />
     <InternalsVisibleTo Include="AshboardVision.Sdk.Tests" />
     <InternalsVisibleTo Include="Trofeo.Modules.Agents.Tests" />
+    <InternalsVisibleTo Include="Trofeo.Display.Tests" />
   </ItemGroup>
 
 </Project>

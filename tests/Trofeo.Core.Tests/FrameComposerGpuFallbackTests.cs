@@ -142,12 +142,13 @@ public class FrameComposerGpuFallbackTests
     }
 
     [Fact]
-    public void AdvancedGlass_StaysOnTheCpuUntilTask4()
+    public void AdvancedGlass_OnTheGpu_GivesTheCpuFrame()
     {
+        // Les surfaces du faux appareil sont celles du processeur : le verre calculé « sur la carte » est identique au pixel près.
         using var reference = NewComposer(null);
         using var expected = Compose(reference, Themes.LiquidGlassAdvanced, SKColors.DarkSlateBlue);
 
-        var device = new FakeGpuDevice { FailCreate = true }; // le moindre recours à l'appareil serait une panne
+        var device = new FakeGpuDevice();
         using var composer = NewComposer(device);
         composer.GpuFailed += reason => Assert.Fail(reason);
 
@@ -155,7 +156,29 @@ public class FrameComposerGpuFallbackTests
 
         AssertSamePixels(expected, actual);
         Assert.True(composer.UsesGpu);
-        Assert.Equal(0, device.SurfaceRequests);
+        Assert.True(composer.GlassOnGpu);
+        Assert.True(device.SurfacesCreated > 1, "le verre n'a pas été calculé sur l'appareil");
+    }
+
+    [Fact]
+    public void AdvancedGlass_LostMidFrame_StillReturnsTheCpuFrame()
+    {
+        using var reference = NewComposer(null);
+        using var expected = Compose(reference, Themes.LiquidGlassAdvanced, SKColors.DarkSlateBlue);
+
+        var device = new FakeGpuDevice();
+        device.LoseAfter(3); // l'image et les premiers verres sont faits, puis la carte tombe en pleine image
+        using var composer = NewComposer(device);
+        var reasons = new List<string>();
+        composer.GpuFailed += reasons.Add;
+
+        using var actual = Compose(composer, Themes.LiquidGlassAdvanced, SKColors.DarkSlateBlue);
+
+        AssertSamePixels(expected, actual);
+        Assert.Single(reasons);
+        Assert.False(composer.UsesGpu);
+        Assert.False(composer.GlassOnGpu); // les couches de la carte sont jetées, celles du processeur sont refaites
+        Assert.Equal(reference.GlassComputations, composer.GlassComputations);
     }
 
     [Fact]
