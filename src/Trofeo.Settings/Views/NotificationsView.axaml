@@ -8,7 +8,7 @@
   <!-- La cloche de l'en-tête : un bouton icône (une cloche dessinée), un rond avec le nombre de notifications, et un panneau dessous. -->
   <Panel>
     <Button Name="BellButton" Classes="bell"
-            ToolTip.Tip="{x:Static t:Texts.NotificationsName}" AutomationProperties.Name="{x:Static t:Texts.NotificationsName}">
+            ToolTip.Tip="{x:Static t:Texts.NotificationsName}" AutomationProperties.Name="{Binding BellName}">
       <!-- Une cloche dessinée (aucune police d'icônes dans la fenêtre). -->
       <Path Width="16" Height="16" Stretch="Uniform" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round"
             Stroke="{Binding $parent[Button].Foreground}"

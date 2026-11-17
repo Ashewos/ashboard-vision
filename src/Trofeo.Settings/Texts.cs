@@ -779,6 +779,8 @@ public static class Texts
     public static string NotificationLinkSettings => Get();
     /// <summary>Cloche de l'en-tête : bulle d'aide et nom pour l'accessibilité.</summary>
     public static string NotificationsName => Get();
+    /// <summary>Cloche de l'en-tête : nom pour l'accessibilité quand il y a des notifications ({0} : leur nombre).</summary>
+    public static string NotificationsNameCount => Get();
     /// <summary>Cloche : nom (et bulle d'aide) de la croix d'une notification.</summary>
     public static string NotificationDismiss => Get();
     /// <summary>Cloche : le panneau quand il n'y a aucune notification.</summary>

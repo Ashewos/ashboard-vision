@@ -445,6 +445,25 @@ public sealed class NotificationsTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void Bell_AccessibleName_CarriesTheCount()
+    {
+        SetModules(Module("a", stops: 1, lastStop: T0));
+        _link.SetUpdates(Updates(LinkUpdateState.Available, "1.2.0"));
+        var (window, model) = Show();
+        var bell = Named<Button>(window, "BellButton");
+
+        Assert.Equal("Notifications (2)", Avalonia.Automation.AutomationProperties.GetName(bell));
+        Assert.Equal("Notifications (2)", model.Notifications.BellName);
+
+        model.Notifications.Dismiss("app:1.2.0");
+        Assert.Equal("Notifications (1)", Avalonia.Automation.AutomationProperties.GetName(bell));
+
+        model.Notifications.Dismiss($"stop:a:{T0.UtcDateTime:O}");
+        Assert.Equal("Notifications", Avalonia.Automation.AutomationProperties.GetName(bell));
+        Assert.Equal("Notifications", model.Notifications.BellName);
+    }
+
+    [AvaloniaFact]
     public void Bell_IsDisabledDuringTheFirstRunWizard_LikeTheTabs()
     {
         var (window, model) = Show(firstRunDone: false);

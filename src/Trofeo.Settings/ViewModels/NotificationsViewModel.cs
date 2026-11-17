@@ -45,6 +45,11 @@ public sealed class NotificationsViewModel : ObservableObject, IDisposable
     /// <summary>Le nombre de notifications visibles : le rond de la cloche.</summary>
     public int Count => Items.Count;
 
+    /// <summary>Le nom de la cloche pour l'accessibilité : « Notifications (3) » avec trois notifications visibles, « Notifications » à zéro.</summary>
+    public string BellName => Count > 0
+        ? string.Format(CultureInfo.CurrentCulture, Texts.NotificationsNameCount, Count)
+        : Texts.NotificationsName;
+
     /// <summary>Au moins un problème est visible : le rond de la cloche est rouge.</summary>
     public bool HasProblem => Items.Any(i => i.Kind == NotificationKind.Problem);
 
@@ -158,6 +163,7 @@ public sealed class NotificationsViewModel : ObservableObject, IDisposable
         Items = visible;
         OnPropertyChanged(nameof(Items));
         OnPropertyChanged(nameof(Count));
+        OnPropertyChanged(nameof(BellName));
         OnPropertyChanged(nameof(HasProblem));
         OnPropertyChanged(nameof(IsEmpty));
     }

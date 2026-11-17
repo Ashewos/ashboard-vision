@@ -1521,6 +1521,10 @@
     <value>Notifications</value>
     <comment>Cloche de l'en-tête : bulle d'aide et nom pour l'accessibilité.</comment>
   </data>
+  <data name="NotificationsNameCount" xml:space="preserve">
+    <value>Notifications ({0})</value>
+    <comment>Cloche de l'en-tête : nom pour l'accessibilité quand il y a des notifications ({0} : leur nombre).</comment>
+  </data>
   <data name="NotificationDismiss" xml:space="preserve">
     <value>Supprimer la notification</value>
     <comment>Cloche : nom (et bulle d'aide) de la croix d'une notification.</comment>
