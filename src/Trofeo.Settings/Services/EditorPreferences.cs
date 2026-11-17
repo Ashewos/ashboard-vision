@@ -8,7 +8,9 @@ namespace Trofeo.Settings.Services;
 /// <param name="FirstRunDone">L'assistant de première ouverture a été terminé. Fermé en route, il se rouvre au lancement suivant ; « Relancer l'assistant » (Paramètres) le remet à faux.</param>
 /// <param name="RealTimePreview">Aperçu à 12 images par seconde au lieu de 4.</param>
 /// <param name="FollowView">Choisir une vue dans l'onglet Disposition l'affiche aussi sur l'écran ; décoché, seul l'aperçu change.</param>
-public sealed record EditorPreferences(bool FirstRunDone = false, bool RealTimePreview = false, bool FollowView = true)
+/// <param name="DismissedNotifications">Les clés des notifications de la cloche que la croix a supprimées (retenues sur ce PC, hors de l'export de la disposition) ; <c>null</c> : aucune, comme dans un fichier d'avant la cloche.</param>
+public sealed record EditorPreferences(
+    bool FirstRunDone = false, bool RealTimePreview = false, bool FollowView = true, IReadOnlyList<string>? DismissedNotifications = null)
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 

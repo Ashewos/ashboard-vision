@@ -1485,4 +1485,36 @@
     <value>Impossible de lire la consommation pour le moment.</value>
     <comment>Quand le service ne répond pas à la lecture de la consommation.</comment>
   </data>
+  <data name="NotificationAppUpdate" xml:space="preserve">
+    <value>Ashboard Vision {0} est disponible.</value>
+    <comment>Cloche : une mise à jour du logiciel est proposée. {0} : la version.</comment>
+  </data>
+  <data name="NotificationModuleUpdate" xml:space="preserve">
+    <value>{0} {1} est disponible.</value>
+    <comment>Cloche : une mise à jour d'un module complémentaire est proposée. {0} : le module, {1} : la version.</comment>
+  </data>
+  <data name="NotificationModuleStopped" xml:space="preserve">
+    <value>{0} s'est arrêté brusquement et a été relancé.</value>
+    <comment>Cloche : un module complémentaire s'est arrêté brusquement (une fois). {0} : le module.</comment>
+  </data>
+  <data name="NotificationModuleStoppedTimes" xml:space="preserve">
+    <value>{0} s'est arrêté brusquement et a été relancé ({1} fois).</value>
+    <comment>Cloche : un module complémentaire s'est arrêté brusquement plusieurs fois. {0} : le module, {1} : le nombre d'arrêts.</comment>
+  </data>
+  <data name="NotificationModuleSetAside" xml:space="preserve">
+    <value>{0} a été mis de côté après des arrêts répétés.</value>
+    <comment>Cloche : un module complémentaire a été mis de côté. {0} : le module.</comment>
+  </data>
+  <data name="NotificationLinkUpdate" xml:space="preserve">
+    <value>Voir la mise à jour</value>
+    <comment>Cloche : lien vers la mise à jour du logiciel (onglet Paramètres).</comment>
+  </data>
+  <data name="NotificationLinkModule" xml:space="preserve">
+    <value>Voir le module</value>
+    <comment>Cloche : lien vers la section des modules complémentaires (onglet Paramètres).</comment>
+  </data>
+  <data name="NotificationLinkSettings" xml:space="preserve">
+    <value>Voir les réglages</value>
+    <comment>Cloche : lien vers l'onglet Paramètres.</comment>
+  </data>
 </root>

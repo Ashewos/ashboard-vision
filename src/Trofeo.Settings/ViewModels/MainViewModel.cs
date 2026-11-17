@@ -32,6 +32,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         SettingsTab = new SettingsTabViewModel(
             link, Session, PreferencesStore, system ?? SystemServices.None, picker, time);
         Pill = new ScreenPillViewModel(link);
+        Notifications = new NotificationsViewModel(link, PreferencesStore, time ?? TimeProvider.System);
         FirstRun = new FirstRunViewModel(link, Session, PreferencesStore, SettingsTab, Pill, secrets ?? new NoSecretAccess(), time);
         _isFirstRunVisible = !preferences.FirstRunDone;
         Document = document;
@@ -66,6 +67,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>La pastille de l'écran de l'en-tête (la première étape de l'assistant montre la même).</summary>
     public ScreenPillViewModel Pill { get; }
+
+    /// <summary>La cloche de l'en-tête : les mises à jour et les pannes, avec leur croix.</summary>
+    public NotificationsViewModel Notifications { get; }
 
     /// <summary>L'assistant de première ouverture.</summary>
     public FirstRunViewModel FirstRun { get; }
@@ -309,6 +313,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _link.FrameReceived -= ShowFrame;
         Session.Changed -= RefreshBanner;
         PreferencesStore.Changed -= OnPreferencesChanged;
+        Notifications.Dispose();
         FirstRun.Dispose();
         LayoutTab.Dispose();
         AppearanceTab.Dispose();

@@ -761,4 +761,20 @@ public static class Texts
     public static string ConsumptionShow => Get();
     /// <summary>Quand le service ne répond pas à la lecture de la consommation.</summary>
     public static string ConsumptionFailed => Get();
+    /// <summary>Cloche : une mise à jour du logiciel est proposée. {0} : la version.</summary>
+    public static string NotificationAppUpdate => Get();
+    /// <summary>Cloche : une mise à jour d'un module complémentaire est proposée. {0} : le module, {1} : la version.</summary>
+    public static string NotificationModuleUpdate => Get();
+    /// <summary>Cloche : un module complémentaire s'est arrêté brusquement (une fois). {0} : le module.</summary>
+    public static string NotificationModuleStopped => Get();
+    /// <summary>Cloche : un module complémentaire s'est arrêté brusquement plusieurs fois. {0} : le module, {1} : le nombre d'arrêts.</summary>
+    public static string NotificationModuleStoppedTimes => Get();
+    /// <summary>Cloche : un module complémentaire a été mis de côté. {0} : le module.</summary>
+    public static string NotificationModuleSetAside => Get();
+    /// <summary>Cloche : lien vers la mise à jour du logiciel (onglet Paramètres).</summary>
+    public static string NotificationLinkUpdate => Get();
+    /// <summary>Cloche : lien vers la section des modules complémentaires (onglet Paramètres).</summary>
+    public static string NotificationLinkModule => Get();
+    /// <summary>Cloche : lien vers l'onglet Paramètres.</summary>
+    public static string NotificationLinkSettings => Get();
 }
