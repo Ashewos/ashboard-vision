@@ -1,7 +1,14 @@
+using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
+using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.VisualTree;
 using Microsoft.Extensions.Time.Testing;
 using Trofeo.Control;
+using Trofeo.Core.Layout;
 using Trofeo.Settings.Services;
 using Trofeo.Settings.ViewModels;
+using Trofeo.Settings.Views;
 
 namespace Trofeo.Settings.Tests;
 
@@ -14,6 +21,8 @@ public sealed class NotificationsTests : IDisposable
     private readonly FakeServiceLink _link = new();
     private readonly FakeTimeProvider _time = new();
     private readonly List<NotificationsViewModel> _models = [];
+    private readonly List<MainViewModel> _windows = [];
+    private readonly List<MainWindow> _shown = [];
 
     public NotificationsTests()
     {
@@ -25,6 +34,10 @@ public sealed class NotificationsTests : IDisposable
     {
         foreach (var model in _models)
             model.Dispose();
+        foreach (var shown in _shown)
+            shown.Close();
+        foreach (var window in _windows)
+            window.Dispose();
         if (Directory.Exists(_dir))
             Directory.Delete(_dir, recursive: true);
     }
@@ -341,6 +354,178 @@ public sealed class NotificationsTests : IDisposable
             model.Open(item);
 
         Assert.Equal([NotificationTarget.Settings, NotificationTarget.CommunityModules], targets.Order());
+    }
+
+    // ---- Ce que fait le clic sur un lien (la fenêtre écoute Navigate) ----
+
+    private MainViewModel Main(bool firstRunDone = true)
+    {
+        Directory.CreateDirectory(_dir);
+        var document = new LayoutDocument(new LayoutStore(Path.Combine(_dir, "layout.json")), _link);
+        var main = new MainViewModel(_link, document, new EditorPreferences(FirstRunDone: firstRunDone));
+        _windows.Add(main);
+        return main;
+    }
+
+    [Fact]
+    public void Open_Settings_SelectsSettingsTab()
+    {
+        _link.SetUpdates(Updates(LinkUpdateState.Available, "1.2.0"));
+        var main = Main();
+        Assert.Same(main.LayoutTab, main.SelectedTab);
+        var requests = main.SettingsTab.CommunityViewRequests;
+
+        main.Notifications.Open(Assert.Single(main.Notifications.Items));
+
+        Assert.Same(main.SettingsTab, main.SelectedTab);
+        Assert.Equal(requests, main.SettingsTab.CommunityViewRequests);   // pas de demande de défilement pour un lien « Paramètres »
+    }
+
+    [Fact]
+    public void Open_CommunityModules_SelectsSettingsAndAsksForTheSection()
+    {
+        SetModules(Module("alex.meteo", updateVersion: "1.3"));
+        var main = Main();
+        var requests = main.SettingsTab.CommunityViewRequests;
+
+        main.Notifications.Open(Assert.Single(main.Notifications.Items));
+
+        Assert.Same(main.SettingsTab, main.SelectedTab);
+        Assert.Equal(requests + 1, main.SettingsTab.CommunityViewRequests);
+    }
+
+    [Fact]
+    public void Open_WhenTabChangeRefused_StaysPut()
+    {
+        // L'assistant de première ouverture est là : les onglets ne se choisissent pas, la cloche n'y change rien.
+        SetModules(Module("alex.meteo", updateVersion: "1.3"));
+        var main = Main(firstRunDone: false);
+        Assert.False(main.ShowsTabs);
+        var requests = main.SettingsTab.CommunityViewRequests;
+
+        main.Notifications.Open(Assert.Single(main.Notifications.Items));
+
+        Assert.Same(main.LayoutTab, main.SelectedTab);
+        Assert.Equal(requests, main.SettingsTab.CommunityViewRequests);
+    }
+
+    // ---- La cloche et son panneau (la vraie fenêtre, sans affichage) ----
+
+    private (MainWindow Window, MainViewModel Model) Show(bool firstRunDone = true)
+    {
+        var main = Main(firstRunDone);
+        var window = new MainWindow { DataContext = main };
+        window.Show();
+        _shown.Add(window);
+        return (window, main);
+    }
+
+    private static T Named<T>(Avalonia.Visual root, string name) where T : Avalonia.Controls.Control =>
+        root.GetVisualDescendants().OfType<T>().First(c => c.Name == name);
+
+    private static Avalonia.Visual PanelOf(MainWindow window)
+    {
+        var bell = Named<Button>(window, "BellButton");
+        bell.Flyout!.ShowAt(bell);
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        return (Avalonia.Visual)((Flyout)bell.Flyout).Content!;
+    }
+
+    [AvaloniaFact]
+    public void Bell_WithoutNotifications_HasNoBadge_AndSaysNothingNew()
+    {
+        var (window, _) = Show();
+
+        var bell = Named<Button>(window, "BellButton");
+        Assert.Equal(Texts.NotificationsName, Avalonia.Automation.AutomationProperties.GetName(bell));
+        Assert.False(Named<Border>(window, "BellBadge").IsEffectivelyVisible);
+        var panel = PanelOf(window);
+        Assert.True(Named<TextBlock>(panel, "EmptyText").IsEffectivelyVisible);
+        Assert.Equal(Texts.NotificationsEmpty, Named<TextBlock>(panel, "EmptyText").Text);
+    }
+
+    [AvaloniaFact]
+    public void Bell_IsDisabledDuringTheFirstRunWizard_LikeTheTabs()
+    {
+        var (window, model) = Show(firstRunDone: false);
+        Assert.False(model.ShowsTabs);
+        Assert.False(Named<Button>(window, "BellButton").IsEffectivelyEnabled);
+
+        var (other, _) = Show();
+        Assert.True(Named<Button>(other, "BellButton").IsEffectivelyEnabled);
+    }
+
+    [AvaloniaFact]
+    public void Bell_Badge_ShowsTheCount_RedWithAProblem_AccentOtherwise()
+    {
+        _link.SetUpdates(Updates(LinkUpdateState.Available, "1.2.0"));
+        var (window, model) = Show();
+        var badge = Named<Border>(window, "BellBadge");
+
+        Assert.True(badge.IsEffectivelyVisible);
+        Assert.Equal("1", Named<TextBlock>(window, "BellCount").Text);
+        Assert.Equal(((SolidColorBrush)window.FindResource("Accent")!).Color, ((SolidColorBrush)badge.Background!).Color);
+
+        SetModules(Module("a", stops: 1, lastStop: T0));
+        model.Notifications.RefreshCommunityAsync().GetAwaiter().GetResult();
+
+        Assert.Equal("2", Named<TextBlock>(window, "BellCount").Text);
+        Assert.Equal(((SolidColorBrush)window.FindResource("Refuse")!).Color, ((SolidColorBrush)badge.Background!).Color);
+    }
+
+    [AvaloniaFact]
+    public void Panel_ListsTheNotifications_AndTheCrossDismissesThem()
+    {
+        _link.SetUpdates(Updates(LinkUpdateState.Available, "1.2.0"));
+        var (window, model) = Show();
+        var panel = PanelOf(window);
+
+        Assert.Equal("Ashboard Vision 1.2.0 est disponible.", Named<TextBlock>(panel, "NotificationText").Text);
+        Assert.Equal(Texts.NotificationLinkUpdate, Named<Button>(panel, "NotificationLink").Content);
+        Assert.False(Named<TextBlock>(panel, "EmptyText").IsEffectivelyVisible);
+
+        Named<Button>(panel, "NotificationDismiss").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+        Assert.True(model.Notifications.IsEmpty);
+        Assert.True(Named<TextBlock>(panel, "EmptyText").IsEffectivelyVisible);
+        Assert.False(Named<Border>(window, "BellBadge").IsEffectivelyVisible);
+    }
+
+    [AvaloniaFact]
+    public void Panel_Link_OpensTheSettingsTab_AndClosesThePanel()
+    {
+        SetModules(Module("alex.meteo", updateVersion: "1.3"));
+        var (window, model) = Show();
+        var panel = PanelOf(window);
+        var bell = Named<Button>(window, "BellButton");
+
+        Named<Button>(panel, "NotificationLink").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(model.SettingsTab, model.SelectedTab);
+        Assert.False(((Flyout)bell.Flyout!).IsOpen);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CommunityLink_BringsTheSectionIntoView_WhetherOrNotTheSettingsTabWasAlreadyOpen(bool alreadyOnSettings)
+    {
+        SetModules(Module("alex.meteo", updateVersion: "1.3"));
+        var (window, model) = Show();
+        window.Height = 700;
+        if (alreadyOnSettings)
+        {
+            model.SelectedTab = model.SettingsTab;
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        }
+
+        model.Notifications.Open(Assert.Single(model.Notifications.Items));
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+        // La section est sous la ligne de flottaison : sans la demande, la page reste en haut.
+        var scroller = window.GetVisualDescendants().OfType<ScrollViewer>().First(v => v.IsEffectivelyVisible && v.Content is not null && v.GetVisualDescendants().OfType<Avalonia.Controls.Control>().Any(c => c.Name == "CommunityPanel"));
+        Assert.True(scroller.Offset.Y > 0, $"La page n'a pas défilé (décalage {scroller.Offset.Y}).");
     }
 
     // ---- La relecture des modules ----

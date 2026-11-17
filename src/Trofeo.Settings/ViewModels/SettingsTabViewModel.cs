@@ -82,6 +82,33 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
     /// <summary>La section « Modules complémentaires » : la liste, l'installation, la validation, les mises à jour.</summary>
     public CommunitySectionViewModel Community { get; }
 
+    /// <summary>
+    /// Combien de fois la cloche a demandé la section « Modules complémentaires » à l'écran. La vue la montre (<c>BringIntoView</c>) ; une
+    /// demande faite avant que la vue existe (l'onglet vient de s'ouvrir) reste en attente jusqu'à ce qu'elle la prenne.
+    /// </summary>
+    public int CommunityViewRequests { get; private set; }
+
+    private bool _communityViewPending;
+
+    /// <summary>Une demande vient d'être faite (la vue déjà ouverte la prend tout de suite).</summary>
+    public event Action? CommunityViewRequested;
+
+    /// <summary>La cloche demande la section des modules complémentaires.</summary>
+    public void RequestCommunityView()
+    {
+        CommunityViewRequests++;
+        _communityViewPending = true;
+        CommunityViewRequested?.Invoke();
+    }
+
+    /// <summary>La vue prend la demande en attente : vrai une seule fois par demande.</summary>
+    public bool TakeCommunityViewRequest()
+    {
+        var pending = _communityViewPending;
+        _communityViewPending = false;
+        return pending;
+    }
+
     /// <summary>La section « Accélération matérielle » : l'interrupteur, la carte, les deux cases et l'état que le service donne.</summary>
     public AccelerationSectionViewModel Acceleration { get; }
 

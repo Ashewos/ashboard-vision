@@ -42,6 +42,10 @@ Troisième bêta de la 1.2.0 : le logiciel peut maintenant **dessiner l'image et
 
 - Le coût du thème Liquid Glass avancé sur un fond animé avec l'accélération est **à mesurer** sur le PC d'Alex (pour mémoire : environ 14,5 % du processeur sans accélération, à la beta.2). Les chiffres seront ajoutés ici.
 
+### La cloche des notifications
+
+- Une **cloche dans l'en-tête de la fenêtre** rassemble les mises à jour (le logiciel et les modules complémentaires) et les pannes (module arrêté brusquement ou mis de côté, carte graphique en panne). Chaque notification se supprime d'une croix, et revient si l'événement est nouveau (une autre version qui sort, une deuxième panne).
+
 ### Licences
 
 - Le dessin et le décodage sur la carte passent par [Vortice.Direct3D12, Vortice.DXGI et Vortice.Direct3D11](https://github.com/amerkoleci/Vortice.Windows) (MIT), cités dans le README, section « Licences tierces », et dans le fichier de licences copié à côté du programme.

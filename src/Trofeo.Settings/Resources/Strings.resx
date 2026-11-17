@@ -1517,4 +1517,16 @@
     <value>Voir les réglages</value>
     <comment>Cloche : lien vers l'onglet Paramètres.</comment>
   </data>
+  <data name="NotificationsName" xml:space="preserve">
+    <value>Notifications</value>
+    <comment>Cloche de l'en-tête : bulle d'aide et nom pour l'accessibilité.</comment>
+  </data>
+  <data name="NotificationDismiss" xml:space="preserve">
+    <value>Supprimer la notification</value>
+    <comment>Cloche : nom (et bulle d'aide) de la croix d'une notification.</comment>
+  </data>
+  <data name="NotificationsEmpty" xml:space="preserve">
+    <value>Rien de nouveau.</value>
+    <comment>Cloche : le panneau quand il n'y a aucune notification.</comment>
+  </data>
 </root>

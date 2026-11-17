@@ -12,4 +12,8 @@ public enum NotificationTarget { Settings, CommunityModules }
 /// ou une heure inconnue) ; elle ordonne la liste.
 /// </summary>
 public sealed record NotificationItem(
-    string Key, NotificationKind Kind, string Text, string LinkText, NotificationTarget Target, DateTimeOffset? At);
+    string Key, NotificationKind Kind, string Text, string LinkText, NotificationTarget Target, DateTimeOffset? At)
+{
+    /// <summary>Un problème (et non une nouveauté) : la ligne porte l'icône du problème.</summary>
+    public bool IsProblem => Kind == NotificationKind.Problem;
+}

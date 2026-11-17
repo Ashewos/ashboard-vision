@@ -85,6 +85,7 @@ internal static class Program
         RenderFirstRun(folder, scratch, jpeg, connected.Welcome, connected.Status);
         RenderCommunity(folder, scratch, jpeg, connected.Welcome, connected.Status);
         RenderViews(folder, scratch, jpeg, connected.Welcome, connected.Status);
+        RenderNotifications(folder, scratch, jpeg, connected.Welcome, connected.Status);
 
         // L'onglet Disposition : un module choisi, des glissements (libre, refusé), l'ajout, l'oubli à confirmer.
         var layoutStatus = connected.Status with
@@ -162,7 +163,7 @@ internal static class Program
 
         Render(folder, scratch, "focus-bouton.png", 1440, 900, null,
             link => link.Set(LinkState.ServiceStopped),
-            (window, _) => FocusByKeyboard(window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible)));
+            (window, _) => FocusByKeyboard(window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && b.Name != "BellButton")));
 
         Render(folder, scratch, "service-arrete.png", 1440, 900, null,
             link => link.Set(LinkState.ServiceStopped), (_, _) => { });
@@ -1173,6 +1174,78 @@ internal static class Program
             model.ModulesTab.Select(monitoring);
         }, layout: layout, preferences: preferences);
     }
+    /// <summary>
+    /// La cloche de l'en-tête (le coin droit de la fenêtre, rogné) : sans rien, avec trois notifications dont un problème, le panneau
+    /// ouvert sur ces trois lignes, et le panneau vide. Puis, en entier : le panneau d'une fenêtre à sa taille minimale avec des noms
+    /// démesurés (il ne déborde pas), et l'onglet Paramètres où un lien amène la section des modules complémentaires.
+    /// </summary>
+    private static void RenderNotifications(string folder, string scratch, byte[] jpeg, Welcome welcome, ServiceStatus status)
+    {
+        static void Run(Task task) => task.GetAwaiter().GetResult();
+        var stop = new DateTimeOffset(2026, 11, 17, 9, 30, 0, TimeSpan.Zero);
+        var longName = "Un-nom-de-module-sans-aucun-espace-" + new string('x', 200);
+
+        // Un module qui s'est arrêté deux fois, un autre qui a une mise à jour, et la mise à jour du logiciel : trois notifications.
+        void Three(FakeServiceLink link)
+        {
+            link.Set(LinkState.Connected, welcome, status);
+            link.Updates = new UpdateInfo(LinkUpdateState.Available, "1.2.0", false, null, "La version 1.2.0 est disponible.", LinkUpdateChannel.Stable, false);
+            link.Community = new CommunityOverview(
+            [
+                CommunityFixture.Module("bob.meteo", name: "Météo détaillée", author: "Bob", version: "2.3.1") with { StopCount = 2, LastStopAt = stop },
+                CommunityFixture.Module("alex.minecraft", name: "Serveur Minecraft", author: "Alex", updateVersion: "1.1.0"),
+            ], @"C:\Users\Alex\Documents\Ashboard Vision\Modules", false, [], false);
+        }
+
+        static void OpenPanel(MainWindow window)
+        {
+            var bell = window.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "BellButton");
+            bell.Flyout!.ShowAt(bell);
+        }
+
+        // Le coin droit de l'en-tête (la cloche et la pastille), 560 px de large ; le panneau ouvert descend plus bas.
+        var header = new SKRectI(1440 - 560, 0, 1440, 90);
+        var withPanel = new SKRectI(1440 - 560, 0, 1440, 460);
+
+        Render(folder, scratch, "notifications-vide.png", 1440, 900, jpeg,
+            link => link.Set(LinkState.Connected, welcome, status), (_, _) => { }, crop: header);
+        Render(folder, scratch, "notifications-probleme.png", 1440, 900, jpeg, Three, (_, _) => { }, crop: header);
+        Render(folder, scratch, "notifications-panneau.png", 1440, 900, jpeg, Three, (window, _) => OpenPanel(window), crop: withPanel);
+        Render(folder, scratch, "notifications-panneau-vide.png", 1440, 900, jpeg,
+            link => link.Set(LinkState.Connected, welcome, status), (window, _) => OpenPanel(window), crop: withPanel);
+
+        // La fenêtre à sa taille minimale, des noms démesurés et beaucoup de lignes : le panneau reste dans la fenêtre.
+        Render(folder, scratch, "notifications-panneau-long.png", 1200, 760, jpeg, link =>
+        {
+            Three(link);
+            link.Community = new CommunityOverview(
+            [
+                CommunityFixture.Module("bob.meteo", name: longName, author: "Bob", version: "2.3.1") with { StopCount = 12, LastStopAt = stop, UpdateVersion = "9.9.9" },
+                CommunityFixture.Module("carl.horloge", LinkCommunityState.SetAside, name: "Horloge mondiale", author: "Carl") with { SetAsideAt = stop.AddMinutes(10) },
+                CommunityFixture.Module("dora.a", name: "Alpha", updateVersion: "2.0"),
+                CommunityFixture.Module("dora.b", name: "Bravo", updateVersion: "2.0"),
+                CommunityFixture.Module("dora.c", name: "Charlie", updateVersion: "2.0"),
+                CommunityFixture.Module("dora.d", name: "Delta", updateVersion: "2.0"),
+                CommunityFixture.Module("dora.e", name: "Echo", updateVersion: "2.0"),
+            ], @"C:\Modules", false, [], false);
+        }, (window, _) => OpenPanel(window));
+
+        // Un lien « Voir le module » : l'onglet Paramètres s'ouvre et la section des modules complémentaires vient à l'écran.
+        Render(folder, scratch, "notifications-lien-module.png", 1440, 900, jpeg, link =>
+        {
+            Three(link);
+            link.Community = new CommunityOverview(
+            [
+                CommunityFixture.Module("alex.minecraft", name: "Serveur Minecraft", author: "Alex", updateVersion: "1.1.0"),
+            ], @"C:\Modules", false, [], false);
+        }, (_, model) =>
+        {
+            Run(Task.CompletedTask);
+            model.Notifications.Open(model.Notifications.Items.Single(i => i.Target == NotificationTarget.CommunityModules));
+            Dispatcher.UIThread.RunJobs();
+        });
+    }
+
     private static readonly Guid ClaudeId = new("3c1d9f5e-7a2b-4e8c-9b1f-6d2a0e4c8b17");
     private static readonly Guid MonitoringId = new("246ac06d-eec2-4d64-9930-24b64603a03b");
     private static readonly Guid NowPlayingId = new("8ebcc647-ab4b-401d-b2b3-f7a0ebd97b4b");
@@ -1204,7 +1277,7 @@ internal static class Program
         Action<FakeServiceLink> state, Action<MainWindow, MainViewModel> arrange,
         DashboardLayout? layout = null, string? refuseReload = null, IReadOnlyList<string>? systemFonts = null,
         ISecretAccess? secrets = null, TimeProvider? time = null, SystemServices? system = null, EditorPreferences? preferences = null,
-        IFilePicker? picker = null)
+        IFilePicker? picker = null, SKRectI? crop = null)
     {
         var link = new FakeServiceLink();
         state(link);
@@ -1225,7 +1298,23 @@ internal static class Program
         Dispatcher.UIThread.RunJobs();
         AvaloniaHeadlessPlatform.ForceRenderTimerTick();
         var file = Path.Combine(folder, name);
-        window.CaptureRenderedFrame()!.Save(file, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        var frame = window.CaptureRenderedFrame()!;
+        if (crop is null)
+        {
+            frame.Save(file, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        }
+        else
+        {
+            // Un morceau de la fenêtre (le coin de l'en-tête) : la capture est rognée avant d'être écrite.
+            using var whole = new MemoryStream();
+            frame.Save(whole, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+            using var bitmap = SKBitmap.Decode(whole.ToArray());
+            using var part = new SKBitmap();
+            if (!bitmap.ExtractSubset(part, crop.Value))
+                throw new InvalidOperationException("Le morceau demandé sort de la capture : " + name);
+            using var image = SKImage.FromBitmap(part);
+            File.WriteAllBytes(file, image.Encode(SKEncodedImageFormat.Png, 100).ToArray());
+        }
         Console.WriteLine("Aperçu écrit : " + file);
         window.Close();
     }

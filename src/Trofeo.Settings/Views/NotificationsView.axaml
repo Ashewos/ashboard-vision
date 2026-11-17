@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:t="clr-namespace:Trofeo.Settings"
+             xmlns:vm="clr-namespace:Trofeo.Settings.ViewModels"
+             x:Class="Trofeo.Settings.Views.NotificationsView"
+             x:DataType="vm:NotificationsViewModel" ClipToBounds="False">
+
+  <!-- La cloche de l'en-tête : un bouton icône (une cloche dessinée), un rond avec le nombre de notifications, et un panneau dessous. -->
+  <Panel>
+    <Button Name="BellButton" Classes="bell"
+            ToolTip.Tip="{x:Static t:Texts.NotificationsName}" AutomationProperties.Name="{x:Static t:Texts.NotificationsName}">
+      <!-- Une cloche dessinée (aucune police d'icônes dans la fenêtre). -->
+      <Path Width="16" Height="16" Stretch="Uniform" StrokeThickness="1.5" StrokeLineCap="Round" StrokeJoin="Round"
+            Stroke="{Binding $parent[Button].Foreground}"
+            Data="M 8,1.5 C 5.2,1.5 3.6,3.7 3.6,6.4 L 3.6,9.4 L 2,12 L 14,12 L 12.4,9.4 L 12.4,6.4 C 12.4,3.7 10.8,1.5 8,1.5 Z M 6.4,14.2 Q 8,15.6 9.6,14.2" />
+      <Button.Flyout>
+        <Flyout Placement="BottomEdgeAlignedRight">
+          <StackPanel MinWidth="320" MaxWidth="380">
+            <TextBlock Name="EmptyText" Classes="muted" Margin="12,10" Text="{x:Static t:Texts.NotificationsEmpty}" IsVisible="{Binding IsEmpty}" />
+            <ScrollViewer MaxHeight="400" VerticalScrollBarVisibility="Auto" IsVisible="{Binding !IsEmpty}">
+              <ItemsControl Name="NotificationList" ItemsSource="{Binding Items}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:NotificationItem">
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,8" ColumnSpacing="10">
+                      <!-- Le type : un triangle (problème, en Refuse) ou une flèche vers le haut (nouveauté, en Accent). -->
+                      <Panel Grid.Column="0" Width="16" Height="16" VerticalAlignment="Top" Margin="0,1,0,0">
+                        <Path Classes="kind problem" IsVisible="{Binding IsProblem}" Width="16" Height="16" Stretch="Uniform"
+                              Data="M 8,2 L 15,14 L 1,14 Z M 8,6.5 L 8,9.5 M 8,11.8 L 8,11.9" />
+                        <Path Classes="kind news" IsVisible="{Binding !IsProblem}" Width="16" Height="16" Stretch="Uniform"
+                              Data="M 8,14 L 8,3 M 3.2,7.6 L 8,2.8 L 12.8,7.6" />
+                      </Panel>
+                      <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Name="NotificationText" TextWrapping="Wrap" MaxLines="4" TextTrimming="CharacterEllipsis" Text="{Binding Text}" />
+                        <Button Name="NotificationLink" Classes="link" Content="{Binding LinkText}" Click="OnLinkClick" />
+                      </StackPanel>
+                      <Button Grid.Column="2" Name="NotificationDismiss" Classes="pencil" VerticalAlignment="Top"
+                              ToolTip.Tip="{x:Static t:Texts.NotificationDismiss}" AutomationProperties.Name="{x:Static t:Texts.NotificationDismiss}"
+                              Click="OnDismissClick">
+                        <Path Width="10" Height="10" Stretch="Uniform" StrokeThickness="1.5" StrokeLineCap="Round"
+                              Stroke="{Binding $parent[Button].Foreground}" Data="M 1,1 L 11,11 M 11,1 L 1,11" />
+                      </Button>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </StackPanel>
+        </Flyout>
+      </Button.Flyout>
+    </Button>
+
+    <!-- Le rond : le nombre de notifications visibles, rouge s'il y a un problème, couleur d'accent sinon ; absent à zéro. -->
+    <Border Name="BellBadge" Classes="badge" Classes.problem="{Binding HasProblem}" IsVisible="{Binding !IsEmpty}"
+            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-6,0" IsHitTestVisible="False">
+      <TextBlock Name="BellCount" Text="{Binding Count}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource Ink}"
+                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Border>
+  </Panel>
+</UserControl>
