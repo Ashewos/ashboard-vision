@@ -777,6 +777,54 @@
     <value>12 (le maximum de l'écran)</value>
     <comment>Valeur du curseur au maximum.</comment>
   </data>
+  <data name="SettingsAcceleration" xml:space="preserve">
+    <value>Accélération matérielle</value>
+    <comment>Titre de section.</comment>
+  </data>
+  <data name="AccelerationUse" xml:space="preserve">
+    <value>Utiliser la carte graphique</value>
+    <comment>Interrupteur général de l'accélération.</comment>
+  </data>
+  <data name="AccelerationAdapter" xml:space="preserve">
+    <value>Carte</value>
+    <comment>Nom de la liste des cartes graphiques.</comment>
+  </data>
+  <data name="AccelerationAuto" xml:space="preserve">
+    <value>Automatique</value>
+    <comment>Choix de la carte quand le service n'en a nommé aucune.</comment>
+  </data>
+  <data name="AccelerationAutoNamed" xml:space="preserve">
+    <value>Automatique ({0})</value>
+    <comment>Choix de la carte ; {0} : la carte que le choix automatique prend.</comment>
+  </data>
+  <data name="AccelerationDrawing" xml:space="preserve">
+    <value>Dessin de l'image (thèmes, verre, fonds animés)</value>
+    <comment>Case : le dessin passe par la carte graphique.</comment>
+  </data>
+  <data name="AccelerationVideo" xml:space="preserve">
+    <value>Décodage des vidéos</value>
+    <comment>Case : le décodage des vidéos passe par la carte graphique.</comment>
+  </data>
+  <data name="AccelerationStateBoth" xml:space="preserve">
+    <value>Sur {0} : dessin et vidéos.</value>
+    <comment>État ; {0} : la carte utilisée.</comment>
+  </data>
+  <data name="AccelerationStateDrawing" xml:space="preserve">
+    <value>Sur {0} : dessin.</value>
+    <comment>État ; {0} : la carte utilisée.</comment>
+  </data>
+  <data name="AccelerationStateVideo" xml:space="preserve">
+    <value>Sur {0} : vidéos.</value>
+    <comment>État ; {0} : la carte utilisée.</comment>
+  </data>
+  <data name="AccelerationStateCpu" xml:space="preserve">
+    <value>Tout se calcule sur le processeur.</value>
+    <comment>État : la carte ne sert à rien en ce moment.</comment>
+  </data>
+  <data name="AccelerationNone" xml:space="preserve">
+    <value>Aucune carte graphique compatible : tout se calcule sur le processeur.</value>
+    <comment>Aucune carte Direct3D 12 : l'interrupteur est grisé.</comment>
+  </data>
   <data name="SettingsPreview" xml:space="preserve">
     <value>Aperçu</value>
     <comment>Titre de section.</comment>

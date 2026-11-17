@@ -284,7 +284,8 @@ static class Program
             using var handler = new ServiceControlHandler(
                 store, loop, registry, () => ServiceControlHandler.ToScreenInfo(screen.Status), () => ReadSensors(sensorPipe),
                 meter, BuildConfig, hotkeys?.Host, community, buildWarnings, config, updates,
-                videoDecoder: next => acceleration.VideoAdapterFor(next.Acceleration)?.Luid);
+                videoDecoder: next => acceleration.VideoAdapterFor(next.Acceleration)?.Luid,
+                acceleration: () => acceleration.Status);
 
             // La carte des vidéos change (panne, nouvel essai, carte trop lente) : la disposition est relue comme pour un rechargement
             // demandé par la fenêtre. Sur un autre fil : l'événement peut venir du fil de la boucle, qui ne doit pas s'y attendre.

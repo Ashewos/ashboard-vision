@@ -408,6 +408,30 @@ public static class Texts
     /// <summary>Valeur du curseur au maximum.</summary>
     public static string SettingsFpsMax => Get();
     /// <summary>Titre de section.</summary>
+    public static string SettingsAcceleration => Get();
+    /// <summary>Interrupteur général de l'accélération.</summary>
+    public static string AccelerationUse => Get();
+    /// <summary>Nom de la liste des cartes graphiques.</summary>
+    public static string AccelerationAdapter => Get();
+    /// <summary>Choix de la carte quand le service n'en a nommé aucune.</summary>
+    public static string AccelerationAuto => Get();
+    /// <summary>Choix de la carte ; {0} : la carte que le choix automatique prend.</summary>
+    public static string AccelerationAutoNamed => Get();
+    /// <summary>Case : le dessin passe par la carte graphique.</summary>
+    public static string AccelerationDrawing => Get();
+    /// <summary>Case : le décodage des vidéos passe par la carte graphique.</summary>
+    public static string AccelerationVideo => Get();
+    /// <summary>État ; {0} : la carte utilisée.</summary>
+    public static string AccelerationStateBoth => Get();
+    /// <summary>État ; {0} : la carte utilisée.</summary>
+    public static string AccelerationStateDrawing => Get();
+    /// <summary>État ; {0} : la carte utilisée.</summary>
+    public static string AccelerationStateVideo => Get();
+    /// <summary>État : la carte ne sert à rien en ce moment.</summary>
+    public static string AccelerationStateCpu => Get();
+    /// <summary>Aucune carte Direct3D 12 : l'interrupteur est grisé.</summary>
+    public static string AccelerationNone => Get();
+    /// <summary>Titre de section.</summary>
     public static string SettingsPreview => Get();
     /// <summary>Interrupteur.</summary>
     public static string SettingsRealTime => Get();

@@ -34,13 +34,29 @@ public sealed record FrameInfo(int FramesSent, double RenderMs, double SendMs);
 
 public sealed record SensorInfo(bool PawnIoInstalled, bool HelperInstalled, bool HelperConnected);
 
+/// <summary>Une carte graphique que l'on peut choisir : ce que l'on enregistre dans les réglages pour la reconnaître, et son nom.</summary>
+public sealed record GpuAdapterEntry(int VendorId, int DeviceId, int SubSysId, string Name);
+
+/// <summary>
+/// L'accélération matérielle vue par la fenêtre. <paramref name="Available"/> : une carte graphique compatible existe (faux : la fenêtre
+/// grise l'interrupteur) ; <paramref name="AdapterName"/> : la carte réellement utilisée (<c>null</c> : le processeur fait tout) ;
+/// <paramref name="Drawing"/> et <paramref name="VideoDecoding"/> : ce qui passe vraiment par la carte ; <paramref name="Problem"/> : une
+/// phrase écrite pour être lue telle quelle (panne, carte absente, carte trop lente), <c>null</c> sans problème ;
+/// <paramref name="Adapters"/> : les cartes que l'on peut choisir, la première étant celle que « Automatique » prend.
+/// </summary>
+public sealed record AccelerationInfo(
+    bool Available, bool Enabled, string? AdapterName, bool Drawing, bool VideoDecoding, string? Problem,
+    IReadOnlyList<GpuAdapterEntry> Adapters);
+
 /// <summary>
 /// L'état du service. <paramref name="CurrentViewId"/> est la vue affichée sur l'écran en ce moment ;
 /// <paramref name="RefusedShortcutKeys"/> les touches que Windows a refusées au dernier enregistrement des raccourcis (écrites comme
-/// dans la disposition, par exemple « Ctrl+Alt+Right ») ; vide si tout est enregistré.
+/// dans la disposition, par exemple « Ctrl+Alt+Right ») ; vide si tout est enregistré. <paramref name="Acceleration"/> est l'état de
+/// l'accélération matérielle (<c>null</c> : un service d'avant le protocole 5 ne le dit pas).
 /// </summary>
 public sealed record ServiceStatus(ScreenInfo Screen, bool Emulated, IReadOnlyList<ModuleState> Modules,
-    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors, Guid CurrentViewId, IReadOnlyList<string> RefusedShortcutKeys);
+    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors, Guid CurrentViewId, IReadOnlyList<string> RefusedShortcutKeys,
+    AccelerationInfo? Acceleration = null);
 
 /// <summary>Ce que le service répond quand on lui demande si une combinaison de touches est libre (<see cref="IControlHandler.TestShortcutKeysAsync"/>).</summary>
 public enum ShortcutKeyState

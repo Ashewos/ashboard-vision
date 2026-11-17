@@ -532,8 +532,13 @@ internal static class Program
         static void Run(Task task) => task.GetAwaiter().GetResult();
         void Open(MainViewModel model) => model.SelectedTab = model.SettingsTab;
 
+        // Un PC avec deux cartes : le choix automatique prend la première (celle du processeur).
+        GpuAdapterEntry intel = new(0x8086, 0x7D55, 0x1234, "Intel(R) Graphics"), nvidia = new(0x10DE, 0x2F04, 0x5678, "NVIDIA GeForce RTX 5070");
+        AccelerationInfo Working(string? card = "Intel(R) Graphics", bool drawing = true, bool video = true, string? problem = null, bool enabled = true) =>
+            new(Available: true, enabled, card, drawing, video, problem, [intel, nvidia]);
+
         ServiceStatus Sensors(SensorInfo sensors, ProcessInfo? process = null) =>
-            status with { Sensors = sensors, Process = process ?? new ProcessInfo(46_137_344, 60_000_000, 0.83) };
+            status with { Sensors = sensors, Process = process ?? new ProcessInfo(46_137_344, 60_000_000, 0.83), Acceleration = Working() };
         void Link(FakeServiceLink link, SensorInfo sensors) => link.Set(LinkState.Connected, welcome, Sensors(sensors));
 
         // Windows de démonstration : le service est trouvé, le démarrage n'est pas encore inscrit.
@@ -572,6 +577,37 @@ internal static class Program
                 model.SettingsTab.Picker = new FakeFilePicker { Result = @"C:\Users\Alex\Downloads\PawnIO_setup.exe" };
                 Run(model.SettingsTab.InstallSensorsAsync());
             }, system: System());
+
+        // L'accélération matérielle : la carte choisie à la main, une panne (le service a replié sur le processeur), l'interrupteur coupé,
+        // une machine sans carte compatible, et un service d'avant le protocole 5.
+        var sensorsOn = new SensorInfo(true, true, true);
+        void Accelerated(FakeServiceLink link, AccelerationInfo? info) =>
+            link.Set(LinkState.Connected, welcome, status with { Sensors = sensorsOn, Process = new ProcessInfo(46_137_344, 60_000_000, 0.83), Acceleration = info });
+        var chosen = new GpuAdapterId(nvidia.VendorId, nvidia.DeviceId, nvidia.SubSysId, nvidia.Name);
+
+        Render(folder, scratch, "parametres-acceleration.png", 1440, 900, jpeg, link => Accelerated(link, Working(card: nvidia.Name, drawing: true, video: false)),
+            (_, model) => Open(model), layout: Base with { Acceleration = new AccelerationSettings(Adapter: chosen, VideoDecoding: false) }, system: System());
+
+        Render(folder, scratch, "parametres-acceleration-probleme.png", 1440, 900, jpeg,
+            link => Accelerated(link, Working(card: null, drawing: false, video: false,
+                problem: "La carte graphique a eu un problème (pilote réinitialisé) : dessin sur le processeur.")),
+            (_, model) => Open(model), system: System());
+
+        Render(folder, scratch, "parametres-acceleration-carte-absente.png", 1440, 900, jpeg,
+            link => Accelerated(link, Working(problem: "La carte GeForce GTX 1080 n'est plus là : la carte automatique est utilisée.")),
+            (_, model) => Open(model),
+            layout: Base with { Acceleration = new AccelerationSettings(Adapter: new GpuAdapterId(0x10DE, 0x1B80, 0x1, "GeForce GTX 1080")) }, system: System());
+
+        Render(folder, scratch, "parametres-acceleration-coupee.png", 1440, 900, jpeg,
+            link => Accelerated(link, Working(card: null, drawing: false, video: false, enabled: false)),
+            (_, model) => Open(model), layout: Base with { Acceleration = new AccelerationSettings(Enabled: false) }, system: System());
+
+        Render(folder, scratch, "parametres-acceleration-aucune-carte.png", 1440, 900, jpeg,
+            link => Accelerated(link, new AccelerationInfo(false, true, null, false, false, null, [])),
+            (_, model) => Open(model), system: System());
+
+        Render(folder, scratch, "parametres-acceleration-ancien-service.png", 1440, 900, jpeg, link => Accelerated(link, null),
+            (_, model) => Open(model), system: System());
 
         // Trofeo.Display.exe introuvable : l'interrupteur est éteint et grisé, avec sa phrase.
         Render(folder, scratch, "parametres-service-introuvable.png", 1440, 900, jpeg, link => Link(link, notInstalled),

@@ -106,7 +106,7 @@ public sealed partial class ServiceControlHandlerTests
             DashboardLayout? layout = null, Func<ScreenInfo>? screen = null, Func<SensorInfo>? sensors = null,
             Func<DashboardLayout, LoopConfig?, LoopConfig>? build = null, LoopConfig? initialConfig = null, UpdateService? updates = null,
             IReadOnlyList<CommunityEntry>? communityEntries = null, bool withoutHotkeys = false,
-            Func<DashboardLayout, long?>? videoDecoder = null)
+            Func<DashboardLayout, long?>? videoDecoder = null, Func<AccelerationStatus>? acceleration = null)
         {
             Directory.CreateDirectory(_dir);
             LayoutPath = Path.Combine(_dir, "layout.json");
@@ -123,7 +123,7 @@ public sealed partial class ServiceControlHandlerTests
                 sensors ?? (() => new SensorInfo(true, false, false)),
                 new ProcessMeter(() => (TimeSpan.Zero, 1, 2), LoopRig.Time, 4),
                 build ?? ((layout, current) => LoopConfigFactory.Build(layout, new NoSystemFonts(), null, Sink.Warn, current)),
-                withoutHotkeys ? null : Hotkeys, Community, Sink, initialConfig, updates, videoDecoder);
+                withoutHotkeys ? null : Hotkeys, Community, Sink, initialConfig, updates, videoDecoder, acceleration);
         }
 
         public string LayoutPath { get; }
@@ -691,6 +691,42 @@ public sealed partial class ServiceControlHandlerTests
         Assert.Equal(ModuleHealth.Offline, conf.Health);
         Assert.Equal("Pas de réseau", conf.ActionMessage);
         Assert.Equal(["Une remarque"], conf.Notices);
+    }
+
+    [Fact]
+    public void GetStatus_ReportsTheAccelerationOfTheService()
+    {
+        var intel = new GpuAdapterInfo(new GpuAdapterId(0x8086, 0x7D55, 0x1234, "Intel(R) Graphics"), 1, 128);
+        var nvidia = new GpuAdapterInfo(new GpuAdapterId(0x10DE, 0x2F04, 0x5678, "NVIDIA GeForce RTX 5070"), 2, 12L << 30);
+        var current = new AccelerationStatus(
+            Available: true, Enabled: true, Adapter: nvidia, Drawing: true, VideoDecoding: false,
+            Problem: "La carte graphique a eu un problème (pilote réinitialisé) : dessin sur le processeur.", Adapters: [intel, nvidia]);
+        using var rig = new Rig(acceleration: () => current);
+
+        var info = rig.Handler.GetStatus().Acceleration;
+
+        Assert.NotNull(info);
+        Assert.True(info.Available);
+        Assert.True(info.Enabled);
+        Assert.Equal("NVIDIA GeForce RTX 5070", info.AdapterName);
+        Assert.True(info.Drawing);
+        Assert.False(info.VideoDecoding);
+        Assert.Equal("La carte graphique a eu un problème (pilote réinitialisé) : dessin sur le processeur.", info.Problem);
+        Assert.Equal([new GpuAdapterEntry(0x8086, 0x7D55, 0x1234, "Intel(R) Graphics"), new GpuAdapterEntry(0x10DE, 0x2F04, 0x5678, "NVIDIA GeForce RTX 5070")], info.Adapters);
+
+        current = new AccelerationStatus(false, true, null, false, false, null, []); // aucune carte : tout sur le processeur
+        var none = rig.Handler.GetStatus().Acceleration!;
+        Assert.False(none.Available);
+        Assert.Null(none.AdapterName);
+        Assert.Empty(none.Adapters);
+    }
+
+    [Fact]
+    public void GetStatus_WithoutAccelerationController_SaysNothingOfIt()
+    {
+        using var rig = new Rig();
+
+        Assert.Null(rig.Handler.GetStatus().Acceleration);
     }
 
     [Theory]

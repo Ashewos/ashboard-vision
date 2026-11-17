@@ -43,11 +43,15 @@ namespace Trofeo.Display;
 /// ailleurs (réglages de l'accélération changés, carte tombée en panne), le rechargement refait le fond même si l'apparence est la
 /// même. <c>null</c> (le délégué) : la carte des vidéos ne compte pas.
 /// </param>
+/// <param name="acceleration">
+/// L'état de l'accélération matérielle (celui de <see cref="AccelerationController.Status"/>) ; <c>null</c> : le service ne dit rien
+/// de l'accélération à la fenêtre.
+/// </param>
 public sealed class ServiceControlHandler(
     LayoutStore store, DisplayLoop loop, ModuleRegistry registry, Func<ScreenInfo> screen, Func<SensorInfo> sensors,
     ProcessMeter meter, Func<DashboardLayout, LoopConfig?, LoopConfig> buildConfig, IHotkeyHost? hotkeys, ICommunityModules community,
     WarningSink? buildWarnings = null, LoopConfig? initialConfig = null, UpdateService? updates = null,
-    Func<DashboardLayout, long?>? videoDecoder = null)
+    Func<DashboardLayout, long?>? videoDecoder = null, Func<AccelerationStatus>? acceleration = null)
     : IControlHandler, IDisposable
 {
     /// <summary>Le plafond d'images de la boucle (<see cref="DisplayLoop"/>) : un hôte de module n'a aucune raison d'en écrire davantage.</summary>
@@ -105,8 +109,13 @@ public sealed class ServiceControlHandler(
         return new ServiceStatus(
             screen(), status.Emulated, modules, meter.Read(),
             new FrameInfo(status.FramesSent, status.RenderMs, status.SendMs), sensors(), loop.CurrentViewId,
-            hotkeys?.RefusedKeys ?? []);
+            hotkeys?.RefusedKeys ?? [], acceleration is null ? null : ToAccelerationInfo(acceleration()));
     }
+
+    /// <summary>L'état de l'accélération tel que la fenêtre de réglage le connaît : les cartes ne gardent que ce qu'on enregistre et leur nom.</summary>
+    public static AccelerationInfo ToAccelerationInfo(AccelerationStatus status) => new(
+        status.Available, status.Enabled, status.Adapter?.Id.Name, status.Drawing, status.VideoDecoding, status.Problem,
+        status.Adapters.Select(a => new GpuAdapterEntry(a.Id.VendorId, a.Id.DeviceId, a.Id.SubSysId, a.Id.Name)).ToList());
 
     /// <summary>L'état du lien avec l'écran tel que la fenêtre de réglage le connaît.</summary>
     public static ScreenInfo ToScreenInfo(ScreenStatus status) => new(

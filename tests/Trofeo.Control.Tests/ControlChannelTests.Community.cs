@@ -188,7 +188,7 @@ public partial class ControlChannelTests
         server.Start();
 
         var ex = await Assert.ThrowsAsync<ProtocolMismatchException>(() => ConnectAsync(name));
-        Assert.Contains("version 4", ex.Message);
+        Assert.Contains($"version {ControlPipe.ProtocolVersion}", ex.Message);
         Assert.Contains("version 3", ex.Message);
     }
 

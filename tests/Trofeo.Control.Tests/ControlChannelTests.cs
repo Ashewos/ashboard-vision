@@ -220,6 +220,36 @@ public partial class ControlChannelTests
     }
 
     [Fact]
+    public async Task Status_CarriesAcceleration()
+    {
+        var acceleration = new AccelerationInfo(
+            Available: true, Enabled: true, AdapterName: "NVIDIA GeForce RTX 5070", Drawing: true, VideoDecoding: false,
+            Problem: "La carte graphique a eu un problème (pilote réinitialisé) : dessin sur le processeur.",
+            [new GpuAdapterEntry(0x8086, 0x7D55, 0x1234, "Intel(R) Graphics"), new GpuAdapterEntry(0x10DE, 0x2F04, 0x5678, "NVIDIA GeForce RTX 5070")]);
+        var name = NewPipeName();
+        using var server = new ControlServer(name, new FakeHandler { StatusToReturn = SampleStatus() with { Acceleration = acceleration } });
+        server.Start();
+        await using var client = await ConnectAsync(name);
+
+        var status = await client.GetStatusAsync(CancellationToken.None);
+
+        var received = Assert.IsType<AccelerationInfo>(status.Acceleration);
+        Assert.Equal(acceleration with { Adapters = [] }, received with { Adapters = [] });
+        Assert.Equal(acceleration.Adapters, received.Adapters);
+    }
+
+    [Fact]
+    public async Task Status_FromAnOlderService_HasNoAcceleration()
+    {
+        var name = NewPipeName();
+        using var server = new ControlServer(name, new FakeHandler()); // SampleStatus n'en dit rien
+        server.Start();
+        await using var client = await ConnectAsync(name);
+
+        Assert.Null((await client.GetStatusAsync(CancellationToken.None)).Acceleration);
+    }
+
+    [Fact]
     public async Task Reload_ReturnsHandlerResult()
     {
         var name = NewPipeName();
@@ -325,7 +355,7 @@ public partial class ControlChannelTests
     }
 
     [Fact]
-    public void ProtocolVersion_IsFour() => Assert.Equal(4, ControlPipe.ProtocolVersion);
+    public void ProtocolVersion_IsFive() => Assert.Equal(5, ControlPipe.ProtocolVersion);
 
     [Fact]
     public void TimeoutFor_UpdateRequests()
