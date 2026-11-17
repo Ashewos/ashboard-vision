@@ -123,8 +123,8 @@ Trofeo.HardwareCheck.exe --appearance legibility=off
 
 ### Fonds animés
 
-- **Vidéo** : préfère une vidéo **à la taille de l'écran (1920 × 462)**, 30 images par seconde au plus : elle coûte jusqu'à deux fois moins de processeur et 40 % de mémoire en moins qu'une vidéo 1080p. Avec la mémoire du service (environ 40 à 50 Mo), une vidéo à la taille de l'écran reste sous les 100 Mo, une vidéo 1080p les dépasse (environ 110 à 125 Mo). Le décodeur lit chaque image de la vidéo, sans carte graphique (décodage logiciel) : plus la vidéo est lourde, plus le processeur travaille. La lecture boucle et n'a pas de son.
-- **Coût du décodeur vidéo** : le décodeur n'utilise qu'un seul fil de travail (Windows en prend un par cœur logique par défaut, avec leurs tampons d'images : trois fois plus de mémoire pour le même débit de décodage). Mesuré par `tools/Trofeo.VideoBench` (le processus de lecture seul, 12 images par seconde montrées, 30 i/s lues, 60 s après 10 s de chauffe, sur 20 cœurs logiques) :
+- **Vidéo** : préfère une vidéo **à la taille de l'écran (1920 × 462)**, 30 images par seconde au plus : elle coûte jusqu'à deux fois moins de processeur et 40 % de mémoire en moins qu'une vidéo 1080p. Avec la mémoire du service (environ 40 à 50 Mo), une vidéo à la taille de l'écran reste sous les 100 Mo, une vidéo 1080p les dépasse (environ 110 à 125 Mo). Par défaut, le décodage passe par la carte graphique (voir « Accélération matérielle ») ; décodée par le processeur, chaque image de la vidéo est lue en logiciel : plus la vidéo est lourde, plus le processeur travaille. La lecture boucle et n'a pas de son.
+- **Coût du décodeur vidéo sur le processeur** : le décodeur logiciel n'utilise qu'un seul fil de travail (Windows en prend un par cœur logique par défaut, avec leurs tampons d'images : trois fois plus de mémoire pour le même débit de décodage). Mesuré par `tools/Trofeo.VideoBench` (le processus de lecture seul, 12 images par seconde montrées, 30 i/s lues, 60 s après 10 s de chauffe, sur 20 cœurs logiques) :
 
   | Vidéo (H.264, 30 i/s) | Mémoire propre | Processeur (un cœur) | Processeur (machine) |
   |---|---|---|---|
@@ -139,6 +139,35 @@ Trofeo.HardwareCheck.exe --appearance legibility=off
   - **GIF** : le copier par-dessus ou le supprimer marche. Le déplacer ou le renommer par-dessus est refusé par Windows tant que le service tourne.
   - **Vidéo** : copier par-dessus une vidéo en cours de lecture est refusé par Windows (« le processus ne peut pas accéder au fichier »). Pour la remplacer, quitte le service (« Quitter » dans le menu de l'icône de la zone de notification), copie la nouvelle vidéo, puis relance le service. Seule la suppression marche pendant la lecture.
   - Dans les deux cas, le nouveau fichier n'est repris qu'au prochain démarrage.
+
+## Accélération matérielle
+
+Depuis la 1.2.0-beta.3, le dessin de l'image et le décodage des vidéos passent par la carte graphique (Direct3D 12). La fenêtre de réglage (Paramètres, « Accélération matérielle ») fait tout ce qui suit ; cette section sert à ceux qui préfèrent `layout.json`, service arrêté. Le champ `Acceleration` est facultatif ; s'il manque, ou s'il vaut `null`, les valeurs par défaut s'appliquent.
+
+```json
+"Acceleration": {
+  "Enabled": true,
+  "Adapter": null,
+  "Drawing": true,
+  "VideoDecoding": true
+}
+```
+
+- `Enabled` (`true` par défaut) : l'interrupteur général. À `false`, tout se calcule sur le processeur, comme avant la 1.2.0-beta.3, et les trois autres champs sont ignorés.
+- `Adapter` (`null` par défaut) : la carte. `null` (ou champ absent) veut dire **Automatique** : la première carte matérielle dans l'ordre « économie d'énergie » de Windows (`EnumAdapterByGpuPreference`), en général la carte intégrée. Pour en choisir une, donne son identité (les nombres ci-dessous sont un exemple) :
+
+  ```json
+  "Adapter": { "VendorId": 4318, "DeviceId": 10112, "SubSysId": 0, "Name": "NVIDIA GeForce RTX 5070" }
+  ```
+
+  `VendorId` est l'identifiant du fabricant, `DeviceId` celui du modèle, `SubSysId` celui du sous-système (ce qui distingue deux cartes du même modèle chez des constructeurs différents) et `Name` le nom affiché. La carte est retrouvée par ces identifiants, puis par son nom, et jamais par son LUID, qui change à chaque démarrage de Windows. Si elle n'existe plus, le logiciel prend Automatique et l'écrit dans le journal et dans la fenêtre. Le plus simple pour remplir ce champ est de choisir la carte dans la fenêtre.
+- `Drawing` (`true` par défaut) : le dessin de l'image passe par la carte (thèmes, verre, fonds animés).
+- `VideoDecoding` (`true` par défaut) : le décodage des vidéos passe par la carte. Les deux cases se combinent comme tu veux.
+- Un champ du mauvais type reprend sa valeur par défaut, avec un avertissement dans le journal ; le reste du fichier n'est pas touché.
+
+**Ils sont propres à ce PC** : « Exporter la disposition » ne les emporte pas, et importer une disposition garde ceux de la machine qui l'importe.
+
+En cas de problème de carte, l'image en cours est refaite sur le processeur, et le service retente la carte toutes les 5 minutes, au plus 3 fois de suite (le compte repart de zéro après une heure sans problème). En Automatique, une carte qui met plus de 83 ms par image en moyenne pendant 10 s est jugée trop lente. Une vidéo que la carte refuse de décoder reste sur le processeur jusqu'à ce que la carte choisie change. La compression JPEG de l'image envoyée à l'écran reste toujours sur le processeur. Les outils du dépôt (aperçus des thèmes et de la fenêtre, banc d'essai des modules) dessinent toujours sur le processeur.
 
 ## Quotas de Claude Code
 

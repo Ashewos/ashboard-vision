@@ -148,8 +148,11 @@ Dans `%AppData%\ashboard-vision` : `layout.json` pour la disposition et le thèm
 **Peut-on le désinstaller proprement ?**
 Oui, depuis les Applications installées de Windows (voir [Désinstallation](#désinstallation)).
 
+**Le logiciel utilise-t-il ma carte graphique ? Comment l'éviter ?**
+Oui, depuis la 1.2.0-beta.3 : le dessin de l'image et le décodage des vidéos passent par la carte graphique (Direct3D 12), ce qui allège le processeur, surtout avec le thème Liquid Glass avancé sur un fond animé. En mode Automatique, c'est la carte intégrée qui travaille, pas la carte dédiée. Pour tout laisser au processeur, ou pour choisir la carte et ce qui est accéléré, ouvre **Paramètres**, section **Accélération matérielle** : coupe l'interrupteur « Utiliser la carte graphique », ou décoche « Dessin de l'image » ou « Décodage des vidéos ». Si la carte a un problème, le logiciel repasse tout seul sur le processeur et le dit dans cette section.
+
 **Je veux régler quelque chose à la main.**
-Tout est dans [l'utilisation avancée](docs/utilisation-avancee.md) : réglages du module Claude Code et Codex, fonds animés, garde de lisibilité, commandes de vérification de l'écran.
+Tout est dans [l'utilisation avancée](docs/utilisation-avancee.md) : réglages du module Claude Code et Codex, fonds animés, garde de lisibilité, accélération matérielle, commandes de vérification de l'écran.
 
 ## Crédits
 
@@ -183,6 +186,7 @@ Manrope et Pixelify Sans, publiées en police variable, sont embarquées en une 
 ### Licences tierces
 
 - **liquidglass** (MIT) : le verre du thème « Liquid Glass avancé » adapte l'effet de [liquidglass](https://github.com/ybouane/liquidglass), de ybouane (« Copyright (c) ybouane »), au commit `59af227`. Le texte complet de la licence est dans [`src/Trofeo.Core/Rendering/LiquidGlass/LICENSE-liquidglass.txt`](src/Trofeo.Core/Rendering/LiquidGlass/LICENSE-liquidglass.txt), copié à côté du programme comme les licences OFL des polices ci-dessus.
+- **Vortice.Direct3D12, Vortice.DXGI et Vortice.Direct3D11** (MIT) : l'accélération matérielle (dessin de l'image et décodage des vidéos sur la carte graphique, par Direct3D 12) passe par ces paquets de [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows), comme Vortice.MediaFoundation cité plus haut. Leurs licences sont copiées à côté du programme, avec la liste de `installer/LICENCES-TIERCES.txt`.
 - **Polices** (SIL Open Font License 1.1) : voir plus haut.
 
 ## Licence
