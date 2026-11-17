@@ -184,6 +184,35 @@ public class D3D12GpuDeviceTests
     }
 
     [Fact]
+    public void List_KeepsOnlyAdaptersWithDirect3D12()
+    {
+        // Chaque carte listée sait ouvrir un appareil Direct3D 12 au niveau 11_0 (vérifié ici sans passer par GpuAdapters.Describe).
+        var adapters = GpuAdapters.List();
+
+        using var factory = Vortice.DXGI.DXGI.CreateDXGIFactory1<Vortice.DXGI.IDXGIFactory6>();
+        for (uint i = 0; factory.EnumAdapterByGpuPreference(i, Vortice.DXGI.GpuPreference.MinimumPower, out Vortice.DXGI.IDXGIAdapter1? adapter).Success; i++)
+        {
+            using (adapter)
+            {
+                var d = adapter!.Description1;
+                var luid = ((long)d.Luid.HighPart << 32) | d.Luid.LowPart;
+                var listed = adapters.Any(a => a.Luid == luid);
+                var hardware = (d.Flags & Vortice.DXGI.AdapterFlags.Software) == 0;
+                var supports = Vortice.Direct3D12.D3D12.IsSupported(adapter, Vortice.Direct3D.FeatureLevel.Level_11_0);
+                Assert.Equal(hardware && supports, listed);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(Vortice.DXGI.AdapterFlags.None, true, true)]
+    [InlineData(Vortice.DXGI.AdapterFlags.None, false, false)]
+    [InlineData(Vortice.DXGI.AdapterFlags.Software, true, false)]
+    [InlineData(Vortice.DXGI.AdapterFlags.Software, false, false)]
+    public void IsUsable_NeedsHardwareAndDirect3D12(Vortice.DXGI.AdapterFlags flags, bool direct3D12, bool expected) =>
+        Assert.Equal(expected, GpuAdapters.IsUsable(flags, direct3D12));
+
+    [Fact]
     public void Create_WithAnUnknownAdapter_ThrowsGpuLost()
     {
         var ghost = new Trofeo.Display.GpuAdapterInfo(new Trofeo.Core.Layout.GpuAdapterId(0x1234, 0x5678, 0, "Carte absente"), 0x7777_7777L, 0);
