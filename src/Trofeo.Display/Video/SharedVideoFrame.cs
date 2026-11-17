@@ -104,6 +104,10 @@ internal sealed partial class SharedVideoFrame : IDisposable
 
         _video.Context.CopySubresourceRegion(_texture, 0, 0, 0, 0, source, dxgi.SubresourceIndex, null);
         _context4.Signal(_copyFence, ++_copyValue);
+
+        // Sans Flush, la copie et le signal pourraient rester dans la file du contexte tant que le pilote n'a rien d'autre à faire :
+        // la file Direct3D 12 attendrait la barrière, et la lecture des pixels (sans délai) ne finirait jamais, écran figé.
+        _video.Context.Flush();
     }
 
     /// <summary>
