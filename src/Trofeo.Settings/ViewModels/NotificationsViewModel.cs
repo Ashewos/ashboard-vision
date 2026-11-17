@@ -237,16 +237,40 @@ public sealed class NotificationsViewModel : ObservableObject, IDisposable
         if (_link.State != LinkState.Connected || _link.Updates is not { } updates || !_overviewOk)
             return;
 
-        var appKnown = updates.State is not (LinkUpdateState.Unknown or LinkUpdateState.Checking or LinkUpdateState.Failed);
+        // La proposition du logiciel n'est connue que dans ces trois états : une recherche, un téléchargement ou une installation en cours
+        // (ou ratés) ne disent pas qu'elle a disparu.
+        var appKnown = updates.State is LinkUpdateState.UpToDate or LinkUpdateState.NoStableYet or LinkUpdateState.Available;
         var gpuKnown = _link.Status?.Acceleration is not null;
         var keys = produced.Select(i => i.Key).ToHashSet();
+        var installed = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var module in _overview?.Modules ?? [])
+            installed.TryAdd(module.Id, module.Version ?? "");
 
         var kept = current.Where(key =>
             keys.Contains(key)
             || key.StartsWith("app:", StringComparison.Ordinal) && !appKnown
-            || key.StartsWith("gpu:", StringComparison.Ordinal) && !gpuKnown).ToList();
+            || key.StartsWith("gpu:", StringComparison.Ordinal) && !gpuKnown
+            || IsPendingModuleUpdate(key, installed)).ToList();
         if (kept.Count != current.Count)
             _preferences.Update(p => p with { DismissedNotifications = kept });
+    }
+
+    // Une croix « update:<id>:<version> » reste tant que le module est là sans cette version installée : le service ne propose rien pendant les
+    // 60 premières secondes, ni pendant 24 h si sa première recherche échoue, et la proposition ne doit pas revenir une fois la croix oubliée.
+    // Elle n'est élaguée que si le module est parti ou si cette version est installée. (Un identifiant de module n'a jamais de « : ».)
+    private static bool IsPendingModuleUpdate(string key, Dictionary<string, string> installed)
+    {
+        const string prefix = "update:";
+        if (!key.StartsWith(prefix, StringComparison.Ordinal))
+            return false;
+
+        var rest = key.AsSpan(prefix.Length);
+        var colon = rest.IndexOf(':');
+        if (colon <= 0)
+            return false;
+
+        return installed.TryGetValue(rest[..colon].ToString(), out var version)
+            && !string.Equals(version, rest[(colon + 1)..].ToString(), StringComparison.Ordinal);
     }
 
     // L'heure d'un événement dans une clé : en UTC, au format « O » ; sans heure (une mise de côté d'avant l'enregistrement des heures), rien.

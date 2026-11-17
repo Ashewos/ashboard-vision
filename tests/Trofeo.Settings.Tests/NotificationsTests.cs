@@ -57,8 +57,8 @@ public sealed class NotificationsTests : IDisposable
 
     private static CommunityModuleInfo Module(
         string id, string name = "Météo", string? updateVersion = null, LinkCommunityState state = LinkCommunityState.Ready,
-        int stops = 0, DateTimeOffset? lastStop = null, DateTimeOffset? setAside = null) =>
-        new(id, name, "Alex", "Un module.", "1.0", state, null, [], [], false, updateVersion, null,
+        int stops = 0, DateTimeOffset? lastStop = null, DateTimeOffset? setAside = null, string version = "1.0") =>
+        new(id, name, "Alex", "Un module.", version, state, null, [], [], false, updateVersion, null,
             StopCount: stops, LastStopAt: lastStop, SetAsideAt: setAside);
 
     private void SetModules(params CommunityModuleInfo[] modules) =>
@@ -265,7 +265,7 @@ public sealed class NotificationsTests : IDisposable
         Assert.Equal(4, store.Current.DismissedNotifications!.Count);
 
         // La mise à jour est installée, le module est relancé, la mise à jour du module est faite, la carte va mieux.
-        SetModules(Module("a"), Module("b"));
+        SetModules(Module("a"), Module("b", version: "2.0"));
         await model.RefreshCommunityAsync();
         _link.Updates = Updates(LinkUpdateState.UpToDate, null);
         SetGpu(null);
@@ -638,6 +638,89 @@ public sealed class NotificationsTests : IDisposable
 
         _link.SetUpdates(Updates(LinkUpdateState.Available, "1.2.0"));
         Assert.Empty(model.Items);               // la croix a tenu
+    }
+
+    [Theory]
+    [InlineData(LinkUpdateState.Downloading)]
+    [InlineData(LinkUpdateState.Installing)]
+    public void Prune_KeepsAppKeyWhileTheUpdateIsDownloadedOrInstalled(LinkUpdateState busy)
+    {
+        _link.SetUpdates(Updates(LinkUpdateState.Available, "1.2.0"));
+        var store = Store(["app:1.2.0"]);
+        var model = Open(store);
+
+        // Le logiciel se met à jour : la proposition n'est plus listée, mais la croix ne doit pas être oubliée (ni la ligne clignoter).
+        _link.SetUpdates(Updates(busy, "1.2.0"));
+        _link.SetUpdates(Updates(LinkUpdateState.Failed, "1.2.0"));
+        Assert.Equal(["app:1.2.0"], store.Current.DismissedNotifications);
+
+        _link.SetUpdates(Updates(LinkUpdateState.Available, "1.2.0"));
+        Assert.Empty(model.Items);
+    }
+
+    [Fact]
+    public void Prune_KeepsAppKeyAcrossCheckingThenAvailable()
+    {
+        _link.SetUpdates(Updates(LinkUpdateState.Available, "1.2.0"));
+        var store = Store(["app:1.2.0"]);
+        var model = Open(store);
+
+        _link.SetUpdates(Updates(LinkUpdateState.Checking, null));
+        _link.SetUpdates(Updates(LinkUpdateState.Available, "1.2.0"));
+
+        Assert.Empty(model.Items);
+        Assert.Equal(["app:1.2.0"], store.Current.DismissedNotifications);
+    }
+
+    [Fact]
+    public async Task Prune_KeepsModuleUpdateKeyUntilThatVersionIsInstalledOrTheModuleIsGone()
+    {
+        // Le service ne propose rien pendant ses 60 premières secondes (ou 24 h après une première recherche ratée) : la croix tient.
+        SetModules(Module("b", version: "1.0"));
+        var store = Store(["update:b:2.0"]);
+        var model = Open(store);
+        await model.RefreshCommunityAsync();
+        Assert.Equal(["update:b:2.0"], store.Current.DismissedNotifications);
+
+        // La proposition arrive : la croix la cache toujours.
+        SetModules(Module("b", version: "1.0", updateVersion: "2.0"));
+        await model.RefreshCommunityAsync();
+        Assert.Empty(model.Items);
+        Assert.Equal(["update:b:2.0"], store.Current.DismissedNotifications);
+
+        // Puis elle repart : la croix tient encore.
+        SetModules(Module("b", version: "1.0"));
+        await model.RefreshCommunityAsync();
+        Assert.Equal(["update:b:2.0"], store.Current.DismissedNotifications);
+
+        // La version 2.0 est installée : la croix est élaguée.
+        SetModules(Module("b", version: "2.0"));
+        await model.RefreshCommunityAsync();
+        Assert.Empty(store.Current.DismissedNotifications!);
+
+        // Le module disparu : élaguée aussi.
+        SetModules(Module("b", version: "1.0"));
+        var other = Store(["update:b:2.0"]);
+        var second = Open(other);
+        await second.RefreshCommunityAsync();
+        Assert.Single(other.Current.DismissedNotifications!);
+        SetModules(Module("c"));
+        await second.RefreshCommunityAsync();
+        Assert.Empty(other.Current.DismissedNotifications!);
+    }
+
+    [Fact]
+    public async Task ModuleLeavingSetAside_WithNoStops_ShowsNothing()
+    {
+        // L'utilisateur relance un module mis de côté : le service oublie ses arrêts, la cloche ne dit rien de plus.
+        SetModules(Module("a", state: LinkCommunityState.SetAside, stops: 3, lastStop: T0, setAside: T0));
+        var model = Open();
+        Assert.Single(model.Items);
+
+        SetModules(Module("a", state: LinkCommunityState.Ready, stops: 0));
+        await model.RefreshCommunityAsync();
+
+        Assert.Empty(model.Items);
     }
 
     [Fact]
