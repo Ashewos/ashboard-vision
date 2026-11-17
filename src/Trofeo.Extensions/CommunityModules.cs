@@ -353,6 +353,15 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         }
     }
 
+    /// <summary>Oublie les arrêts d'un module : l'utilisateur le relance (ou le recharge) lui-même, le compte repart de zéro.</summary>
+    private void ForgetStops(string id)
+    {
+        lock (_stopsGate)
+        {
+            _stops.Remove(id);
+        }
+    }
+
     /// <summary>Un superviseur met son module de côté : la raison est rangée dans la liste scellée (elle survit au redémarrage).</summary>
     private void OnSetAside(string id, string reason)
     {
@@ -767,6 +776,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
         await _operations.WaitAsync().ConfigureAwait(false);
         try
         {
+            var forgetStops = false;
             var (result, pending) = Transact(current =>
             {
                 var approval = current.Modules.FirstOrDefault(m => m.Id == id);
@@ -776,12 +786,21 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
                     return Refuse(NotApprovedMessage);
                 }
 
+                // Relance à la main d'un module mis de côté (ou d'un dossier de développement, dont la mise de côté n'est pas enregistrée) :
+                // ses anciens arrêts ne reviennent pas en notification juste après le geste de l'utilisateur.
+                forgetStops = dev || approval is { SetAsideReason: not null };
+
                 // Même sans mise de côté enregistrée, le superviseur repart de zéro (une fois la liste écrite : un échec ne laisse rien en attente).
                 var done = new ActionResult(true, "Le module est relancé.");
                 return approval is { SetAsideReason: not null }
                     ? new Outcome(WithModule(current, approval with { SetAsideReason = null, SetAsideAt = null }), done, id)
                     : new Outcome(current, done, id);
             });
+
+            if (result.Ok && forgetStops)
+            {
+                ForgetStops(id);
+            }
 
             if (pending is not null)
             {
@@ -836,10 +855,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
 
             // Plus validé : l'hôte (et le verrou sur ses fichiers) s'arrête d'abord, puis le dossier, le conteneur et les secrets partent.
             await CompleteAsync(pending).ConfigureAwait(false);
-            lock (_stopsGate)
-            {
-                _stops.Remove(id); // le module est parti : ses arrêts ne comptent plus
-            }
+            ForgetStops(id); // le module est parti : ses arrêts ne comptent plus
 
             var problems = new List<string>();
             // Le nom du dossier doit être un identifiant de module : on ne supprime jamais un autre dossier du dossier des modules (« Photos »).
@@ -1140,6 +1156,7 @@ public sealed class CommunityModules : ICommunityModules, IAsyncDisposable
                 pending = ApplyScanLocked(entries);
             }
 
+            ForgetStops(id); // un rechargement demandé à la main repart de zéro, comme une relance
             await CompleteAsync(pending).ConfigureAwait(false);
             return entry.State == CommunityState.Ready
                 ? new ActionResult(true, "Le module est rechargé.")
