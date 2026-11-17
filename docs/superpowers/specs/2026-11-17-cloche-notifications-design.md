@@ -6,8 +6,8 @@ Demandée par Alex le 17/11/2026, pour la même préversion que l'accélération
 
 Ce qui demande l'attention d'Alex est aujourd'hui éparpillé dans la fenêtre de réglage :
 - la mise à jour du logiciel est dans Paramètres ;
-- celle d'un module complémentaire est dans l'onglet Modules ;
-- un module mis de côté est dans l'onglet Modules ;
+- celle d'un module complémentaire est dans la section « Modules complémentaires » de Paramètres ;
+- un module mis de côté est au même endroit ;
 - une panne de la carte graphique est dans Paramètres.
 
 Une icône dans l'en-tête les rassemble, pour qu'on ne les rate pas.
@@ -36,9 +36,9 @@ Chaque notification a :
 | Événement | Clé | Type | Phrase | Lien |
 |---|---|---|---|---|
 | Mise à jour du logiciel proposée (`UpdateInfo.State == Available`, rétrogradation comprise) | `app:<version>` | nouveauté | « Ashboard Vision <version> est disponible. » | « Voir la mise à jour » → onglet Paramètres |
-| Mise à jour d'un module complémentaire (`CommunityModuleInfo.UpdateVersion`) | `update:<id>:<version>` | nouveauté | « <module> <version> est disponible. » | « Voir le module » → onglet Modules |
-| Arrêt brusque d'un module complémentaire, relancé ensuite | `stop:<id>:<heure du dernier arrêt>` | problème | « <module> s'est arrêté brusquement et a été relancé. » ; à partir du 2ᵉ arrêt depuis le démarrage du service : « … (<n> fois) » | « Voir le module » → onglet Modules |
-| Module mis de côté après des pannes répétées (`CommunityState.SetAside`) | `aside:<id>:<heure de la mise de côté>` | problème | « <module> a été mis de côté après des arrêts répétés. » | « Voir le module » → onglet Modules |
+| Mise à jour d'un module complémentaire (`CommunityModuleInfo.UpdateVersion`) | `update:<id>:<version>` | nouveauté | « <module> <version> est disponible. » | « Voir le module » → onglet Paramètres, section « Modules complémentaires » |
+| Arrêt brusque d'un module complémentaire, relancé ensuite | `stop:<id>:<heure du dernier arrêt>` | problème | « <module> s'est arrêté brusquement et a été relancé. » ; à partir du 2ᵉ arrêt depuis le démarrage du service : « … (<n> fois) » | « Voir le module » → onglet Paramètres, section « Modules complémentaires » |
+| Module mis de côté après des pannes répétées (`CommunityState.SetAside`) | `aside:<id>:<heure de la mise de côté>` | problème | « <module> a été mis de côté après des arrêts répétés. » | « Voir le module » → onglet Paramètres, section « Modules complémentaires » |
 | Panne de la carte graphique (`AccelerationInfo.Problem` d'une panne, pas d'une carte trop lente ni absente) | `gpu:<heure de la panne>` | problème | la phrase du service, telle quelle | « Voir les réglages » → onglet Paramètres |
 
 Règles :
@@ -78,7 +78,7 @@ Règles :
   - les mises à jour du logiciel ;
   - la vue d'ensemble des modules complémentaires (mises à jour, arrêts, mises de côté).
 
-  La vue d'ensemble est relue au même rythme que celui que l'onglet Modules utilise déjà. Si elle n'est lue que sur demande, elle est relue au plus toutes les 30 secondes : c'est l'appel du bâtisseur, à dire dans son rapport.
+  La vue d'ensemble des modules n'est relue aujourd'hui que quand les types de modules changent : la cloche la relit elle-même à la connexion puis toutes les **30 secondes**, pour voir les arrêts et les mises à jour.
 - **Aperçus.** `Trofeo.SettingsPreview` gagne des images de l'en-tête avec la cloche fermée sans rien, la cloche avec un problème, et le panneau ouvert.
 - **Textes.** Tous les textes vont dans `Strings.resx`.
 
