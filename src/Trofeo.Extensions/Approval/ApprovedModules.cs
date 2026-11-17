@@ -13,6 +13,7 @@ namespace Trofeo.Extensions;
 /// <param name="Granted">Les permissions accordées par l'utilisateur, une par une.</param>
 /// <param name="SetAsideReason">Pourquoi le module est mis de côté ; <c>null</c> s'il ne l'est pas.</param>
 /// <param name="Repository">Le dépôt GitHub <c>propriétaire/dépôt</c> d'où viennent les mises à jour ; <c>null</c> : aucun.</param>
+/// <param name="SetAsideAt">Quand le module a été mis de côté ; <c>null</c> s'il ne l'est pas (ou si la liste date d'avant cette date).</param>
 public sealed record ApprovedModule(
     string Id,
     string Version,
@@ -20,7 +21,8 @@ public sealed record ApprovedModule(
     string ContentHash,
     IReadOnlyList<ModulePermission> Granted,
     string? SetAsideReason,
-    string? Repository);
+    string? Repository,
+    DateTimeOffset? SetAsideAt = null);
 
 /// <summary>Un dossier de développement (mode développeur) et les permissions que le créateur lui a accordées.</summary>
 /// <param name="Path">Le dossier du module en cours de développement.</param>

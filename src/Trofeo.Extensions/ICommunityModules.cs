@@ -102,6 +102,12 @@ public interface ICommunityModules : ICommunityShortcuts
     /// <summary>Le plafond d'images par seconde et l'apparence, transmis à chaque hôte (et à ceux qui seront lancés plus tard).</summary>
     void SetDisplayOptions(int maxFps, AppearanceSettings appearance);
 
+    /// <summary>
+    /// Les arrêts brusques de l'hôte de ce module depuis le démarrage du service (le compte survit aux relances) ; <c>null</c> s'il n'en
+    /// a eu aucun, s'il est inconnu ou s'il a été désinstallé depuis.
+    /// </summary>
+    ModuleStops? StopsFor(string id);
+
     /// <summary>La mise à jour que GitHub propose pour ce module, ou <c>null</c> (aucune, ou module sans dépôt, ou vérification jamais faite).</summary>
     ModuleUpdateOffer? UpdateFor(string id);
 

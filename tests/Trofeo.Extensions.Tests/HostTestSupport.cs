@@ -717,8 +717,18 @@ internal sealed class SupervisorRig : IAsyncDisposable
                 {
                     _hostRunning.Add(running);
                 }
+            },
+            at =>
+            {
+                lock (Stopped)
+                {
+                    Stopped.Add(at);
+                }
             });
     }
+
+    /// <summary>Les heures des arrêts que personne n'a voulus, telles que le superviseur les a annoncées.</summary>
+    public List<DateTimeOffset> Stopped { get; } = [];
 
     private readonly List<bool> _hostRunning = [];
 

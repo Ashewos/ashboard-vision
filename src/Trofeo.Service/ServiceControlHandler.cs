@@ -347,12 +347,17 @@ public sealed class ServiceControlHandler(
     {
         var manifest = entry.Manifest;
         var update = community.UpdateFor(entry.Id);
+        var stops = community.StopsFor(entry.Id);
+        // Un module mis de côté sans validation (dossier de développement) n'a pas d'heure enregistrée : c'est celle de son dernier arrêt.
+        var setAsideAt = entry.Approval is { } approval ? approval.SetAsideAt
+            : entry.State == CommunityState.SetAside ? stops?.LastAt : null;
         return new CommunityModuleInfo(
             entry.Id, manifest?.Name ?? entry.Id, manifest?.Author ?? "", manifest?.Description ?? "",
             manifest?.Version ?? entry.Approval?.Version, Enum.Parse<LinkCommunityState>(entry.State.ToString()), entry.Message,
             manifest?.Permissions ?? [], community.GrantedTo(entry), entry.FromDevFolder,
             UpdateVersion: update?.Version, UpdateNotes: update?.Notes,
-            DevFolderPath: entry.FromDevFolder ? entry.Directory : null, Shortcuts: ToShortcutInfos(manifest?.Shortcuts));
+            DevFolderPath: entry.FromDevFolder ? entry.Directory : null, Shortcuts: ToShortcutInfos(manifest?.Shortcuts),
+            StopCount: stops?.Count ?? 0, LastStopAt: stops?.LastAt, SetAsideAt: setAsideAt);
     }
 
     private static List<ModuleShortcutInfo> ToShortcutInfos(IEnumerable<ModuleShortcut>? shortcuts) =>

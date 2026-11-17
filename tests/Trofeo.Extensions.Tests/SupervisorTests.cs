@@ -289,6 +289,53 @@ public sealed class SupervisorTests : IAsyncLifetime
     }
 
     [WindowsHostFact]
+    public async Task Supervisor_UnwantedStop_CallsStoppedWithTheTime()
+    {
+        var (rig, factory, _) = Fake();
+        var module = OpenAndSize(rig);
+        var first = await factory.WaitForStartAsync();
+        await first.WaitAsync<Open>();
+        Assert.Empty(rig.Stopped);
+
+        var crashTime = rig.Time.GetUtcNow();
+        await CrashAsync(first, module);
+
+        Assert.Equal([crashTime], rig.Stopped);
+
+        // Un arrêt demandé (redémarrage voulu, fermeture de la dernière case, arrêt du service) ne se compte pas.
+        rig.Time.Advance(TimeSpan.FromSeconds(1.1));
+        var second = await factory.WaitForStartAsync(2);
+        await second.WaitAsync<Open>();
+        await rig.Supervisor.RestartAsync();
+        await (await factory.WaitForStartAsync(3)).WaitAsync<Open>();
+        module.Dispose();
+        await TestWait.UntilAsync(() => rig.HostRunning[^1] == false);
+        await rig.Supervisor.DisposeAsync();
+
+        Assert.Equal([crashTime], rig.Stopped);
+    }
+
+    [WindowsHostFact]
+    public async Task Supervisor_LaunchFailure_CallsStopped()
+    {
+        var (rig, factory, _) = Fake();
+        var attempts = 0;
+        factory.OnStart = _ =>
+        {
+            if (Interlocked.Increment(ref attempts) <= 1)
+            {
+                throw new IOException("verrou d'un antivirus");
+            }
+        };
+        var failedAt = rig.Time.GetUtcNow();
+
+        var module = OpenAndSize(rig);
+
+        await WaitForStatusAsync(module, ModuleHealth.Offline, ModuleHostSupervisor.HostStoppedText);
+        Assert.Equal([failedAt], rig.Stopped);
+    }
+
+    [WindowsHostFact]
     public async Task HostRunning_Dispose_ReportsStopped()
     {
         var (rig, factory, _) = Fake();

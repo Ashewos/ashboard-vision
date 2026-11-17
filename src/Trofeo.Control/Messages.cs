@@ -107,11 +107,15 @@ public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, T
 /// (<see cref="ModuleUpdatePreparation"/>), qui télécharge le paquet. <paramref name="DevFolderPath"/> est le dossier de travail d'un module
 /// du mode développeur (le même texte que dans <see cref="CommunityOverview.DevFolders"/>) ; <c>null</c> pour un module installé.
 /// <paramref name="Shortcuts"/> sont les raccourcis que son manifeste déclare (<c>null</c> : le service ne les a pas dits).
+/// <paramref name="StopCount"/> est le nombre d'arrêts brusques de son hôte depuis le démarrage du service et <paramref name="LastStopAt"/>
+/// l'heure du dernier (<c>0</c> et <c>null</c> : aucun, ou un service qui ne les dit pas) ; <paramref name="SetAsideAt"/> est l'heure de
+/// sa mise de côté (<c>null</c> : il ne l'est pas, ou on ne sait pas quand).
 /// </summary>
 public sealed record CommunityModuleInfo(
     string Id, string Name, string Author, string Description, string? Version, LinkCommunityState State, string? Message,
     IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted, bool FromDevFolder,
-    string? UpdateVersion, string? UpdateNotes, string? DevFolderPath = null, IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null);
+    string? UpdateVersion, string? UpdateNotes, string? DevFolderPath = null, IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null,
+    int StopCount = 0, DateTimeOffset? LastStopAt = null, DateTimeOffset? SetAsideAt = null);
 
 /// <summary>
 /// Ce que le service a lu dans le paquet d'une mise à jour qu'il vient de télécharger et de vérifier (clic sur « Mettre à jour »). Si
