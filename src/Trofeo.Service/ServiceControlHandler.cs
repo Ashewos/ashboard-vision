@@ -115,7 +115,15 @@ public sealed class ServiceControlHandler(
     /// <summary>L'état de l'accélération tel que la fenêtre de réglage le connaît : les cartes ne gardent que ce qu'on enregistre et leur nom.</summary>
     public static AccelerationInfo ToAccelerationInfo(AccelerationStatus status) => new(
         status.Available, status.Enabled, status.Adapter?.Id.Name, status.Drawing, status.VideoDecoding, status.Problem,
-        status.Adapters.Select(a => new GpuAdapterEntry(a.Id.VendorId, a.Id.DeviceId, a.Id.SubSysId, a.Id.Name)).ToList());
+        status.Adapters.Select(a => new GpuAdapterEntry(a.Id.VendorId, a.Id.DeviceId, a.Id.SubSysId, a.Id.Name)).ToList(),
+        status.ProblemKind switch
+        {
+            AccelerationProblemKind.Failure => LinkAccelerationProblem.Failure,
+            AccelerationProblemKind.Slow => LinkAccelerationProblem.Slow,
+            AccelerationProblemKind.Gone => LinkAccelerationProblem.Gone,
+            _ => null,
+        },
+        status.ProblemAt);
 
     /// <summary>L'état du lien avec l'écran tel que la fenêtre de réglage le connaît.</summary>
     public static ScreenInfo ToScreenInfo(ScreenStatus status) => new(

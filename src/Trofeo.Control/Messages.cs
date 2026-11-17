@@ -37,16 +37,21 @@ public sealed record SensorInfo(bool PawnIoInstalled, bool HelperInstalled, bool
 /// <summary>Une carte graphique que l'on peut choisir : ce que l'on enregistre dans les réglages pour la reconnaître, et son nom.</summary>
 public sealed record GpuAdapterEntry(int VendorId, int DeviceId, int SubSysId, string Name);
 
+/// <summary>Le genre de problème de la carte graphique (voir <see cref="AccelerationInfo.ProblemKind"/>).</summary>
+public enum LinkAccelerationProblem { Failure, Slow, Gone }
+
 /// <summary>
 /// L'accélération matérielle vue par la fenêtre. <paramref name="Available"/> : une carte graphique compatible existe (faux : la fenêtre
 /// grise l'interrupteur) ; <paramref name="AdapterName"/> : la carte réellement utilisée (<c>null</c> : le processeur fait tout) ;
 /// <paramref name="Drawing"/> et <paramref name="VideoDecoding"/> : ce qui passe vraiment par la carte ; <paramref name="Problem"/> : une
 /// phrase écrite pour être lue telle quelle (panne, carte absente, carte trop lente), <c>null</c> sans problème ;
-/// <paramref name="Adapters"/> : les cartes que l'on peut choisir, la première étant celle que « Automatique » prend.
+/// <paramref name="Adapters"/> : les cartes que l'on peut choisir, la première étant celle que « Automatique » prend ;
+/// <paramref name="ProblemKind"/> et <paramref name="ProblemAt"/> : le genre du problème (panne, lenteur, carte absente) et l'heure où
+/// la phrase en cours a été posée, <c>null</c> sans problème ou d'un service qui ne les envoie pas.
 /// </summary>
 public sealed record AccelerationInfo(
     bool Available, bool Enabled, string? AdapterName, bool Drawing, bool VideoDecoding, string? Problem,
-    IReadOnlyList<GpuAdapterEntry> Adapters);
+    IReadOnlyList<GpuAdapterEntry> Adapters, LinkAccelerationProblem? ProblemKind = null, DateTimeOffset? ProblemAt = null);
 
 /// <summary>
 /// L'état du service. <paramref name="CurrentViewId"/> est la vue affichée sur l'écran en ce moment ;

@@ -721,6 +721,30 @@ public sealed partial class ServiceControlHandlerTests
         Assert.Empty(none.Adapters);
     }
 
+    [Theory]
+    [InlineData(AccelerationProblemKind.Failure, LinkAccelerationProblem.Failure)]
+    [InlineData(AccelerationProblemKind.Slow, LinkAccelerationProblem.Slow)]
+    [InlineData(AccelerationProblemKind.Gone, LinkAccelerationProblem.Gone)]
+    public void ToAccelerationInfo_CarriesTheKindAndTimeOfTheProblem(AccelerationProblemKind kind, LinkAccelerationProblem expected)
+    {
+        var at = new DateTimeOffset(2026, 11, 17, 9, 30, 0, TimeSpan.Zero);
+        var status = new AccelerationStatus(true, true, null, false, false, "Un problème.", [], kind, at);
+
+        var info = ServiceControlHandler.ToAccelerationInfo(status);
+
+        Assert.Equal(expected, info.ProblemKind);
+        Assert.Equal(at, info.ProblemAt);
+    }
+
+    [Fact]
+    public void ToAccelerationInfo_WithoutProblem_HasNoKindNorTime()
+    {
+        var info = ServiceControlHandler.ToAccelerationInfo(new AccelerationStatus(true, true, null, false, false, null, []));
+
+        Assert.Null(info.ProblemKind);
+        Assert.Null(info.ProblemAt);
+    }
+
     [Fact]
     public void GetStatus_WithoutAccelerationController_SaysNothingOfIt()
     {

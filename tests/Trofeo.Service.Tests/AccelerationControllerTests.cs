@@ -553,6 +553,7 @@ public sealed class AccelerationControllerTests : IDisposable
         Assert.False(_controller.Status.Drawing);
         Assert.Equal("Aucune carte n'est assez rapide : dessin sur le processeur.", _controller.Status.Problem);
         Assert.Equal(changes + 1, _choiceChanges);
+        Assert.Equal(AccelerationProblemKind.Slow, _controller.Status.ProblemKind);
 
         _time.Advance(TimeSpan.FromHours(1)); // pas de nouvel essai : ce n'est pas une panne
         Assert.False(_controller.Tick());
@@ -581,6 +582,123 @@ public sealed class AccelerationControllerTests : IDisposable
 
         Assert.False(_controller.Tick());
         Assert.Single(_factory.Created);
+    }
+
+    [Fact]
+    public void Failure_HasKindAndTime()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _time.Advance(TimeSpan.FromMinutes(3));
+        var failedAt = _time.GetUtcNow();
+
+        _controller.ReportFailure("pilote");
+
+        Assert.Equal(AccelerationProblemKind.Failure, _controller.Status.ProblemKind);
+        Assert.Equal(failedAt, _controller.Status.ProblemAt);
+    }
+
+    [Fact]
+    public void CreateFails_IsAFailureDatedFromTheStart()
+    {
+        _factory.FailCreate = true;
+
+        _controller.Apply(AccelerationSettings.Default);
+
+        Assert.Equal(AccelerationProblemKind.Failure, _controller.Status.ProblemKind);
+        Assert.Equal(_time.GetUtcNow(), _controller.Status.ProblemAt);
+    }
+
+    [Fact]
+    public void FailedRetry_GetsANewTime()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("pilote");
+        var first = _controller.Status.ProblemAt;
+        _factory.FailCreate = true;
+
+        _time.Advance(TimeSpan.FromMinutes(5));
+        _controller.Tick(); // le nouvel essai échoue
+
+        Assert.Equal(AccelerationProblemKind.Failure, _controller.Status.ProblemKind);
+        Assert.Equal(first + TimeSpan.FromMinutes(5), _controller.Status.ProblemAt);
+
+        // Un nouvel essai qui échoue au même texte garde la même phrase, mais une nouvelle heure.
+        var second = _controller.Status.ProblemAt;
+        var sentence = _controller.Status.Problem;
+        _time.Advance(TimeSpan.FromMinutes(5));
+        _controller.Tick();
+        Assert.Equal(sentence, _controller.Status.Problem);
+        Assert.Equal(second + TimeSpan.FromMinutes(5), _controller.Status.ProblemAt);
+    }
+
+    [Fact]
+    public void Republish_KeepsTheTime()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("pilote");
+        var at = _controller.Status.ProblemAt;
+
+        _time.Advance(TimeSpan.FromMinutes(2));
+        _controller.Tick();                       // rien à faire : republie sans changement
+        _controller.ReportFrame(TimeSpan.FromMilliseconds(5));
+        _controller.ReportVideoDecoder(false, null);
+
+        Assert.Equal(at, _controller.Status.ProblemAt);
+    }
+
+    [Fact]
+    public void Slow_Republish_KeepsTheTime()
+    {
+        _controller.Apply(new AccelerationSettings(Adapter: Discrete.Id));
+        Slow(90);
+        _controller.Tick();
+        var at = _controller.Status.ProblemAt;
+        Assert.NotNull(at);
+
+        Slow(90);
+        _controller.Tick(); // toujours lente : la même phrase
+
+        Assert.Equal(AccelerationProblemKind.Slow, _controller.Status.ProblemKind);
+        Assert.Equal(at, _controller.Status.ProblemAt);
+    }
+
+    [Fact]
+    public void Slow_And_Gone_Kinds()
+    {
+        var gone = new GpuAdapterId(0x10DE, 99, 1, "NVIDIA RTX 3080");
+        _controller.Apply(new AccelerationSettings(Adapter: gone));
+        Assert.Equal(AccelerationProblemKind.Gone, _controller.Status.ProblemKind);
+        Assert.Equal(_time.GetUtcNow(), _controller.Status.ProblemAt);
+
+        _controller.Apply(new AccelerationSettings(Adapter: Discrete.Id));
+        Slow(90);
+        _controller.Tick();
+        Assert.Equal(AccelerationProblemKind.Slow, _controller.Status.ProblemKind);
+        Assert.NotNull(_controller.Status.ProblemAt);
+    }
+
+    [Fact]
+    public void NoProblem_NullKindAndTime()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+
+        Assert.Null(_controller.Status.Problem);
+        Assert.Null(_controller.Status.ProblemKind);
+        Assert.Null(_controller.Status.ProblemAt);
+    }
+
+    [Fact]
+    public void ProblemGone_ClearsKindAndTime()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("pilote");
+
+        _time.Advance(TimeSpan.FromMinutes(5));
+        _controller.Tick(); // le nouvel essai réussit
+
+        Assert.Null(_controller.Status.Problem);
+        Assert.Null(_controller.Status.ProblemKind);
+        Assert.Null(_controller.Status.ProblemAt);
     }
 
     [Fact]

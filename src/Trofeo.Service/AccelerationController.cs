@@ -87,6 +87,9 @@ public sealed class AccelerationController : IDisposable
     private string? _failure;
     private string? _slow;
     private string? _notice;
+    private DateTimeOffset _failureAt;              // l'heure où chaque phrase a été posée (UTC) ; vaut tant que la phrase existe
+    private DateTimeOffset _slowAt;
+    private DateTimeOffset _noticeAt;
     private int _retries;
     private long? _retryFrom;                       // l'instant de la panne : le nouvel essai a lieu 5 min plus tard
     private long? _healthySince;                    // l'instant où l'appareil en place a été ouvert
@@ -325,6 +328,7 @@ public sealed class AccelerationController : IDisposable
 
     private void WarnAbsent(string warning)
     {
+        if (_notice != warning) _noticeAt = _time.GetUtcNow();
         _notice = warning;
         _log(warning);
     }
@@ -378,6 +382,7 @@ public sealed class AccelerationController : IDisposable
         RetireDevice();
         _suspended = true;
         _failure = problem;
+        _failureAt = _time.GetUtcNow(); // un nouvel échec, même au même texte, est un nouvel événement
         _slow = null;
         _retryFrom = _retries < MaxRetries ? _time.GetTimestamp() : null;
         ResetWindow();
@@ -405,7 +410,7 @@ public sealed class AccelerationController : IDisposable
         {
             // Une carte choisie à la main reste : c'est le choix de l'utilisateur, la fenêtre le prévient.
             if (_slow is null) _log($"Accélération matérielle : « {name} » met {average:0} ms par image : trop lente.");
-            _slow = $"{name} est trop lente pour tenir le rythme.";
+            SetSlow($"{name} est trop lente pour tenir le rythme.");
             return;
         }
 
@@ -419,13 +424,20 @@ public sealed class AccelerationController : IDisposable
             // Le dessin se replie sur le processeur ; la carte reste celle des vidéos, que sa lenteur à dessiner ne concerne pas.
             _noFastCard = true;
             RetireDevice();
-            _slow = $"Aucune carte n'est assez rapide : {CpuDrawing}.";
+            SetSlow($"Aucune carte n'est assez rapide : {CpuDrawing}.");
         }
         else
         {
             _candidate = next;
             Settle();
         }
+    }
+
+    /// <summary>Pose la phrase de lenteur ; la même phrase reposée à chaque verdict garde son heure.</summary>
+    private void SetSlow(string sentence)
+    {
+        if (_slow != sentence) _slowAt = _time.GetUtcNow();
+        _slow = sentence;
     }
 
     private void ResetWindow()
@@ -457,6 +469,11 @@ public sealed class AccelerationController : IDisposable
 
         // Une vidéo ouverte qui ne se décode pas sur la carte voulue : la fenêtre ne dit pas qu'elle tourne dessus.
         var videoOnCard = _video is not null && (!_videoOpen || _videoDecoderLuid == _video.Luid);
+        // Le genre et l'heure suivent la phrase publiée (_failure ?? _slow ?? _notice).
+        var (kind, at) = _failure is not null ? (AccelerationProblemKind.Failure, _failureAt)
+            : _slow is not null ? (AccelerationProblemKind.Slow, _slowAt)
+            : _notice is not null ? (AccelerationProblemKind.Gone, _noticeAt)
+            : ((AccelerationProblemKind?)null, default(DateTimeOffset));
         _status = new AccelerationStatus(
             Available: _factory is not null && _adapters.Count > 0,
             Enabled: settings?.Enabled ?? false,
@@ -464,7 +481,9 @@ public sealed class AccelerationController : IDisposable
             Drawing: drawing,
             VideoDecoding: videoOnCard,
             Problem: _failure ?? _slow ?? _notice,
-            Adapters: _adapters);
+            Adapters: _adapters,
+            ProblemKind: kind,
+            ProblemAt: kind is null ? null : at);
     }
 
     private void DisposeAll(IEnumerable<IGpuDevice> devices)

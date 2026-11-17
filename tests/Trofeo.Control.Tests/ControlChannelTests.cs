@@ -239,6 +239,40 @@ public partial class ControlChannelTests
     }
 
     [Fact]
+    public async Task Status_CarriesTheKindAndTimeOfTheAccelerationProblem()
+    {
+        var at = new DateTimeOffset(2026, 11, 17, 9, 30, 0, TimeSpan.Zero);
+        var acceleration = new AccelerationInfo(
+            Available: true, Enabled: true, AdapterName: null, Drawing: false, VideoDecoding: false,
+            Problem: "La carte graphique a eu un problème (pilote réinitialisé) : dessin sur le processeur.", Adapters: [],
+            ProblemKind: LinkAccelerationProblem.Failure, ProblemAt: at);
+        var name = NewPipeName();
+        using var server = new ControlServer(name, new FakeHandler { StatusToReturn = SampleStatus() with { Acceleration = acceleration } });
+        server.Start();
+        await using var client = await ConnectAsync(name);
+
+        var received = (await client.GetStatusAsync(CancellationToken.None)).Acceleration!;
+
+        Assert.Equal(LinkAccelerationProblem.Failure, received.ProblemKind);
+        Assert.Equal(at, received.ProblemAt);
+    }
+
+    [Fact]
+    public async Task Status_AccelerationWithoutKindNorTime_ReadsNull()
+    {
+        var acceleration = new AccelerationInfo(true, true, null, false, false, null, []); // un service qui n'envoie pas les champs
+        var name = NewPipeName();
+        using var server = new ControlServer(name, new FakeHandler { StatusToReturn = SampleStatus() with { Acceleration = acceleration } });
+        server.Start();
+        await using var client = await ConnectAsync(name);
+
+        var received = (await client.GetStatusAsync(CancellationToken.None)).Acceleration!;
+
+        Assert.Null(received.ProblemKind);
+        Assert.Null(received.ProblemAt);
+    }
+
+    [Fact]
     public async Task Status_FromAnOlderService_HasNoAcceleration()
     {
         var name = NewPipeName();
