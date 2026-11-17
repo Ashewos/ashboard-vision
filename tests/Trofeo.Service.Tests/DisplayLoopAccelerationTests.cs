@@ -231,4 +231,24 @@ public sealed class DisplayLoopAccelerationTests
         Assert.Contains("a eu un problème", status.Problem);
         Assert.Contains("refusée", status.Problem);
     }
+
+    [Fact]
+    public async Task StateLine_FollowsWhereTheBackgroundVideoReallyDecodes()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        var onCard = new SeekableVideo(TimeSpan.Zero, decoderLuid: First.Luid);
+        using var rig = new LoopRig(background: onCard, acceleration: acceleration, time: _time);
+        Assert.True(rig.Loop.Status.Acceleration!.VideoDecoding);
+
+        // Le décodage a lâché sur la carte : la vidéo suivante (rouverte ou repliée) se décode sur le processeur.
+        using var onCpu = new SeekableVideo(TimeSpan.Zero, decoderLuid: null, refusedLuid: First.Luid);
+        var applied = rig.Loop.ApplyAsync(Config(rig.Loop.Layout, onCpu));
+        rig.Loop.Tick();
+        Assert.Empty(await applied);
+
+        var status = rig.Loop.Status.Acceleration!;
+        Assert.False(status.VideoDecoding);
+        Assert.True(status.Drawing);
+        Assert.Equal(First, status.Adapter);
+    }
 }

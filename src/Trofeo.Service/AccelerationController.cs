@@ -80,7 +80,10 @@ public sealed class AccelerationController : IDisposable
     private GpuAdapterInfo? _deviceAdapter;         // la carte de _device
     private readonly List<IGpuDevice> _retired = [];
     private bool _autoPick;                         // la carte vient du choix automatique (ou d'une carte enregistrée absente)
-    private bool _suspended;                        // en panne : tout sur le processeur en attendant un nouvel essai
+    private bool _suspended;                        // le dessin est en panne : il passe sur le processeur en attendant un nouvel essai (pas les vidéos)
+    private bool _noFastCard;                       // aucune carte n'est assez rapide pour le dessin : il reste sur le processeur (pas les vidéos)
+    private bool _videoOpen;                        // une vidéo est ouverte en fond (rapporté par la boucle)
+    private long? _videoDecoderLuid;                // la carte qui la décode vraiment ; null : le processeur
     private string? _failure;
     private string? _slow;
     private string? _notice;
@@ -139,7 +142,7 @@ public sealed class AccelerationController : IDisposable
     public AccelerationStatus Status => _status;
 
     /// <summary>
-    /// La carte des vidéos a changé (réglages, panne, nouvel essai, carte trop lente) : le service relit la disposition pour rouvrir
+    /// La carte des vidéos a changé (réglages, carte retrouvée par un nouvel essai, carte suivante après une lenteur) : le service relit la disposition pour rouvrir
     /// la vidéo. Levé hors du verrou, depuis le fil qui a provoqué le changement.
     /// </summary>
     public event Action? EffectiveChoiceChanged;
@@ -158,6 +161,7 @@ public sealed class AccelerationController : IDisposable
 
             _settings = settings;
             _suspended = false;
+            _noFastCard = false;
             _failure = _slow = _notice = null;
             _retries = 0;
             _retryFrom = null;
@@ -170,14 +174,28 @@ public sealed class AccelerationController : IDisposable
     }
 
     /// <summary>
-    /// La carte est tombée en panne (perdue, réinitialisée, pilote planté) : tout passe sur le processeur, un nouvel essai viendra.
-    /// L'appareil n'est pas libéré ici (voir <see cref="ReleaseRetired"/>). Sans effet si on est déjà en panne.
+    /// La carte est tombée en panne pendant le dessin (perdue, réinitialisée, pilote planté) : le dessin passe sur le processeur,
+    /// un nouvel essai viendra. Les vidéos gardent leur carte : si le décodage lui-même échoue, c'est la vidéo qui se replie (voir
+    /// <see cref="ReportVideoDecoder"/>). L'appareil n'est pas libéré ici (voir <see cref="ReleaseRetired"/>). Sans effet si le
+    /// dessin n'est pas sur la carte (déjà en panne, coupé).
     /// </summary>
     public void ReportFailure(string reason) => Mutate(() =>
     {
-        if (_settings is null || _suspended || (_device is null && _video is null)) return;
+        if (_settings is null || _suspended || _device is null) return;
 
         Suspend($"La carte graphique a eu un problème ({reason}) : {CpuDrawing}.");
+    });
+
+    /// <summary>
+    /// Où la vidéo de fond se décode vraiment : <paramref name="videoOpen"/> dit si une vidéo est ouverte, <paramref name="decoderLuid"/>
+    /// la carte qui la décode (<c>null</c> : le processeur, par choix ou après un repli). La fenêtre dit ainsi où les vidéos tournent
+    /// réellement : sans vidéo ouverte, elle montre ce qui est voulu ; avec une vidéo qui se décode sur le processeur alors que la carte
+    /// est voulue (fichier refusé, repli en cours de lecture), elle ne parle plus de vidéos sur la carte.
+    /// </summary>
+    public void ReportVideoDecoder(bool videoOpen, long? decoderLuid) => Mutate(() =>
+    {
+        _videoOpen = videoOpen;
+        _videoDecoderLuid = videoOpen ? decoderLuid : null;
     });
 
     /// <summary>Le temps de dessin d'une image composée sur la carte (la composition seule, sans l'encodage ni l'envoi).</summary>
@@ -336,7 +354,7 @@ public sealed class AccelerationController : IDisposable
     private void Settle()
     {
         var settings = _settings!;
-        var wantDevice = settings is { Enabled: true, Drawing: true } && !_suspended && _candidate is not null;
+        var wantDevice = settings is { Enabled: true, Drawing: true } && !_suspended && !_noFastCard && _candidate is not null;
         if (_device is not null && (!wantDevice || !Equals(_deviceAdapter, _candidate))) RetireDevice();
         if (!wantDevice || _device is not null) return;
 
@@ -396,14 +414,16 @@ public sealed class AccelerationController : IDisposable
         _log(
             $"Accélération matérielle : « {name} » met {average:0} ms par image : trop lente, "
             + (next is null ? "dessin sur le processeur." : $"essai de « {next.Id.Name} »."));
-        _candidate = next;
         if (next is null)
         {
+            // Le dessin se replie sur le processeur ; la carte reste celle des vidéos, que sa lenteur à dessiner ne concerne pas.
+            _noFastCard = true;
             RetireDevice();
             _slow = $"Aucune carte n'est assez rapide : {CpuDrawing}.";
         }
         else
         {
+            _candidate = next;
             Settle();
         }
     }
@@ -430,14 +450,19 @@ public sealed class AccelerationController : IDisposable
     private void Publish()
     {
         var settings = _settings;
-        _video = settings is { Enabled: true, VideoDecoding: true } && !_suspended ? _candidate : null;
+        // Les vidéos ne suivent pas le dessin : une panne ou une lenteur du dessin ne leur retire pas la carte (un décodage qui
+        // échoue se replie vidéo par vidéo, voir ReportVideoDecoder).
+        _video = settings is { Enabled: true, VideoDecoding: true } ? _candidate : null;
         var drawing = _device is not null;
+
+        // Une vidéo ouverte qui ne se décode pas sur la carte voulue : la fenêtre ne dit pas qu'elle tourne dessus.
+        var videoOnCard = _video is not null && (!_videoOpen || _videoDecoderLuid == _video.Luid);
         _status = new AccelerationStatus(
             Available: _factory is not null && _adapters.Count > 0,
             Enabled: settings?.Enabled ?? false,
-            Adapter: drawing || _video is not null ? _candidate : null,
+            Adapter: drawing || videoOnCard ? _candidate : null,
             Drawing: drawing,
-            VideoDecoding: _video is not null,
+            VideoDecoding: videoOnCard,
             Problem: _failure ?? _slow ?? _notice,
             Adapters: _adapters);
     }

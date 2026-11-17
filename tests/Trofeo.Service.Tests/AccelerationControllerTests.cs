@@ -121,9 +121,11 @@ public sealed class AccelerationControllerTests : IDisposable
         _controller.Apply(AccelerationSettings.Default);
 
         Assert.Null(_controller.DrawingDevice);
-        Assert.Null(_controller.VideoAdapter);
+        Assert.Equal(Integrated, _controller.VideoAdapter); // le dessin seul est en cause : les vidéos gardent leur carte
         Assert.Equal("La carte graphique n'a pas pu démarrer (pilote absent) : dessin sur le processeur.", _controller.Status.Problem);
         Assert.True(_controller.Status.Available);
+        Assert.False(_controller.Status.Drawing);
+        Assert.True(_controller.Status.VideoDecoding);
     }
 
     [Fact]
@@ -201,8 +203,8 @@ public sealed class AccelerationControllerTests : IDisposable
         Assert.Equal(Discrete, _controller.VideoAdapterFor(AccelerationSettings.Default));
 
         _controller.ReportFailure("pilote planté");
-        Assert.Null(_controller.VideoAdapter);
-        Assert.Null(_controller.VideoAdapterFor(AccelerationSettings.Default));                           // en panne : le processeur décode
+        Assert.Equal(Discrete, _controller.VideoAdapter);
+        Assert.Equal(Discrete, _controller.VideoAdapterFor(AccelerationSettings.Default));                // le dessin est en panne, pas le décodage
         Assert.Equal(Integrated, _controller.VideoAdapterFor(new AccelerationSettings(VideoDecoding: true, Drawing: false))); // d'autres réglages repartent de zéro
     }
 
@@ -262,10 +264,12 @@ public sealed class AccelerationControllerTests : IDisposable
         _controller.ReportFailure("carte retirée");
 
         Assert.Null(_controller.DrawingDevice);
-        Assert.Null(_controller.VideoAdapter);
-        Assert.Null(_controller.Status.Adapter);
+        Assert.Equal(Integrated, _controller.VideoAdapter);       // les vidéos ne suivent pas le dessin
+        Assert.Equal(Integrated, _controller.Status.Adapter);
+        Assert.False(_controller.Status.Drawing);
+        Assert.True(_controller.Status.VideoDecoding);
         Assert.Equal("La carte graphique a eu un problème (carte retirée) : dessin sur le processeur.", _controller.Status.Problem);
-        Assert.Equal(changes + 1, _choiceChanges);
+        Assert.Equal(changes, _choiceChanges);                    // la carte des vidéos n'a pas changé : rien à rouvrir
         Assert.False(device.IsDisposed); // des compositeurs s'en servent peut-être encore : la boucle les libère d'abord
 
         _controller.ReleaseRetired();
@@ -279,13 +283,96 @@ public sealed class AccelerationControllerTests : IDisposable
     public void ReportFailure_Twice_IsReportedOnce()
     {
         _controller.Apply(AccelerationSettings.Default);
-        var changes = _choiceChanges;
 
         _controller.ReportFailure("une fois");
         _controller.ReportFailure("deux fois");
 
         Assert.Contains("(une fois)", _controller.Status.Problem);
-        Assert.Equal(changes + 1, _choiceChanges);
+        Assert.Single(_log, line => line.Contains("une fois"));
+        Assert.DoesNotContain(_log, line => line.Contains("deux fois"));
+    }
+
+    [Fact]
+    public void DrawingFailure_LeavesTheVideoItsCard()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+
+        _controller.ReportFailure("pilote planté");
+
+        var status = _controller.Status;
+        Assert.False(status.Drawing);
+        Assert.True(status.VideoDecoding);
+        Assert.Equal(Integrated, status.Adapter);
+        Assert.Equal(Integrated, _controller.VideoAdapter);
+        Assert.Equal(Integrated, _controller.VideoAdapterFor(AccelerationSettings.Default));
+        Assert.Equal("La carte graphique a eu un problème (pilote planté) : dessin sur le processeur.", status.Problem);
+    }
+
+    [Fact]
+    public void DrawingFailure_ThenRetry_KeepsTheVideoCardWithoutReopeningIt()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        var changes = _choiceChanges;
+
+        _controller.ReportFailure("pilote planté");
+        _time.Advance(TimeSpan.FromMinutes(5));
+        Assert.True(_controller.Tick());
+
+        Assert.NotNull(_controller.DrawingDevice);
+        Assert.Equal(Integrated, _controller.VideoAdapter);
+        Assert.Equal(changes, _choiceChanges);
+    }
+
+    [Fact]
+    public void VideoOnCpu_StateLineSaysSo()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+
+        // Sans vidéo ouverte, la fenêtre montre ce qui est voulu : rien ne le contredit.
+        Assert.True(_controller.Status.VideoDecoding);
+
+        // Une vidéo est ouverte et la carte la décode : comme voulu.
+        _controller.ReportVideoDecoder(videoOpen: true, decoderLuid: Integrated.Luid);
+        Assert.True(_controller.Status.VideoDecoding);
+
+        // La carte a refusé le fichier (ou le décodage a lâché en route) : la vidéo tourne sur le processeur.
+        _controller.ReportVideoDecoder(videoOpen: true, decoderLuid: null);
+        Assert.False(_controller.Status.VideoDecoding);
+        Assert.True(_controller.Status.Drawing);
+        Assert.Equal(Integrated, _controller.Status.Adapter);   // le dessin reste sur la carte
+        Assert.Equal(Integrated, _controller.VideoAdapter);      // c'est toujours la carte voulue (la vidéo la retentera si elle change)
+
+        // Plus de vidéo : on revient à l'état voulu.
+        _controller.ReportVideoDecoder(videoOpen: false, decoderLuid: null);
+        Assert.True(_controller.Status.VideoDecoding);
+    }
+
+    [Fact]
+    public void VideoOnCpu_WithDrawingOff_ShowsNoCard()
+    {
+        _controller.Apply(new AccelerationSettings(Drawing: false));
+        _controller.ReportVideoDecoder(videoOpen: true, decoderLuid: Integrated.Luid);
+        Assert.True(_controller.Status.VideoDecoding);
+        Assert.Equal(Integrated, _controller.Status.Adapter);
+
+        _controller.ReportVideoDecoder(videoOpen: true, decoderLuid: null);
+
+        Assert.False(_controller.Status.VideoDecoding);
+        Assert.False(_controller.Status.Drawing);
+        Assert.Null(_controller.Status.Adapter);
+    }
+
+    [Fact]
+    public void VideoOnAnotherCard_IsNotShownOnTheWantedOne()
+    {
+        _controller.Apply(new AccelerationSettings(Adapter: Discrete.Id));
+
+        // La carte voulue vient de changer : la vidéo ouverte se décode encore sur l'ancienne, jusqu'à sa réouverture.
+        _controller.ReportVideoDecoder(videoOpen: true, decoderLuid: Integrated.Luid);
+        Assert.False(_controller.Status.VideoDecoding);
+
+        _controller.ReportVideoDecoder(videoOpen: true, decoderLuid: Discrete.Luid);
+        Assert.True(_controller.Status.VideoDecoding);
     }
 
     [Fact]
@@ -461,9 +548,11 @@ public sealed class AccelerationControllerTests : IDisposable
         Assert.True(_controller.Tick());
 
         Assert.Null(_controller.DrawingDevice);
-        Assert.Null(_controller.VideoAdapter);
+        Assert.Equal(Discrete, _controller.VideoAdapter); // trop lente pour dessiner : elle décode encore les vidéos
+        Assert.True(_controller.Status.VideoDecoding);
+        Assert.False(_controller.Status.Drawing);
         Assert.Equal("Aucune carte n'est assez rapide : dessin sur le processeur.", _controller.Status.Problem);
-        Assert.Equal(changes + 2, _choiceChanges);
+        Assert.Equal(changes + 1, _choiceChanges);
 
         _time.Advance(TimeSpan.FromHours(1)); // pas de nouvel essai : ce n'est pas une panne
         Assert.False(_controller.Tick());

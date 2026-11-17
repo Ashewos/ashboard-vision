@@ -178,6 +178,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     private bool _announcedScreenReady;     // l'état de l'écran vu à la dernière annonce ; fil du Tick seulement
     private FrameComposer _composer;
     private readonly AccelerationController? _acceleration;
+    private (bool Open, long? Luid) _reportedVideo; // ce que le chef de l'accélération sait de la vidéo de fond ; fil du Tick seulement
     private IGpuDevice? _deviceInUse;           // l'appareil que servent les compositeurs en place ; fil du Tick seulement
     private ThemeDefinition _theme;
     private IBackground _background;
@@ -270,6 +271,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         _composer = NewComposer();
         _theme = theme ?? Themes.ClassiqueDefinition;
         _background = background ?? new ColorBackground(_theme.DefaultBackground.Color);
+        ReportVideoDecoder();
         _backgroundStart = time.GetTimestamp(); // la lecture d'un fond animé part du démarrage de la boucle
 
         // Une disposition mal formée ne doit jamais empêcher le service de démarrer : les refus sont journalisés.
@@ -830,6 +832,21 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     }
 
     /// <summary>
+    /// Dit au chef de l'accélération où la vidéo de fond se décode vraiment (carte, ou processeur après un refus ou un repli), pour
+    /// que la fenêtre montre ce qui se passe et non ce qui est voulu. Ne l'appelle que si cela a changé.
+    /// </summary>
+    private void ReportVideoDecoder()
+    {
+        if (_acceleration is null) return;
+
+        var state = _background is ISeekableBackground seekable ? (true, seekable.DecoderLuid) : (false, (long?)null);
+        if (state == _reportedVideo) return;
+
+        _reportedVideo = state;
+        _acceleration.ReportVideoDecoder(state.Item1, state.Item2);
+    }
+
+    /// <summary>
     /// Met les compositeurs en accord avec l'appareil de dessin du chef de l'accélération : s'il a changé (autre carte, panne,
     /// nouvel essai, accélération coupée), les compositeurs de l'écran et des aperçus sont refaits, puis l'ancien appareil est
     /// libéré, une fois qu'aucun compositeur ne s'en sert plus. Depuis le fil du <see cref="Tick"/> seulement.
@@ -837,6 +854,8 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     private void SyncAcceleration()
     {
         if (_acceleration is null) return;
+
+        ReportVideoDecoder(); // un repli du décodage en cours de lecture se voit ici, au plus tard à la boucle suivante
 
         var device = _acceleration.DrawingDevice;
         if (!ReferenceEquals(device, _deviceInUse))
@@ -881,6 +900,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
             _backgroundStart = _time.GetTimestamp(); // le fond animé repart de zéro
             _backgroundDue = null;
             _backgroundRetryAt = null;
+            ReportVideoDecoder();
         }
     }
 
