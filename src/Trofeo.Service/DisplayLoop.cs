@@ -1701,6 +1701,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         _glideFrom = source;
         _glideTo = arrival;
         _glide = new ViewTransition(source, direction, ViewTransition.Duration);
+        _glide.GpuFailed += ReportGlideGpuFailure; // la carte perdue ou qui refuse le glissement : même repli et même nouvel essai que le compositeur
         _glideViewId = viewId;
         _glideStart = start;
         _glideFrames = 0;
@@ -1713,7 +1714,11 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         var glide = _glide!;
         var elapsed = _time.GetElapsedTime(_glideStart);
         _glideFrames++;
-        if (!glide.IsDone(elapsed)) return glide.Compose(_glideTo!, elapsed);
+        if (!glide.IsDone(elapsed))
+        {
+            // Le glissement se dessine sur la carte de l'écran tant que le compositeur l'a encore (sinon, sur le processeur).
+            return glide.Compose(_glideTo!, elapsed, _composer.UsesGpu ? _deviceInUse : null);
+        }
 
         var arrival = _glideTo!;
         _glideTo = null;
@@ -1721,6 +1726,12 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         DropGlide(log: true);
         if (stale) _scheduler.MarkDirty();
         return arrival;
+    }
+
+    /// <summary>Le glissement n'a pas pu se dessiner sur la carte : même signalement qu'une panne du compositeur (depuis le fil de la boucle).</summary>
+    private void ReportGlideGpuFailure(string reason)
+    {
+        if (_acceleration is { } acceleration && _deviceInUse is { } device) ReportGpuFailure(acceleration, device, reason);
     }
 
     /// <summary>Met fin au glissement en cours, s'il y en a un, et libère ses images (<see cref="_glideTo"/> compris, s'il reste).</summary>

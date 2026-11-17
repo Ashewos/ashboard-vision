@@ -172,4 +172,63 @@ public sealed class DisplayLoopAccelerationTests
         Assert.Equal(Second, _factory.Created[^1].Adapter); // la carte suivante a pris le relais
         Assert.Equal(Second, rig.Loop.Status.Acceleration!.Adapter);
     }
+
+    private static DashboardLayout TwoViews() => new(
+        180,
+        [
+            new LayoutView(new Guid("11110000-0000-0000-0000-000000000001"), "Vue 1", [Place(new Guid("11110000-0000-0000-0000-0000000000a1"), "fake", 0, 0, 4, 2)]),
+            new LayoutView(new Guid("22220000-0000-0000-0000-000000000002"), "Vue 2", [Place(new Guid("22220000-0000-0000-0000-0000000000a2"), "fake", 2, 1, 6, 3)]),
+        ]);
+
+    /// <summary>Fait tourner la boucle par pas de 10 ms pendant <paramref name="duration"/>.</summary>
+    private static void Run(LoopRig rig, TimeSpan duration)
+    {
+        for (var elapsed = TimeSpan.Zero; elapsed < duration; elapsed += TimeSpan.FromMilliseconds(10))
+        {
+            rig.Loop.Tick();
+            rig.Time.Advance(TimeSpan.FromMilliseconds(10));
+        }
+    }
+
+    [Fact]
+    public void ViewGlide_IsDrawnOnTheDevice()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        using var rig = new LoopRig(TwoViews(), acceleration: acceleration, time: _time);
+        rig.AddHealthyScreen(acks: 600);
+        rig.Loop.Start(CancellationToken.None);
+        rig.Loop.Tick();
+        var device = _factory.Created[0].Device;
+        var surfacesBefore = device.SurfacesCreated;
+
+        Assert.True(rig.Loop.ShowAdjacentView(+1));
+        Run(rig, TimeSpan.FromMilliseconds(400));
+
+        // Une surface de la carte par image du glissement (la composition de l'écran garde la sienne, la même d'une image à l'autre).
+        Assert.True(device.SurfacesCreated - surfacesBefore >= 10, $"surfaces créées pendant le glissement : {device.SurfacesCreated - surfacesBefore}");
+        Assert.True(rig.Loop.Status.Acceleration!.Drawing);
+        Assert.Null(rig.Loop.Status.Acceleration.Problem);
+    }
+
+    [Fact]
+    public void ViewGlide_OnADeviceThatRefusesTheSurface_IsReportedToTheController()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        using var rig = new LoopRig(TwoViews(), acceleration: acceleration, time: _time);
+        rig.AddHealthyScreen(acks: 600);
+        rig.Loop.Start(CancellationToken.None);
+        rig.Loop.Tick(); // l'écran a sa surface : seul le glissement en demandera une autre
+        var device = _factory.Created[0].Device;
+        device.FailCreate = true;
+
+        Assert.True(rig.Loop.ShowAdjacentView(+1));
+        Run(rig, TimeSpan.FromMilliseconds(400));
+
+        Assert.False(device.IsLost); // refusée, pas perdue : sans signalement le glissement resterait sur le processeur sans rien dire
+        Assert.Null(acceleration.DrawingDevice);
+        var status = rig.Loop.Status.Acceleration!;
+        Assert.False(status.Drawing);
+        Assert.Contains("a eu un problème", status.Problem);
+        Assert.Contains("refusée", status.Problem);
+    }
 }
