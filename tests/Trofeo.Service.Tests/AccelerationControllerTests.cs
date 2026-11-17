@@ -609,8 +609,9 @@ public sealed class AccelerationControllerTests : IDisposable
     }
 
     [Fact]
-    public void FailedRetry_GetsANewTime()
+    public void FailedRetry_KeepsTheTime()
     {
+        // Un essai qui échoue avant que l'appareil ne s'ouvre est la même carte morte, pas une nouvelle panne : la cloche ne resonne pas.
         _controller.Apply(AccelerationSettings.Default);
         _controller.ReportFailure("pilote");
         var first = _controller.Status.ProblemAt;
@@ -620,15 +621,44 @@ public sealed class AccelerationControllerTests : IDisposable
         _controller.Tick(); // le nouvel essai échoue
 
         Assert.Equal(AccelerationProblemKind.Failure, _controller.Status.ProblemKind);
-        Assert.Equal(first + TimeSpan.FromMinutes(5), _controller.Status.ProblemAt);
+        Assert.Equal(first, _controller.Status.ProblemAt);
 
-        // Un nouvel essai qui échoue au même texte garde la même phrase, mais une nouvelle heure.
-        var second = _controller.Status.ProblemAt;
-        var sentence = _controller.Status.Problem;
         _time.Advance(TimeSpan.FromMinutes(5));
-        _controller.Tick();
-        Assert.Equal(sentence, _controller.Status.Problem);
-        Assert.Equal(second + TimeSpan.FromMinutes(5), _controller.Status.ProblemAt);
+        _controller.Tick(); // et encore
+        Assert.Equal(first, _controller.Status.ProblemAt);
+    }
+
+    [Fact]
+    public void FailureAfterASuccessfulRetry_GetsANewTime()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("pilote");
+        var first = _controller.Status.ProblemAt;
+
+        _time.Advance(TimeSpan.FromMinutes(5));
+        _controller.Tick(); // le nouvel essai réussit : l'appareil est rouvert
+        Assert.Null(_controller.Status.ProblemKind);
+
+        _time.Advance(TimeSpan.FromMinutes(10));
+        _controller.ReportFailure("pilote"); // une seconde panne : un nouvel événement
+
+        Assert.Equal(AccelerationProblemKind.Failure, _controller.Status.ProblemKind);
+        Assert.Equal(first + TimeSpan.FromMinutes(15), _controller.Status.ProblemAt);
+    }
+
+    [Fact]
+    public void FailureAfterTheUserReappliesSettings_GetsANewTime()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("pilote");
+        var first = _controller.Status.ProblemAt;
+        _factory.FailCreate = true;
+
+        _time.Advance(TimeSpan.FromMinutes(2));
+        _controller.Apply(AccelerationSettings.Default with { VideoDecoding = false }); // d'autres réglages : on repart de zéro, et la carte ne démarre pas
+
+        Assert.Equal(AccelerationProblemKind.Failure, _controller.Status.ProblemKind);
+        Assert.Equal(first + TimeSpan.FromMinutes(2), _controller.Status.ProblemAt);
     }
 
     [Fact]

@@ -230,8 +230,13 @@ public sealed class AccelerationController : IDisposable
             _retryFrom = null;
             _suspended = false;
             _failure = null;
+            var failedAt = _failureAt;
             _log($"Accélération matérielle : nouvel essai de la carte graphique ({_retries}/{MaxRetries}).");
             RetryCard();
+            if (_failure is not null)
+            {
+                _failureAt = failedAt; // l'essai échoue avant que l'appareil ne s'ouvre : c'est la même carte morte, pas une nouvelle panne
+            }
         }
 
         if (_device is not null && _retries > 0 && _healthySince is { } opened && _time.GetElapsedTime(opened) >= HealthyRunReset)
@@ -382,7 +387,7 @@ public sealed class AccelerationController : IDisposable
         RetireDevice();
         _suspended = true;
         _failure = problem;
-        _failureAt = _time.GetUtcNow(); // un nouvel échec, même au même texte, est un nouvel événement
+        _failureAt = _time.GetUtcNow(); // une nouvelle panne (même au même texte) est un nouvel événement ; un essai raté garde l'heure (voir Tick)
         _slow = null;
         _retryFrom = _retries < MaxRetries ? _time.GetTimestamp() : null;
         ResetWindow();
