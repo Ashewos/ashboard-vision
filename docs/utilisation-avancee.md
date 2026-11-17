@@ -167,7 +167,7 @@ Depuis la 1.2.0-beta.3, le dessin de l'image et le décodage des vidéos passent
 
 **Ils sont propres à ce PC** : « Exporter la disposition » ne les emporte pas, et importer une disposition garde ceux de la machine qui l'importe.
 
-En cas de problème de carte, l'image en cours est refaite sur le processeur, et le service retente la carte toutes les 5 minutes, au plus 3 fois de suite (le compte repart de zéro après une heure sans problème). En Automatique, une carte qui met plus de 83 ms par image en moyenne pendant 10 s est jugée trop lente. Une vidéo que la carte refuse de décoder reste sur le processeur jusqu'à ce que la carte choisie change. La compression JPEG de l'image envoyée à l'écran reste toujours sur le processeur. Les outils du dépôt (aperçus des thèmes et de la fenêtre, banc d'essai des modules) dessinent toujours sur le processeur.
+En cas de problème de carte, l'image en cours est refaite sur le processeur, et le service retente la carte toutes les 5 minutes, au plus 3 fois de suite (le compte repart de zéro après une heure sans problème). Seul le dessin se replie : les vidéos gardent la carte. En Automatique, une carte qui met plus de 83 ms par image en moyenne pendant 10 s est jugée trop lente pour dessiner : le dessin passe à la carte suivante, puis au processeur. Une vidéo que la carte refuse de décoder (ou dont le décodage échoue en route) reste sur le processeur jusqu'à ce que la carte choisie change. La compression JPEG de l'image envoyée à l'écran reste toujours sur le processeur. Les outils du dépôt (aperçus des thèmes et de la fenêtre, banc d'essai des modules) dessinent toujours sur le processeur.
 
 ## Quotas de Claude Code
 

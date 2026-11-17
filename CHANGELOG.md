@@ -13,11 +13,11 @@ Troisième bêta de la 1.2.0 : le logiciel peut maintenant **dessiner l'image et
 - La compression JPEG de l'image envoyée à l'écran, elle, reste sur le processeur : elle coûte peu.
 - C'est une API standard de Windows, pas du code propre à un fabricant : Intel, NVIDIA, AMD ou autre, toute carte compatible Direct3D 12 convient (niveau de fonctionnalités 11_0 au moins).
 - Sans carte compatible (machine virtuelle, vieux PC, pilote de base), rien ne change : tout reste calculé sur le processeur, comme avant.
-- Sans accélération, Classique, Liquid Glass, Pixel et Liquid Glass avancé restent identiques au pixel près à la beta.2. Sur la carte, l'image ne diffère de celle du processeur que de quelques 255<sup>es</sup> par couleur : ça ne se voit pas.
+- Sans accélération, Classique, Liquid Glass, Pixel et Liquid Glass avancé restent identiques au pixel près à la beta.2. Sur la carte, l'image ne diffère de celle du processeur que de quelques niveaux de couleur sur 255 : ça ne se voit pas.
 
 ### La section « Accélération matérielle » dans Paramètres
 
-- Dans **Paramètres**, une nouvelle section, après « Images par seconde », est activée par défaut.
+- Dans **Paramètres**, une nouvelle section, après « Images par seconde » : l'accélération est activée par défaut.
 - L'interrupteur **Utiliser la carte graphique** coupe ou rallume tout. Coupé, la liste et les cases sont grisées et tout se calcule sur le processeur.
 - La liste **Carte** propose « Automatique » suivi de chaque carte trouvée. **Automatique** prend la première carte matérielle dans l'ordre « économie d'énergie » de Windows, en général **la carte intégrée** : la carte dédiée n'est pas tenue éveillée pour rien.
 - Deux cases : **Dessin de l'image (thèmes, verre, fonds animés)** et **Décodage des vidéos**. Tu peux les cocher dans toutes les combinaisons.
@@ -28,10 +28,10 @@ Troisième bêta de la 1.2.0 : le logiciel peut maintenant **dessiner l'image et
 
 ### Le repli sur le processeur
 
-- Si la carte a un problème (pilote mis à jour ou planté, carte désactivée, programme de verre refusé), l'image en cours est **refaite sur le processeur** : l'écran ne reste jamais noir ni figé. La fenêtre le dit, avec la raison.
+- Si la carte a un problème (pilote mis à jour ou planté, carte désactivée ou retirée), l'image en cours est **refaite sur le processeur** : l'écran ne reste jamais noir ni figé. La fenêtre le dit, avec la raison. Le dessin seul se replie : les vidéos gardent la carte, sauf si c'est leur décodage qui échoue.
 - Le logiciel **retente la carte toutes les 5 minutes**, au plus 3 fois de suite. Le compte repart de zéro après une heure sans problème. Un changement des réglages relance aussi un essai.
-- En **Automatique**, une carte qui met plus de 83 ms par image en moyenne pendant 10 s (le temps d'une image à 12 images par seconde) est jugée trop lente : le logiciel passe à l'autre carte matérielle s'il y en a une, puis au processeur. Une carte que tu as choisie toi-même est toujours gardée ; la fenêtre signale seulement qu'elle est lente.
-- Une vidéo que la carte refuse de décoder (format non pris en charge) est décodée par le processeur, sans toucher au dessin, jusqu'à ce que tu changes de carte.
+- En **Automatique**, une carte qui met plus de 83 ms par image en moyenne pendant 10 s (le temps d'une image à 12 images par seconde) est jugée trop lente : le logiciel passe à la carte suivante s'il y en a une, puis le dessin passe au processeur (les vidéos gardent la carte). Une carte que tu as choisie toi-même est toujours gardée ; la fenêtre signale seulement qu'elle est lente.
+- Une vidéo que la carte refuse de décoder (format non pris en charge) est décodée par le processeur, sans toucher au dessin, jusqu'à ce que tu changes de carte ; la ligne d'état ne parle alors plus de vidéos sur la carte.
 
 ### Des réglages propres à ce PC
 
