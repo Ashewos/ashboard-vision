@@ -35,6 +35,11 @@ public static class GpuAdapterChoice
 /// Le chef de l'accélération matérielle : choisit la carte d'après les réglages, garde l'appareil de dessin, se replie sur le
 /// processeur quand la carte tombe en panne ou n'est pas assez rapide, retente la carte plus tard, et dit où on en est.
 /// <para>
+/// La carte ne dessine que sur un fond animé (GIF, vidéo) : sur un fond fixe elle n'apporte rien au processeur et coûte de la mémoire
+/// au service. Le chef ne sait rien du fond de lui-même : la boucle le lui dit (<see cref="SetBackgroundAnimated"/>), au démarrage et
+/// à chaque changement. Tant qu'elle ne l'a pas dit, le fond est tenu pour fixe : le service ne rouvre pas la carte pour rien.
+/// </para>
+/// <para>
 /// Les méthodes qui changent l'état se servent d'un verrou : elles peuvent venir de la boucle d'affichage (qui seule dessine sur
 /// l'appareil) comme du fil des rechargements. <see cref="Status"/>, <see cref="DrawingDevice"/> et <see cref="VideoAdapter"/> se
 /// lisent de n'importe quel fil. <see cref="EffectiveChoiceChanged"/> est levé hors du verrou, depuis le fil de l'appelant : un
@@ -82,6 +87,7 @@ public sealed class AccelerationController : IDisposable
     private bool _autoPick;                         // la carte vient du choix automatique (ou d'une carte enregistrée absente)
     private bool _suspended;                        // le dessin est en panne : il passe sur le processeur en attendant un nouvel essai (pas les vidéos)
     private bool _noFastCard;                       // aucune carte n'est assez rapide pour le dessin : il reste sur le processeur (pas les vidéos)
+    private bool _backgroundAnimated;               // le fond de l'écran est animé (dit par la boucle) : seule la carte voulue et un fond animé ouvrent l'appareil de dessin
     private bool _videoOpen;                        // une vidéo est ouverte en fond (rapporté par la boucle)
     private long? _videoDecoderLuid;                // la carte qui la décode vraiment ; null : le processeur
     private string? _failure;
@@ -177,6 +183,27 @@ public sealed class AccelerationController : IDisposable
     }
 
     /// <summary>
+    /// La boucle dit si le fond de l'écran est animé (GIF, vidéo), au démarrage puis à chaque changement de fond. Le dessin ne passe
+    /// sur la carte que sur un fond animé : quand le fond le devient, l'appareil est ouvert sur la carte voulue, comme à un
+    /// <see cref="Apply"/> ; quand il devient fixe, l'appareil est mis de côté (il n'est libéré qu'à <see cref="ReleaseRetired"/>, une
+    /// fois les compositeurs refaits). Rien ne change si la valeur est la même, et <see cref="EffectiveChoiceChanged"/> n'est pas levé :
+    /// la carte des vidéos ne change pas. À appeler depuis le fil de la boucle, avant son <see cref="ReleaseRetired"/>.
+    /// </summary>
+    public void SetBackgroundAnimated(bool animated)
+    {
+        lock (_gate)
+        {
+            if (_disposed || _backgroundAnimated == animated) return; // rien ne change : ni ouverture, ni fermeture, ni nouvel état
+        }
+
+        Mutate(() =>
+        {
+            _backgroundAnimated = animated;
+            if (_settings is not null) Settle();
+        });
+    }
+
+    /// <summary>
     /// La carte est tombée en panne pendant le dessin (perdue, réinitialisée, pilote planté) : le dessin passe sur le processeur,
     /// un nouvel essai viendra. Les vidéos gardent leur carte : si le décodage lui-même échoue, c'est la vidéo qui se replie (voir
     /// <see cref="ReportVideoDecoder"/>). L'appareil n'est pas libéré ici (voir <see cref="ReleaseRetired"/>). Sans effet si le
@@ -224,7 +251,8 @@ public sealed class AccelerationController : IDisposable
     {
         if (_settings is null) return;
 
-        if (_suspended && _retryFrom is { } since && _time.GetElapsedTime(since) >= RetryInterval)
+        // Sur un fond fixe, un nouvel essai n'aurait rien à rouvrir : il attend un fond animé, sans dépenser un des trois essais.
+        if (_suspended && _backgroundAnimated && _retryFrom is { } since && _time.GetElapsedTime(since) >= RetryInterval)
         {
             _retries++;
             _retryFrom = null;
@@ -363,7 +391,7 @@ public sealed class AccelerationController : IDisposable
     private void Settle()
     {
         var settings = _settings!;
-        var wantDevice = settings is { Enabled: true, Drawing: true } && !_suspended && !_noFastCard && _candidate is not null;
+        var wantDevice = settings is { Enabled: true, Drawing: true } && _backgroundAnimated && !_suspended && !_noFastCard && _candidate is not null;
         if (_device is not null && (!wantDevice || !Equals(_deviceAdapter, _candidate))) RetireDevice();
         if (!wantDevice || _device is not null) return;
 
@@ -471,6 +499,8 @@ public sealed class AccelerationController : IDisposable
         // échoue se replie vidéo par vidéo, voir ReportVideoDecoder).
         _video = settings is { Enabled: true, VideoDecoding: true } ? _candidate : null;
         var drawing = _device is not null;
+        // La carte dessinerait si le fond bougeait : le réglage la veut, une carte existe, seul le fond fixe la garde au repos.
+        var waits = settings is { Enabled: true, Drawing: true } && _candidate is not null && !_backgroundAnimated;
 
         // Une vidéo ouverte qui ne se décode pas sur la carte voulue : la fenêtre ne dit pas qu'elle tourne dessus.
         var videoOnCard = _video is not null && (!_videoOpen || _videoDecoderLuid == _video.Luid);
@@ -488,7 +518,8 @@ public sealed class AccelerationController : IDisposable
             Problem: _failure ?? _slow ?? _notice,
             Adapters: _adapters,
             ProblemKind: kind,
-            ProblemAt: kind is null ? null : at);
+            ProblemAt: kind is null ? null : at,
+            DrawingWaitsForAnimation: waits);
     }
 
     private void DisposeAll(IEnumerable<IGpuDevice> devices)

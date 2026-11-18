@@ -270,6 +270,21 @@ public partial class ControlChannelTests
 
         Assert.Null(received.ProblemKind);
         Assert.Null(received.ProblemAt);
+        Assert.False(received.DrawingWaitsForAnimation); // faux par défaut : un service qui ne le dit pas n'attend rien
+    }
+
+    [Fact]
+    public async Task Status_CarriesThatTheDrawingWaitsForAnAnimatedBackground()
+    {
+        var acceleration = new AccelerationInfo(true, true, null, false, false, null, [], DrawingWaitsForAnimation: true);
+        var name = NewPipeName();
+        using var server = new ControlServer(name, new FakeHandler { StatusToReturn = SampleStatus() with { Acceleration = acceleration } });
+        server.Start();
+        await using var client = await ConnectAsync(name);
+
+        var received = (await client.GetStatusAsync(CancellationToken.None)).Acceleration!;
+
+        Assert.True(received.DrawingWaitsForAnimation);
     }
 
     [Fact]

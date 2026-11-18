@@ -123,7 +123,7 @@ public sealed class ServiceControlHandler(
             AccelerationProblemKind.Gone => LinkAccelerationProblem.Gone,
             _ => null,
         },
-        status.ProblemAt);
+        status.ProblemAt, status.DrawingWaitsForAnimation);
 
     /// <summary>L'état du lien avec l'écran tel que la fenêtre de réglage le connaît.</summary>
     public static ScreenInfo ToScreenInfo(ScreenStatus status) => new(

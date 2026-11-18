@@ -216,7 +216,7 @@ static class Program
         var accelerationStatus = acceleration.Status;
         Trace.TraceInformation(
             accelerationStatus.Adapter is { } card
-                ? $"Accélération matérielle : « {card.Id.Name} » (dessin {(accelerationStatus.Drawing ? "sur la carte" : "sur le processeur")}, vidéos {(accelerationStatus.VideoDecoding ? "sur la carte" : "sur le processeur")})."
+                ? $"Accélération matérielle : « {card.Id.Name} » (dessin {(accelerationStatus.Drawing ? "sur la carte" : accelerationStatus.DrawingWaitsForAnimation ? "sur la carte avec un fond animé, sinon sur le processeur" : "sur le processeur")}, vidéos {(accelerationStatus.VideoDecoding ? "sur la carte" : "sur le processeur")})."
                 : $"Accélération matérielle : processeur seul ({(accelerationStatus.Available ? "coupée ou en échec" : "aucune carte graphique compatible")}).");
 
         // Apparence et fond : ce que la disposition demande, au démarrage comme à chaque rechargement. Les avertissements

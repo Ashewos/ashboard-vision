@@ -21,6 +21,9 @@ public sealed class DisplayLoopAccelerationTests
     private static LoopConfig Config(DashboardLayout layout, IBackground background) =>
         new(layout, Themes.ClassiqueDefinition, background);
 
+    /// <summary>Un fond animé qui ne change pas d'image : la carte ne dessine que sur un fond animé (révision du 18/11).</summary>
+    private static TrackedBackground Animated() => new(SKColors.Black, animated: true);
+
     private static void NextFrame(LoopRig rig)
     {
         rig.Scheduler.MarkDirty();
@@ -32,7 +35,7 @@ public sealed class DisplayLoopAccelerationTests
     public void Status_ReportsTheAcceleration()
     {
         using var acceleration = new AccelerationController(_factory, _time, _ => { });
-        using var rig = new LoopRig(acceleration: acceleration, time: _time);
+        using var rig = new LoopRig(background: Animated(), acceleration: acceleration, time: _time);
 
         var status = rig.Loop.Status.Acceleration;
 
@@ -54,7 +57,7 @@ public sealed class DisplayLoopAccelerationTests
     public void Frames_AreDrawnOnTheDevice()
     {
         using var acceleration = new AccelerationController(_factory, _time, _ => { });
-        using var rig = new LoopRig(acceleration: acceleration, time: _time);
+        using var rig = new LoopRig(background: Animated(), acceleration: acceleration, time: _time);
         rig.AddHealthyScreen();
         rig.Loop.Start(CancellationToken.None);
 
@@ -68,7 +71,7 @@ public sealed class DisplayLoopAccelerationTests
     public void DeviceLostMidRun_NextFrameIsSent()
     {
         using var acceleration = new AccelerationController(_factory, _time, _ => { });
-        using var rig = new LoopRig(acceleration: acceleration, time: _time);
+        using var rig = new LoopRig(background: Animated(), acceleration: acceleration, time: _time);
         rig.AddHealthyScreen();
         rig.Loop.Start(CancellationToken.None);
         rig.Loop.Tick();
@@ -102,7 +105,7 @@ public sealed class DisplayLoopAccelerationTests
     public void DeviceLostMidRun_PreviewKeepsGettingFrames()
     {
         using var acceleration = new AccelerationController(_factory, _time, _ => { });
-        using var rig = new LoopRig(acceleration: acceleration, time: _time);
+        using var rig = new LoopRig(background: Animated(), acceleration: acceleration, time: _time);
         var frames = 0;
         using var subscription = rig.Loop.SubscribePreview(12, _ => frames++);
         rig.Loop.Start(CancellationToken.None);
@@ -118,7 +121,7 @@ public sealed class DisplayLoopAccelerationTests
     [Fact]
     public async Task DeviceChange_RebuildsComposers()
     {
-        var background = new TrackedBackground(SKColors.Black);
+        var background = Animated();
         using var acceleration = new AccelerationController(_factory, _time, _ => { });
         using var rig = new LoopRig(background: background, acceleration: acceleration, time: _time);
         rig.AddHealthyScreen();
@@ -159,7 +162,7 @@ public sealed class DisplayLoopAccelerationTests
     public void SlowFrames_ReachTheController()
     {
         using var acceleration = new AccelerationController(_factory, _time, _ => { });
-        using var rig = new LoopRig(acceleration: acceleration, time: _time);
+        using var rig = new LoopRig(background: Animated(), acceleration: acceleration, time: _time);
         rig.AddHealthyScreen(acks: 400);
         rig.Loop.Start(CancellationToken.None);
         _time.AutoAdvanceAmount = TimeSpan.FromMilliseconds(100); // chaque lecture de l'horloge coûte 100 ms : la composition paraît lente
@@ -194,7 +197,7 @@ public sealed class DisplayLoopAccelerationTests
     public void ViewGlide_IsDrawnOnTheDevice()
     {
         using var acceleration = new AccelerationController(_factory, _time, _ => { });
-        using var rig = new LoopRig(TwoViews(), acceleration: acceleration, time: _time);
+        using var rig = new LoopRig(TwoViews(), Animated(), acceleration: acceleration, time: _time);
         rig.AddHealthyScreen(acks: 600);
         rig.Loop.Start(CancellationToken.None);
         rig.Loop.Tick();
@@ -214,7 +217,7 @@ public sealed class DisplayLoopAccelerationTests
     public void ViewGlide_OnADeviceThatRefusesTheSurface_IsReportedToTheController()
     {
         using var acceleration = new AccelerationController(_factory, _time, _ => { });
-        using var rig = new LoopRig(TwoViews(), acceleration: acceleration, time: _time);
+        using var rig = new LoopRig(TwoViews(), Animated(), acceleration: acceleration, time: _time);
         rig.AddHealthyScreen(acks: 600);
         rig.Loop.Start(CancellationToken.None);
         rig.Loop.Tick(); // l'écran a sa surface : seul le glissement en demandera une autre
@@ -250,5 +253,189 @@ public sealed class DisplayLoopAccelerationTests
         Assert.False(status.VideoDecoding);
         Assert.True(status.Drawing);
         Assert.Equal(First, status.Adapter);
+    }
+
+    // ---- Le fond de l'écran : la carte ne dessine que sur un fond animé (révision du 18/11) ----
+
+    [Fact]
+    public void FixedBackground_DrawsOnTheProcessor_WithoutOpeningTheCard()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        using var rig = new LoopRig(acceleration: acceleration, time: _time); // le fond par défaut est fixe
+        rig.AddHealthyScreen();
+        rig.Loop.Start(CancellationToken.None);
+
+        rig.Loop.Tick();
+
+        Assert.Equal(1, rig.Loop.FramesSent);
+        Assert.Empty(_factory.Created);
+        Assert.Null(acceleration.DrawingDevice);
+        var status = rig.Loop.Status.Acceleration!;
+        Assert.False(status.Drawing);
+        Assert.True(status.DrawingWaitsForAnimation);
+        Assert.Null(status.Problem);
+    }
+
+    [Fact]
+    public void AnimatedBackgroundAtStart_OpensTheCardBeforeTheFirstFrame()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        using var rig = new LoopRig(background: Animated(), acceleration: acceleration, time: _time);
+
+        Assert.Single(_factory.Created); // dès la construction de la boucle
+        Assert.True(rig.Loop.Status.Acceleration!.Drawing);
+        Assert.False(rig.Loop.Status.Acceleration.DrawingWaitsForAnimation);
+    }
+
+    [Fact]
+    public async Task BackgroundBecomesAnimated_TheComposerIsRebuiltOnTheCard_WithoutALostFrame()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        using var rig = new LoopRig(acceleration: acceleration, time: _time);
+        rig.AddHealthyScreen();
+        rig.Loop.Start(CancellationToken.None);
+        rig.Loop.Tick();
+        Assert.Empty(_factory.Created);
+
+        var task = rig.Loop.ApplyAsync(Config(rig.Loop.Layout, Animated()));
+        NextFrame(rig);
+        Assert.Empty(await task);
+
+        Assert.Equal(2, rig.Loop.FramesSent);                 // l'image du rechargement est partie, sans trou
+        Assert.Single(_factory.Created);
+        Assert.True(_factory.Created[0].Device.Submits > 0);  // et c'est la carte qui l'a dessinée
+        var status = rig.Loop.Status.Acceleration!;
+        Assert.True(status.Drawing);
+        Assert.False(status.DrawingWaitsForAnimation);
+    }
+
+    [Fact]
+    public async Task BackgroundBecomesFixed_TheComposerIsRebuiltOnTheProcessor_AndTheCardIsReleased()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        var animated = Animated();
+        using var rig = new LoopRig(background: animated, acceleration: acceleration, time: _time);
+        rig.AddHealthyScreen();
+        rig.Loop.Start(CancellationToken.None);
+        rig.Loop.Tick();
+        var device = _factory.Created[0].Device;
+        var submits = device.Submits;
+        Assert.True(submits > 0);
+
+        var task = rig.Loop.ApplyAsync(Config(rig.Loop.Layout, new TrackedBackground(SKColors.Black)));
+        NextFrame(rig);
+        Assert.Empty(await task);
+        NextFrame(rig);
+
+        Assert.Equal(3, rig.Loop.FramesSent);
+        Assert.Null(acceleration.DrawingDevice);
+        Assert.True(device.IsDisposed);                       // libéré après le compositeur
+        Assert.Equal(submits, device.Submits);                // les images suivantes viennent du processeur
+        Assert.Equal(0, _factory.Alive);
+        Assert.True(animated.Disposed);
+        var status = rig.Loop.Status.Acceleration!;
+        Assert.False(status.Drawing);
+        Assert.True(status.DrawingWaitsForAnimation);
+        Assert.Null(status.Problem);
+    }
+
+    [Fact]
+    public async Task SameBackgroundReapplied_DoesNotOpenNorCloseTheCard()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        var background = Animated();
+        using var rig = new LoopRig(background: background, acceleration: acceleration, time: _time);
+        rig.AddHealthyScreen();
+        rig.Loop.Start(CancellationToken.None);
+        rig.Loop.Tick();
+        var device = _factory.Created[0].Device;
+
+        for (var i = 0; i < 3; i++)
+        {
+            var task = rig.Loop.ApplyAsync(Config(rig.Loop.Layout, background));
+            NextFrame(rig);
+            Assert.Empty(await task);
+        }
+
+        Assert.Single(_factory.Created);
+        Assert.Same(device, acceleration.DrawingDevice);
+        Assert.False(device.IsDisposed);
+    }
+
+    [Fact]
+    public void TheBackgroundStopsAndStartsMoving_TheLoopFollowsItAtItsNextTick()
+    {
+        // Une vidéo d'une seule image devient une image fixe sans changer d'objet : la boucle le voit à son tour suivant.
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        var background = Animated();
+        using var rig = new LoopRig(background: background, acceleration: acceleration, time: _time);
+        rig.AddHealthyScreen(acks: 400);
+        rig.Loop.Start(CancellationToken.None);
+        rig.Loop.Tick();
+        var device = _factory.Created[0].Device;
+
+        background.IsAnimated = false;
+        NextFrame(rig);
+
+        Assert.Null(acceleration.DrawingDevice);
+        Assert.True(device.IsDisposed);
+        Assert.True(rig.Loop.Status.Acceleration!.DrawingWaitsForAnimation);
+
+        background.IsAnimated = true;
+        NextFrame(rig);
+
+        Assert.Equal(2, _factory.Created.Count);
+        Assert.Same(_factory.Created[1].Device, acceleration.DrawingDevice);
+        Assert.True(rig.Loop.Status.Acceleration.Drawing);
+    }
+
+    [Fact]
+    public void FailureThenFixedBackground_KeepsTheSentenceAndTheLoopKeepsSending()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        var background = Animated();
+        using var rig = new LoopRig(background: background, acceleration: acceleration, time: _time);
+        rig.AddHealthyScreen(acks: 400);
+        rig.Loop.Start(CancellationToken.None);
+        rig.Loop.Tick();
+        _factory.Created[0].Device.Lose("pilote planté");
+        NextFrame(rig);
+        const string sentence = "La carte graphique a eu un problème (pilote planté) : dessin sur le processeur.";
+        Assert.Equal(sentence, rig.Loop.Status.Acceleration!.Problem);
+
+        background.IsAnimated = false;
+        NextFrame(rig);
+        _time.Advance(TimeSpan.FromMinutes(5));
+        NextFrame(rig);
+
+        Assert.Equal(sentence, rig.Loop.Status.Acceleration!.Problem);
+        Assert.Single(_factory.Created); // un fond fixe : pas de nouvel essai
+        Assert.Equal(4, rig.Loop.FramesSent);
+
+        background.IsAnimated = true;
+        NextFrame(rig); // le fond bouge de nouveau : le nouvel essai en retard a lieu
+        NextFrame(rig);
+
+        Assert.Equal(2, _factory.Created.Count);
+        Assert.True(rig.Loop.Status.Acceleration!.Drawing);
+        Assert.Null(rig.Loop.Status.Acceleration.Problem);
+    }
+
+    [Fact]
+    public void ViewGlide_OnAFixedBackground_RunsOnTheProcessor()
+    {
+        using var acceleration = new AccelerationController(_factory, _time, _ => { });
+        using var rig = new LoopRig(TwoViews(), acceleration: acceleration, time: _time);
+        rig.AddHealthyScreen(acks: 600);
+        rig.Loop.Start(CancellationToken.None);
+        rig.Loop.Tick();
+        var sent = rig.Loop.FramesSent;
+
+        Assert.True(rig.Loop.ShowAdjacentView(+1));
+        Run(rig, TimeSpan.FromMilliseconds(400));
+
+        Assert.True(rig.Loop.FramesSent - sent >= 10);
+        Assert.Empty(_factory.Created);                       // aucune carte n'a été ouverte pour le glissement
+        Assert.Null(rig.Loop.Status.Acceleration!.Problem);
     }
 }

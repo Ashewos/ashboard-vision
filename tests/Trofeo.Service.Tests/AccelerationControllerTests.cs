@@ -20,6 +20,7 @@ public sealed class AccelerationControllerTests : IDisposable
         _factory.Adapters.AddRange([Integrated, Discrete]);
         _controller = new AccelerationController(_factory, _time, _log.Add);
         _controller.EffectiveChoiceChanged += () => _choiceChanges++;
+        _controller.SetBackgroundAnimated(true); // la plupart des essais portent sur la carte qui dessine : il lui faut un fond animé
     }
 
     public void Dispose() => _controller.Dispose();
@@ -780,5 +781,278 @@ public sealed class AccelerationControllerTests : IDisposable
         Assert.Equal(0, _factory.Alive);
         Assert.All(_factory.Created, c => Assert.Equal(1, c.Device.DisposeCount));
         Assert.Null(_controller.DrawingDevice);
+    }
+
+    // ---- Le fond de l'écran : la carte ne dessine que sur un fond animé (révision du 18/11) ----
+
+    [Fact]
+    public void BackgroundNotToldYet_IsFixed_AndOpensNoDevice()
+    {
+        using var controller = new AccelerationController(_factory, _time, _log.Add);
+
+        controller.Apply(AccelerationSettings.Default); // la boucle n'a encore rien dit du fond
+
+        Assert.Null(controller.DrawingDevice);
+        Assert.Empty(_factory.Created);
+        Assert.True(controller.Status.DrawingWaitsForAnimation);
+    }
+
+    [Fact]
+    public void FixedBackground_OpensNoDevice_AndSaysTheDrawingWaits()
+    {
+        _controller.SetBackgroundAnimated(false);
+
+        _controller.Apply(AccelerationSettings.Default);
+
+        Assert.Null(_controller.DrawingDevice);
+        Assert.Empty(_factory.Created);
+        var status = _controller.Status;
+        Assert.True(status.DrawingWaitsForAnimation);
+        Assert.False(status.Drawing);
+        Assert.Null(status.Problem);                           // un fond fixe n'est pas un problème
+        Assert.Null(status.ProblemKind);
+        Assert.Equal(Integrated, _controller.VideoAdapter);    // les vidéos gardent leur carte
+        Assert.True(status.VideoDecoding);
+        Assert.True(status.Available);
+    }
+
+    [Fact]
+    public void AnimatedBackground_OpensTheDevice_AndTheDrawingDoesNotWait()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+
+        Assert.NotNull(_controller.DrawingDevice);
+        Assert.Single(_factory.Created);
+        Assert.False(_controller.Status.DrawingWaitsForAnimation);
+        Assert.True(_controller.Status.Drawing);
+    }
+
+    [Fact]
+    public void DrawingWaitsForAnimation_OnlyWhenTheCardWouldDrawIfTheBackgroundMoved()
+    {
+        _controller.SetBackgroundAnimated(false);
+
+        _controller.Apply(new AccelerationSettings(Enabled: false));
+        Assert.False(_controller.Status.DrawingWaitsForAnimation);
+
+        _controller.Apply(new AccelerationSettings(Drawing: false));
+        Assert.False(_controller.Status.DrawingWaitsForAnimation);
+
+        _factory.Adapters.Clear();
+        _controller.Apply(AccelerationSettings.Default);
+        Assert.False(_controller.Status.DrawingWaitsForAnimation); // aucune carte : rien n'attend
+    }
+
+    [Fact]
+    public void BackgroundBecomesFixed_RetiresTheDeviceThenReleasesIt_WithoutTouchingTheVideoCard()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        var device = _factory.Created[0].Device;
+        var changes = _choiceChanges;
+
+        _controller.SetBackgroundAnimated(false);
+
+        Assert.Null(_controller.DrawingDevice);
+        Assert.False(device.IsDisposed);                       // des compositeurs s'en servent peut-être encore
+        Assert.True(_controller.Status.DrawingWaitsForAnimation);
+        Assert.False(_controller.Status.Drawing);
+        Assert.Null(_controller.Status.Problem);
+        Assert.Equal(Integrated, _controller.VideoAdapter);
+        Assert.Equal(changes, _choiceChanges);                 // la carte des vidéos n'a pas changé
+
+        _controller.ReleaseRetired();
+
+        Assert.Equal(1, device.DisposeCount);
+        Assert.Equal(0, _factory.Alive);
+    }
+
+    [Fact]
+    public void BackgroundBecomesAnimatedAgain_OpensTheChosenCard()
+    {
+        _controller.Apply(new AccelerationSettings(Adapter: Discrete.Id));
+        _controller.SetBackgroundAnimated(false);
+        _controller.ReleaseRetired();
+        var changes = _choiceChanges;
+
+        _controller.SetBackgroundAnimated(true);
+
+        Assert.Equal(2, _factory.Created.Count);
+        Assert.Equal(Discrete, _factory.Created[1].Adapter);
+        Assert.Same(_factory.Created[1].Device, _controller.DrawingDevice);
+        Assert.True(_controller.Status.Drawing);
+        Assert.False(_controller.Status.DrawingWaitsForAnimation);
+        Assert.Equal(changes, _choiceChanges);
+    }
+
+    [Fact]
+    public void BackgroundToldBeforeTheSettings_IsKept()
+    {
+        using var controller = new AccelerationController(_factory, _time, _log.Add);
+        controller.SetBackgroundAnimated(true); // pas de réglages encore : rien à ouvrir
+
+        Assert.Empty(_factory.Created);
+
+        controller.Apply(AccelerationSettings.Default);
+
+        Assert.NotNull(controller.DrawingDevice);
+    }
+
+    [Fact]
+    public void SameBackgroundToldAgain_ChangesNothing()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        var device = _controller.DrawingDevice;
+        var status = _controller.Status;
+
+        _controller.SetBackgroundAnimated(true);
+        _controller.SetBackgroundAnimated(true);
+
+        Assert.Same(device, _controller.DrawingDevice);
+        Assert.Single(_factory.Created);
+        Assert.Same(status, _controller.Status);
+
+        _controller.SetBackgroundAnimated(false);
+        _controller.SetBackgroundAnimated(false);
+        _controller.ReleaseRetired();
+        _controller.ReleaseRetired();
+
+        Assert.Equal(1, _factory.Created[0].Device.DisposeCount);
+        Assert.Single(_factory.Created);
+        Assert.Equal(0, _factory.Alive);
+    }
+
+    [Fact]
+    public void FlippingTheBackground_TwentyTimes_LeavesOneDeviceAtMost()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+
+        for (var i = 0; i < 20; i++)
+        {
+            _controller.SetBackgroundAnimated(false);
+            _controller.ReleaseRetired(); // ce que fait la boucle une fois ses compositeurs refaits
+            Assert.Equal(0, _factory.Alive);
+
+            _controller.SetBackgroundAnimated(true);
+            _controller.ReleaseRetired();
+            Assert.Equal(1, _factory.Alive);
+        }
+
+        Assert.Same(_factory.Created[^1].Device, _controller.DrawingDevice);
+        Assert.All(_factory.Created.Take(_factory.Created.Count - 1), c => Assert.Equal(1, c.Device.DisposeCount));
+    }
+
+    [Fact]
+    public void OpeningFailsWhenTheBackgroundMoves_IsAFailureLikeAnyOther()
+    {
+        _controller.SetBackgroundAnimated(false);
+        _controller.Apply(AccelerationSettings.Default);
+        _factory.FailCreate = true;
+
+        _controller.SetBackgroundAnimated(true);
+
+        Assert.Null(_controller.DrawingDevice);
+        Assert.Equal("La carte graphique n'a pas pu démarrer (pilote absent) : dessin sur le processeur.", _controller.Status.Problem);
+        Assert.Equal(AccelerationProblemKind.Failure, _controller.Status.ProblemKind);
+    }
+
+    [Fact]
+    public void FailureOnAnimatedBackground_ThenFixed_KeepsTheSentence_AndRetriesWaitForAnAnimatedBackground()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("pilote");
+        const string sentence = "La carte graphique a eu un problème (pilote) : dessin sur le processeur.";
+        var at = _controller.Status.ProblemAt;
+
+        _controller.SetBackgroundAnimated(false);
+
+        Assert.Equal(sentence, _controller.Status.Problem);    // la phrase de la panne garde la priorité
+        Assert.Equal(at, _controller.Status.ProblemAt);        // et son heure : la cloche ne resonne pas
+        Assert.True(_controller.Status.DrawingWaitsForAnimation);
+
+        // Le délai passe sur un fond fixe : un essai n'aurait rien à rouvrir, il n'est pas dépensé.
+        _time.Advance(TimeSpan.FromMinutes(5));
+        Assert.False(_controller.Tick());
+        Assert.Equal(sentence, _controller.Status.Problem);
+        Assert.Single(_factory.Created);
+        Assert.DoesNotContain(_log, line => line.Contains("nouvel essai"));
+
+        // Le fond bouge de nouveau : le nouvel essai en retard a lieu au tour suivant, et c'est le premier des trois.
+        _controller.SetBackgroundAnimated(true);
+        Assert.Null(_controller.DrawingDevice);
+        Assert.Equal(sentence, _controller.Status.Problem);
+        Assert.True(_controller.Tick());
+        Assert.NotNull(_controller.DrawingDevice);
+        Assert.Null(_controller.Status.Problem);
+        Assert.Contains(_log, line => line.Contains("(1/3)"));
+        Assert.Equal(2, _factory.Created.Count);
+    }
+
+    [Fact]
+    public void FailureOnFixedBackground_ThenAnimatedBeforeTheDelay_StillWaitsForTheDelay()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.ReportFailure("pilote");
+        _controller.SetBackgroundAnimated(false);
+        _time.Advance(TimeSpan.FromMinutes(2));
+
+        _controller.SetBackgroundAnimated(true);
+
+        Assert.False(_controller.Tick());
+        Assert.Null(_controller.DrawingDevice);
+        _time.Advance(TimeSpan.FromMinutes(3));
+        Assert.True(_controller.Tick());
+        Assert.NotNull(_controller.DrawingDevice);
+    }
+
+    [Fact]
+    public void SlowCheck_RunsOnlyWhileTheCardDraws_AndItsWindowRestartsAtEachOpening()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        Slow(90, seconds: 6); // 6 s de mesure lente sur la première ouverture
+        _controller.SetBackgroundAnimated(false);
+        _controller.ReleaseRetired();
+
+        Slow(90, seconds: 30); // fond fixe : les images lentes ne comptent pas, aucun verdict
+        Assert.False(_controller.Tick());
+        Assert.Null(_controller.Status.Problem);
+
+        _controller.SetBackgroundAnimated(true);
+        Slow(90, seconds: 6); // 6 s depuis la réouverture : moins que la fenêtre de 10 s, même avec les 6 d'avant
+        Assert.False(_controller.Tick());
+
+        Assert.Equal(2, _factory.Created.Count);
+        Assert.Same(_factory.Created[1].Device, _controller.DrawingDevice);
+        Assert.Null(_controller.Status.Problem);
+    }
+
+    [Fact]
+    public void NoFastCard_StaysOnTheProcessorAcrossBackgroundChanges()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        Slow(90);
+        _controller.Tick();
+        Slow(90);
+        _controller.Tick(); // aucune carte assez rapide
+        Assert.Null(_controller.DrawingDevice);
+        var created = _factory.Created.Count;
+
+        _controller.SetBackgroundAnimated(false);
+        _controller.SetBackgroundAnimated(true);
+
+        Assert.Null(_controller.DrawingDevice);
+        Assert.Equal(created, _factory.Created.Count);
+        Assert.Equal("Aucune carte n'est assez rapide : dessin sur le processeur.", _controller.Status.Problem);
+    }
+
+    [Fact]
+    public void Dispose_AfterTheBackgroundBecameFixed_ReleasesTheRetiredDevice()
+    {
+        _controller.Apply(AccelerationSettings.Default);
+        _controller.SetBackgroundAnimated(false); // retiré, pas encore libéré
+
+        _controller.Dispose();
+
+        Assert.Equal(0, _factory.Alive);
+        Assert.All(_factory.Created, c => Assert.Equal(1, c.Device.DisposeCount));
     }
 }

@@ -47,11 +47,14 @@ public enum LinkAccelerationProblem { Failure, Slow, Gone }
 /// phrase écrite pour être lue telle quelle (panne, carte absente, carte trop lente), <c>null</c> sans problème ;
 /// <paramref name="Adapters"/> : les cartes que l'on peut choisir, la première étant celle que « Automatique » prend ;
 /// <paramref name="ProblemKind"/> et <paramref name="ProblemAt"/> : le genre du problème (panne, lenteur, carte absente) et l'heure où
-/// la phrase en cours a été posée, <c>null</c> sans problème ou d'un service qui ne les envoie pas.
+/// la phrase en cours a été posée, <c>null</c> sans problème ou d'un service qui ne les envoie pas ;
+/// <paramref name="DrawingWaitsForAnimation"/> : le fond de l'écran est fixe, le processeur dessine et la carte prendra le relais sur un
+/// GIF ou une vidéo (ce n'est pas un problème) ; faux par défaut, et d'un service qui ne le dit pas.
 /// </summary>
 public sealed record AccelerationInfo(
     bool Available, bool Enabled, string? AdapterName, bool Drawing, bool VideoDecoding, string? Problem,
-    IReadOnlyList<GpuAdapterEntry> Adapters, LinkAccelerationProblem? ProblemKind = null, DateTimeOffset? ProblemAt = null);
+    IReadOnlyList<GpuAdapterEntry> Adapters, LinkAccelerationProblem? ProblemKind = null, DateTimeOffset? ProblemAt = null,
+    bool DrawingWaitsForAnimation = false);
 
 /// <summary>
 /// L'état du service. <paramref name="CurrentViewId"/> est la vue affichée sur l'écran en ce moment ;

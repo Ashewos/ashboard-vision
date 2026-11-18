@@ -25,6 +25,11 @@ public enum AccelerationProblemKind
 /// <param name="Adapters">Les cartes que l'on peut choisir.</param>
 /// <param name="ProblemKind">Le genre de <paramref name="Problem"/> ; <c>null</c> sans problème.</param>
 /// <param name="ProblemAt">L'heure (UTC) où la phrase en cours a été posée ; un nouvel échec, même au même texte, donne une nouvelle heure ; <c>null</c> sans problème.</param>
+/// <param name="DrawingWaitsForAnimation">
+/// Le réglage voudrait la carte pour dessiner (interrupteur allumé, « Dessin de l'image » cochée, une carte voulue), mais le fond de
+/// l'écran est fixe : le processeur dessine, la carte prend le relais sur un GIF ou une vidéo. Ce n'est pas un problème.
+/// </param>
 public sealed record AccelerationStatus(
     bool Available, bool Enabled, GpuAdapterInfo? Adapter, bool Drawing, bool VideoDecoding, string? Problem,
-    IReadOnlyList<GpuAdapterInfo> Adapters, AccelerationProblemKind? ProblemKind = null, DateTimeOffset? ProblemAt = null);
+    IReadOnlyList<GpuAdapterInfo> Adapters, AccelerationProblemKind? ProblemKind = null, DateTimeOffset? ProblemAt = null,
+    bool DrawingWaitsForAnimation = false);

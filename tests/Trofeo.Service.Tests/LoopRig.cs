@@ -37,13 +37,16 @@ internal sealed class ProbeModule(string typeId, Guid instanceId, JsonElement se
     public void Dispose() => Interlocked.Increment(ref _disposed);
 }
 
-/// <summary>Un fond qui note s'il a été libéré.</summary>
-internal sealed class TrackedBackground(SKColor color) : IBackground
+/// <summary>
+/// Un fond qui note s'il a été libéré. Fixe par défaut ; <paramref name="animated"/> en fait un fond animé qui ne change jamais
+/// d'image (la carte ne dessine que sur un fond animé), et <see cref="IsAnimated"/> peut changer en cours de route.
+/// </summary>
+internal sealed class TrackedBackground(SKColor color, bool animated = false) : IBackground
 {
     private readonly ColorBackground _inner = new(color);
     public bool Disposed { get; private set; }
     public int DisposeCount { get; private set; }
-    public bool IsAnimated => false;
+    public bool IsAnimated { get; set; } = animated;
     public SKImage Current => _inner.Current;
     public int Version => 1;
     public bool Advance(TimeSpan elapsed) => false;

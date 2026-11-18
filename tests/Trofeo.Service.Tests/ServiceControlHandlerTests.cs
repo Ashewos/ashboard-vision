@@ -743,6 +743,17 @@ public sealed partial class ServiceControlHandlerTests
 
         Assert.Null(info.ProblemKind);
         Assert.Null(info.ProblemAt);
+        Assert.False(info.DrawingWaitsForAnimation);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ToAccelerationInfo_CarriesThatTheDrawingWaitsForAnAnimatedBackground(bool waits)
+    {
+        var status = new AccelerationStatus(true, true, null, false, true, null, [], DrawingWaitsForAnimation: waits);
+
+        Assert.Equal(waits, ServiceControlHandler.ToAccelerationInfo(status).DrawingWaitsForAnimation);
     }
 
     [Fact]

@@ -266,11 +266,13 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         };
         _onStatusChanged = OnStatusChanged;
         _renderErrors = new RateLimitedErrorLog(time);
+        _theme = theme ?? Themes.ClassiqueDefinition;
+        _background = background ?? new ColorBackground(_theme.DefaultBackground.Color);
+        // Le fond d'abord : la carte ne dessine que sur un fond animé, le chef de l'accélération doit le savoir avant d'ouvrir l'appareil.
+        _acceleration?.SetBackgroundAnimated(_background.IsAnimated);
         _acceleration?.Apply(layout.Acceleration);
         _deviceInUse = _acceleration?.DrawingDevice;
         _composer = NewComposer();
-        _theme = theme ?? Themes.ClassiqueDefinition;
-        _background = background ?? new ColorBackground(_theme.DefaultBackground.Color);
         ReportVideoDecoder();
         _backgroundStart = time.GetTimestamp(); // la lecture d'un fond animé part du démarrage de la boucle
 
@@ -755,7 +757,9 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         var warnings = new List<string>();
         bool viewChanged;
 
-        // L'accélération d'abord : si la carte change, les compositeurs sont refaits avant le thème et le fond.
+        // L'accélération d'abord : si la carte change, les compositeurs sont refaits avant le thème et le fond. Le chef apprend le
+        // nouveau fond tout de suite : l'appareil s'ouvre (ou se ferme) avec ce rechargement, pas au tour suivant.
+        _acceleration?.SetBackgroundAnimated(config.Background.IsAnimated);
         _acceleration?.Apply(config.Layout.Acceleration);
         SyncAcceleration();
 
@@ -1281,6 +1285,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         RunQueued();
+        _acceleration?.SetBackgroundAnimated(_background.IsAnimated); // un fond qui s'arrête ou repart (vidéo d'une seule image) ; sans effet si rien n'a changé
         _acceleration?.Tick(); // nouvel essai après une panne, carte trop lente
         SyncAcceleration();
 
