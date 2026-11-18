@@ -4,11 +4,12 @@ Les versions sont numérotées selon [SemVer](https://semver.org/lang/fr/) : les
 
 ## 1.2.0-beta.3
 
-Troisième bêta de la 1.2.0 : le logiciel peut maintenant **dessiner l'image et décoder les vidéos avec la carte graphique**, par Direct3D 12, quelle que soit la marque de la carte. C'est ce qui doit alléger le thème Liquid Glass avancé sur un fond animé. Les vues, les noms de cases, les raccourcis et les thèmes des bêtas précédentes sont inchangés.
+Troisième bêta de la 1.2.0 : le logiciel peut maintenant **dessiner l'image (sur un fond animé) et décoder les vidéos avec la carte graphique**, par Direct3D 12, quelle que soit la marque de la carte. C'est ce qui doit alléger le thème Liquid Glass avancé sur un fond animé. Les vues, les noms de cases, les raccourcis et les thèmes des bêtas précédentes sont inchangés.
 
 ### L'accélération matérielle
 
-- Le **dessin de l'image** passe sur la carte pour les quatre thèmes : fond (image, GIF, Aurore, vidéo), panneaux, modules, verre de Liquid Glass et de Liquid Glass avancé (ombres et pastilles comprises), glissement entre les vues avec son flou. Le verre avancé se calcule alors sur la carte, au lieu d'être réparti sur les cœurs du processeur.
+- Le **dessin de l'image** passe sur la carte **quand le fond de l'écran est animé** (GIF, vidéo), pour les quatre thèmes : fond, panneaux, modules, verre de Liquid Glass et de Liquid Glass avancé (ombres et pastilles comprises), glissement entre les vues avec son flou. Le verre avancé se calcule alors sur la carte, au lieu d'être réparti sur les cœurs du processeur.
+- **Sur un fond fixe** (une image, Aurore, une couleur), c'est le **processeur qui dessine**, comme à la beta.2 : la carte n'apporterait rien (il y est aussi léger) et coûterait de la mémoire au service. Il garde donc la mémoire de la beta.2 et n'ouvre pas la carte pour dessiner ; elle prend le relais dès qu'un GIF ou une vidéo devient le fond, et la rend quand le fond redevient fixe. La ligne d'état de la fenêtre le dit : « Fond fixe : l'image se dessine sur le processeur. La carte prend le relais sur un GIF ou une vidéo. » Ce n'est pas un problème : aucune notification, aucune phrase d'avertissement.
 - Le **décodage des vidéos** passe aussi sur la carte (Media Foundation, sur la même carte que le dessin). Quand les deux sont activés, l'image décodée va au dessin sans repasser par le processeur.
 - La compression JPEG de l'image envoyée à l'écran, elle, reste sur le processeur : elle coûte peu.
 - C'est une API standard de Windows, pas du code propre à un fabricant : Intel, NVIDIA, AMD ou autre, toute carte compatible Direct3D 12 convient (niveau de fonctionnalités 11_0 au moins).
@@ -40,7 +41,7 @@ Troisième bêta de la 1.2.0 : le logiciel peut maintenant **dessiner l'image et
 
 ### Ce que ça change pour le processeur
 
-- Le coût du thème Liquid Glass avancé sur un fond animé avec l'accélération est **à mesurer** sur le PC d'Alex (pour mémoire : environ 14,5 % du processeur sans accélération, à la beta.2). Les chiffres seront ajoutés ici.
+- Sur un fond fixe, rien ne change par rapport à la beta.2 (le processeur dessine). Le coût du thème Liquid Glass avancé sur un fond animé avec l'accélération est **à mesurer** sur le PC d'Alex (pour mémoire : environ 14,5 % du processeur sans accélération, à la beta.2). Les chiffres seront ajoutés ici.
 
 ### La cloche des notifications
 

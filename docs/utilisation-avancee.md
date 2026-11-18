@@ -161,7 +161,7 @@ Depuis la 1.2.0-beta.3, le dessin de l'image et le décodage des vidéos passent
   ```
 
   `VendorId` est l'identifiant du fabricant, `DeviceId` celui du modèle, `SubSysId` celui du sous-système (ce qui distingue deux cartes du même modèle chez des constructeurs différents) et `Name` le nom affiché. La carte est retrouvée par ces identifiants, puis par son nom, et jamais par son LUID, qui change à chaque démarrage de Windows. Si elle n'existe plus, le logiciel prend Automatique et l'écrit dans le journal et dans la fenêtre. Le plus simple pour remplir ce champ est de choisir la carte dans la fenêtre.
-- `Drawing` (`true` par défaut) : le dessin de l'image passe par la carte (thèmes, verre, fonds animés).
+- `Drawing` (`true` par défaut) : le dessin de l'image passe par la carte (thèmes, verre, fonds animés), **mais seulement quand le fond de l'écran est animé** (GIF, vidéo). Avec un fond fixe (image, Aurore, couleur), le processeur dessine, même avec `Drawing` à `true` : il y est aussi léger, et le service garde la mémoire qu'il avait sans carte (la carte ouverte lui en coûterait plus de 100 Mo de plus). Dès que le fond devient animé, la carte prend le relais ; quand il redevient fixe, elle est rendue. La fenêtre le dit : « Fond fixe : l'image se dessine sur le processeur. La carte prend le relais sur un GIF ou une vidéo. » Le décodage des vidéos (`VideoDecoding`) n'est pas concerné : une vidéo est un fond animé.
 - `VideoDecoding` (`true` par défaut) : le décodage des vidéos passe par la carte. Les deux cases se combinent comme tu veux.
 - Un champ du mauvais type reprend sa valeur par défaut, avec un avertissement dans le journal ; le reste du fichier n'est pas touché.
 
