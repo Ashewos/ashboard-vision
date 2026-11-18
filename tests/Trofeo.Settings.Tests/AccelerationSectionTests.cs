@@ -32,6 +32,10 @@ public sealed class AccelerationSectionTests : IDisposable
         params GpuAdapterEntry[] adapters) =>
         new(Available: true, enabled, card, drawing, video, problem, adapters.Length > 0 ? adapters : [Intel, Nvidia]);
 
+    /// <summary>Un fond fixe : la carte ne dessine pas, elle attend un GIF ou une vidéo (les vidéos, elles, peuvent déjà être sur la carte).</summary>
+    private static AccelerationInfo WaitingForAnimation(string? card = "Intel(R) Graphics", bool video = true, string? problem = null) =>
+        Working(card: card, drawing: false, video: video, problem: problem) with { DrawingWaitsForAnimation = true };
+
     private AccelerationSectionViewModel Open(AccelerationInfo? info, AccelerationSettings? saved = null)
     {
         _store.Save(DashboardLayout.Default with { Acceleration = saved });
@@ -174,6 +178,48 @@ public sealed class AccelerationSectionTests : IDisposable
         var section = Open(Working(card: null, drawing: false, video: false, problem: Problem));
 
         Assert.Equal("Tout se calcule sur le processeur.", section.StateText);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void StateLine_FixedBackground_SaysTheProcessorDrawsAndTheCardTakesOverOnAnAnimation(bool video)
+    {
+        var section = Open(WaitingForAnimation(video: video));
+
+        Assert.Equal("Fond fixe : l'image se dessine sur le processeur. La carte prend le relais sur un GIF ou une vidéo.", section.StateText);
+        Assert.True(section.HasStateText);
+        Assert.False(section.HasProblem); // un fond fixe n'est pas un problème
+    }
+
+    [Fact]
+    public void StateLine_FixedBackgroundWithAFailure_KeepsTheFailureSentence()
+    {
+        // La phrase de la panne garde la priorité : la ligne d'état ne la contredit pas.
+        var section = Open(WaitingForAnimation(card: null, video: false, problem: Problem));
+
+        Assert.Equal(Problem, section.Problem);
+        Assert.True(section.HasProblem);
+        Assert.Equal("Tout se calcule sur le processeur.", section.StateText);
+    }
+
+    [Fact]
+    public void StateLine_FollowsTheBackgroundAsTheServiceTellsIt()
+    {
+        var section = Open(WaitingForAnimation());
+        var seen = new List<string?>();
+        section.PropertyChanged += (_, e) => seen.Add(e.PropertyName);
+
+        Push(Working()); // le fond devient animé : la carte dessine
+
+        Assert.Equal("Sur Intel(R) Graphics : dessin et vidéos.", section.StateText);
+        Assert.Contains(nameof(section.StateText), seen);
+
+        seen.Clear();
+        Push(WaitingForAnimation());
+
+        Assert.Equal("Fond fixe : l'image se dessine sur le processeur. La carte prend le relais sur un GIF ou une vidéo.", section.StateText);
+        Assert.Contains(nameof(section.StateText), seen);
     }
 
     [Fact]

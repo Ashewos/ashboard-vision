@@ -142,11 +142,15 @@ public sealed class AccelerationSectionViewModel : ObservableObject, IDisposable
 
     // ---- L'état (le service) ----
 
-    /// <summary>Une phrase sous les choix : où l'on en est. <c>null</c> sans réponse du service.</summary>
+    /// <summary>
+    /// Une phrase sous les choix : où l'on en est. <c>null</c> sans réponse du service. Sur un fond fixe, elle dit que le processeur dessine
+    /// et que la carte prend le relais sur un GIF ou une vidéo (sauf avec un problème : sa phrase passe avant, voir <see cref="Problem"/>).
+    /// </summary>
     public string? StateText => Info switch
     {
         null => null,
         { Available: false } => Texts.AccelerationNone,
+        { DrawingWaitsForAnimation: true, Problem: null or "" } => Texts.AccelerationStateFixedBackground, // une panne garde la priorité : sa phrase est montrée à part
         { AdapterName: { } card, Drawing: true, VideoDecoding: true } => string.Format(Texts.AccelerationStateBoth, card),
         { AdapterName: { } card, Drawing: true } => string.Format(Texts.AccelerationStateDrawing, card),
         { AdapterName: { } card, VideoDecoding: true } => string.Format(Texts.AccelerationStateVideo, card),

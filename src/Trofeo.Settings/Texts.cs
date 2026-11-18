@@ -429,6 +429,8 @@ public static class Texts
     public static string AccelerationStateVideo => Get();
     /// <summary>État : la carte ne sert à rien en ce moment.</summary>
     public static string AccelerationStateCpu => Get();
+    /// <summary>État : le fond de l'écran est une image fixe, la carte ne dessine pas.</summary>
+    public static string AccelerationStateFixedBackground => Get();
     /// <summary>Aucune carte Direct3D 12 : l'interrupteur est grisé.</summary>
     public static string AccelerationNone => Get();
     /// <summary>Titre de section.</summary>

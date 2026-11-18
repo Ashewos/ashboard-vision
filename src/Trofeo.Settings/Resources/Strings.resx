@@ -821,6 +821,10 @@
     <value>Tout se calcule sur le processeur.</value>
     <comment>État : la carte ne sert à rien en ce moment.</comment>
   </data>
+  <data name="AccelerationStateFixedBackground" xml:space="preserve">
+    <value>Fond fixe : l'image se dessine sur le processeur. La carte prend le relais sur un GIF ou une vidéo.</value>
+    <comment>État : le fond de l'écran est une image fixe, la carte ne dessine pas.</comment>
+  </data>
   <data name="AccelerationNone" xml:space="preserve">
     <value>Aucune carte graphique compatible : tout se calcule sur le processeur.</value>
     <comment>Aucune carte Direct3D 12 : l'interrupteur est grisé.</comment>

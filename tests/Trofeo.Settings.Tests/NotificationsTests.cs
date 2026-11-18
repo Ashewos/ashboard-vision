@@ -195,6 +195,22 @@ public sealed class NotificationsTests : IDisposable
         Assert.Empty(model.Items);
     }
 
+    [Fact]
+    public void GpuWaitingForAnAnimatedBackground_NotNotified()
+    {
+        // Un fond fixe n'est ni une panne ni un problème : la cloche reste muette.
+        _link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status() with
+        {
+            Acceleration = new AccelerationInfo(true, true, "Carte", false, true, null, [], DrawingWaitsForAnimation: true),
+        });
+
+        var model = Open();
+
+        Assert.Empty(model.Items);
+        Assert.False(model.HasProblem);
+        Assert.Equal(0, model.Count);
+    }
+
     // ---- La croix ----
 
     [Fact]
