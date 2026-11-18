@@ -197,7 +197,8 @@ public class D3D12GpuDeviceTests
                 var d = adapter!.Description1;
                 var luid = ((long)d.Luid.HighPart << 32) | d.Luid.LowPart;
                 var listed = adapters.Any(a => a.Luid == luid);
-                var hardware = (d.Flags & Vortice.DXGI.AdapterFlags.Software) == 0;
+                var hardware = (d.Flags & Vortice.DXGI.AdapterFlags.Software) == 0
+                    && !(d.VendorId == 0x1414 && d.DeviceId == 0x8C); // le Basic Render Driver (WARP) n'est pas toujours marqué « Software »
                 var supports = Vortice.Direct3D12.D3D12.IsSupported(adapter, Vortice.Direct3D.FeatureLevel.Level_11_0);
                 Assert.Equal(hardware && supports, listed);
             }
@@ -205,12 +206,18 @@ public class D3D12GpuDeviceTests
     }
 
     [Theory]
-    [InlineData(Vortice.DXGI.AdapterFlags.None, true, true)]
-    [InlineData(Vortice.DXGI.AdapterFlags.None, false, false)]
-    [InlineData(Vortice.DXGI.AdapterFlags.Software, true, false)]
-    [InlineData(Vortice.DXGI.AdapterFlags.Software, false, false)]
-    public void IsUsable_NeedsHardwareAndDirect3D12(Vortice.DXGI.AdapterFlags flags, bool direct3D12, bool expected) =>
-        Assert.Equal(expected, GpuAdapters.IsUsable(flags, direct3D12));
+    [InlineData(Vortice.DXGI.AdapterFlags.None, 0x10DEu, 0x2684u, true, true)]    // une carte NVIDIA
+    [InlineData(Vortice.DXGI.AdapterFlags.None, 0x8086u, 0x46A6u, true, true)]    // une carte intégrée Intel
+    [InlineData(Vortice.DXGI.AdapterFlags.None, 0x10DEu, 0x2684u, false, false)]  // sans Direct3D 12
+    [InlineData(Vortice.DXGI.AdapterFlags.Software, 0x10DEu, 0x2684u, true, false)]
+    [InlineData(Vortice.DXGI.AdapterFlags.Software, 0x10DEu, 0x2684u, false, false)]
+    // Le Basic Render Driver d'une machine virtuelle : pas marqué « Software », sait Direct3D 12, mais dessine sur le processeur.
+    [InlineData(Vortice.DXGI.AdapterFlags.None, 0x1414u, 0x008Cu, true, false)]
+    [InlineData(Vortice.DXGI.AdapterFlags.Software, 0x1414u, 0x008Cu, true, false)]
+    // Un autre appareil du fabricant 0x1414 reste permis : seule l'identité du WARP est écartée.
+    [InlineData(Vortice.DXGI.AdapterFlags.None, 0x1414u, 0x008Eu, true, true)]
+    public void IsUsable_NeedsHardwareAndDirect3D12(Vortice.DXGI.AdapterFlags flags, uint vendorId, uint deviceId, bool direct3D12, bool expected) =>
+        Assert.Equal(expected, GpuAdapters.IsUsable(flags, vendorId, deviceId, direct3D12));
 
     [Fact]
     public void Create_WithAnUnknownAdapter_ThrowsGpuLost()

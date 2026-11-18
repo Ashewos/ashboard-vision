@@ -57,13 +57,27 @@ public static class GpuAdapters
     internal static GpuAdapterInfo? Describe(IDXGIAdapter1 adapter)
     {
         var d = adapter.Description1;
-        if ((d.Flags & AdapterFlags.Software) != 0) return null;
+        // Le test du matériel passe avant l'appel à Direct3D 12 : inutile de sonder une carte qu'on écarte de toute façon.
+        if (!IsHardware(d.Flags, d.VendorId, d.DeviceId)) return null;
 
-        return IsUsable(d.Flags, SupportsDirect3D12(adapter)) ? Build(d) : null;
+        return IsUsable(d.Flags, d.VendorId, d.DeviceId, SupportsDirect3D12(adapter)) ? Build(d) : null;
     }
 
+    /// <summary>
+    /// Vrai si la carte est bien matérielle. DXGI marque « Software » les cartes logicielles, mais pas toujours : sur une
+    /// machine virtuelle sans carte (celle de la recette GitHub, par exemple), le « Microsoft Basic Render Driver » (WARP,
+    /// 0x1414 / 0x008C) arrive sans ce drapeau et sait Direct3D 12 au niveau 11_0 ; il dessine pourtant sur le processeur,
+    /// bien trop lentement pour l'écran. On l'écarte donc aussi par son identité.
+    /// </summary>
+    internal static bool IsHardware(AdapterFlags flags, uint vendorId, uint deviceId) =>
+        (flags & AdapterFlags.Software) == 0 && !(vendorId == MicrosoftVendorId && deviceId == BasicRenderDriverDeviceId);
+
     /// <summary>Une carte se garde si elle est matérielle et sait Direct3D 12 au niveau 11_0.</summary>
-    internal static bool IsUsable(AdapterFlags flags, bool direct3D12) => (flags & AdapterFlags.Software) == 0 && direct3D12;
+    internal static bool IsUsable(AdapterFlags flags, uint vendorId, uint deviceId, bool direct3D12) =>
+        direct3D12 && IsHardware(flags, vendorId, deviceId);
+
+    private const uint MicrosoftVendorId = 0x1414;
+    private const uint BasicRenderDriverDeviceId = 0x008C;
 
     /// <summary>Vrai si Direct3D 12 sait ouvrir un appareil au niveau 11_0 sur cette carte (sans l'ouvrir vraiment).</summary>
     internal static bool SupportsDirect3D12(IDXGIAdapter1 adapter)
