@@ -41,7 +41,19 @@ Troisième bêta de la 1.2.0 : le logiciel peut maintenant **dessiner l'image (s
 
 ### Ce que ça change pour le processeur
 
-- Sur un fond fixe, rien ne change par rapport à la beta.2 (le processeur dessine). Le coût du thème Liquid Glass avancé sur un fond animé avec l'accélération est **à mesurer** sur le PC d'Alex (pour mémoire : environ 14,5 % du processeur sans accélération, à la beta.2). Les chiffres seront ajoutés ici.
+Mesuré sur un PC à 20 cœurs, avec une carte graphique intégrée Intel et une NVIDIA GeForce RTX 5070, en pourcentage de toute la machine :
+
+| Thème et fond | Sans accélération | Carte intégrée Intel | RTX 5070 |
+|---|---|---|---|
+| Liquid Glass avancé, image fixe | 1,6 % | 1,6 % (le processeur dessine) | 1,5 % (le processeur dessine) |
+| Liquid Glass avancé, GIF animé | 14,2 % | **1,8 %** | **1,8 %** |
+| Liquid Glass avancé, vidéo 1920×462 | 14,3 % | **1,7 %** | **1,7 %** |
+| Liquid Glass avancé, vidéo 1080p | 12,7 % (8,9 images/s) | **1,7 %** (10,8 images/s) | **1,7 %** (10,7 images/s) |
+| Liquid Glass, GIF animé | 2,3 % | 1,7 % | 1,8 % |
+| Classique, vidéo 1080p | 3,4 % | 1,5 % | 1,6 % |
+
+- La carte travaille peu : 12 % au plus pour la carte intégrée, à peine 1 % pour la RTX.
+- **Mémoire** : sur un fond fixe, le service garde celle de la beta.2 (environ 65 Mo). Sur un fond animé, la carte en demande davantage (environ 240 à 400 Mo avec la carte intégrée, selon la vidéo), stable au fil des heures, et en grande partie rendue quand le fond redevient fixe.
 
 ### La cloche des notifications
 
