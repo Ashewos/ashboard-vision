@@ -134,6 +134,11 @@ internal sealed class FakeCommunityModules : ICommunityModules
     /// <summary>Le processus du service tel que le handler l'a remis à <see cref="Consumption"/>.</summary>
     public ProcessInfo? LastServiceProcess { get; private set; }
 
+    /// <summary>Les arrêts brusques que <see cref="StopsFor"/> rend, par identifiant.</summary>
+    public Dictionary<string, ModuleStops> Stops { get; } = [];
+
+    public ModuleStops? StopsFor(string id) => Stops.TryGetValue(id, out var stops) ? stops : null;
+
     public ModuleUpdateOffer? UpdateFor(string id) => Offers.TryGetValue(id, out var offer) ? offer : null;
 
     public Task CheckUpdatesAsync(CancellationToken ct)

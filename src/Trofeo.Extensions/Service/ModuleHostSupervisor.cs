@@ -76,6 +76,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     private readonly IHostProcessFactory _launcher;
     private readonly IModuleLog _log;
     private readonly Action<bool>? _hostRunning;
+    private readonly Action<DateTimeOffset>? _stopped;
     private volatile Target _target;
 
     private readonly object _gate = new();
@@ -117,10 +118,15 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     /// Appelée avec <c>true</c> quand un hôte est installé et avec <c>false</c> quand il n'y en a plus (arrêt voulu, panne, libération),
     /// jamais deux fois de suite la même valeur. Appelée sous le verrou du superviseur : elle doit être brève et ne rappeler personne.
     /// </param>
+    /// <param name="stopped">
+    /// Appelée avec l'heure de l'arrêt, hors du verrou, une fois par arrêt que personne n'a voulu (mémoire dépassée et échec de lancement
+    /// compris) ; jamais pour un arrêt demandé (désinstallation, arrêt du service).
+    /// </param>
     public ModuleHostSupervisor(
         CommunityEntry entry, IReadOnlyList<ModulePermission> granted, string hostExecutable, ISecretStore secrets,
         IServiceDataBroker data, TimeProvider time, Action<string, string> setAside, IHostProcessFactory? launcher = null,
-        IModuleLog? log = null, Action<bool>? hostRunning = null)
+        IModuleLog? log = null, Action<bool>? hostRunning = null,
+        Action<DateTimeOffset>? stopped = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(hostExecutable);
         _target = Target.Of(entry, granted);
@@ -132,6 +138,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         _launcher = launcher ?? new SandboxedHostProcessFactory();
         _log = log ?? new TraceModuleLog(entry.Id, Guid.Empty, time);
         _hostRunning = hostRunning;
+        _stopped = stopped;
     }
 
     /// <summary>Le nombre de cases ouvertes (qui font tourner l'hôte).</summary>
@@ -739,6 +746,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
         _log.Error("Impossible de lancer le module : " + exception.Message);
         string? asideReason;
         Broadcast stopped;
+        DateTimeOffset now;
         lock (_gate)
         {
             if (generation == _launchGeneration)
@@ -751,10 +759,12 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
                 return;
             }
 
-            asideReason = RegisterStopLocked(_time.GetUtcNow(), _time.GetUtcNow(), memory: false, detail: exception.Message);
+            now = _time.GetUtcNow();
+            asideReason = RegisterStopLocked(now, now, memory: false, detail: exception.Message);
             stopped = DecideLocked(asideReason ?? HostStoppedText);
         }
 
+        ReportStopped(now); // le compte est à jour avant que les cases ne disent la panne
         stopped.Apply();
         ReportAside(asideReason);
     }
@@ -890,6 +900,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
 
         string? asideReason;
         Broadcast stopped;
+        DateTimeOffset now;
         lock (_gate)
         {
             connection.Ended = true;
@@ -903,7 +914,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
                 return;
             }
 
-            var now = _time.GetUtcNow();
+            now = _time.GetUtcNow();
             var memory = usage is { MemoryLimitHit: true };
             _log.Warning($"L'hôte du module s'est arrêté (code {exitCode:X8}){(memory ? ", mémoire dépassée" : "")}.");
             if (connection.Overflowed)
@@ -915,6 +926,7 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
             stopped = DecideLocked(asideReason ?? HostStoppedText);
         }
 
+        ReportStopped(now); // le compte est à jour avant que les cases ne disent la panne
         stopped.Apply();
         ReportAside(asideReason);
     }
@@ -975,6 +987,19 @@ public sealed partial class ModuleHostSupervisor : IAsyncDisposable
     /// du verrou, de sorte qu'un message de panne et l'effacement par un nouvel hôte ne s'inversent jamais.
     /// </summary>
     private Broadcast DecideLocked(string? message) => new([.. _instances], message, ++_messageVersion);
+
+    /// <summary>Dit à celui qui compte les arrêts qu'il y en a un de plus (hors du verrou ; une panne du rappel ne gêne pas la suite).</summary>
+    private void ReportStopped(DateTimeOffset at)
+    {
+        try
+        {
+            _stopped?.Invoke(at);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _log.Error("Le compte des arrêts du module n'a pas pu être tenu : " + ex.Message);
+        }
+    }
 
     private void ReportAside(string? asideReason)
     {

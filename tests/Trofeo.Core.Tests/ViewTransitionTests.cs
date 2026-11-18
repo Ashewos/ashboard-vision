@@ -1,5 +1,6 @@
 using SkiaSharp;
 using Trofeo.Core.Rendering;
+using Trofeo.TestDoubles;
 
 namespace Trofeo.Core.Tests;
 
@@ -165,6 +166,66 @@ public sealed class ViewTransitionTests
         AssertNear(SKColors.Red, from.GetPixel(Width / 2, 50));
         AssertNear(SKColors.Blue, to.GetPixel(Width / 2, 50));
         Assert.Equal(first.Bytes, second.Bytes);
+    }
+
+    [Fact]
+    public void OnAWorkingDevice_DrawsOnTheCardWithoutReportingAnything()
+    {
+        using var from = Marked(edge: 150, lineTop: 40);
+        using var to = Marked(edge: 250, lineTop: 60);
+        var transition = new ViewTransition(from, +1, ViewTransition.Duration);
+        var reasons = new List<string>();
+        transition.GpuFailed += reasons.Add;
+        var device = new FakeGpuDevice();
+
+        using var cpu = transition.Compose(to, Half);
+        using var gpu = transition.Compose(to, Half, device);
+
+        Assert.Equal(1, device.SurfacesCreated);
+        Assert.Empty(reasons);
+        Assert.Equal(cpu.Bytes, gpu.Bytes);
+    }
+
+    [Fact]
+    public void OnALostDevice_ReportsOnce_AndStillGivesTheCpuFrame()
+    {
+        using var from = Marked(edge: 150, lineTop: 40);
+        using var to = Marked(edge: 250, lineTop: 60);
+        var transition = new ViewTransition(from, +1, ViewTransition.Duration);
+        var reasons = new List<string>();
+        transition.GpuFailed += reasons.Add;
+        var device = new FakeGpuDevice();
+        device.Lose("pilote réinitialisé");
+
+        using var cpu = transition.Compose(to, Half);
+        using var first = transition.Compose(to, Half, device);
+        using var second = transition.Compose(to, Half, device);
+
+        Assert.Equal(cpu.Bytes, first.Bytes);
+        Assert.Equal(cpu.Bytes, second.Bytes);
+        Assert.Equal(["pilote réinitialisé"], reasons);
+    }
+
+    [Fact]
+    public void OnARefusedSurface_ReportsOnce_AndStopsTryingTheCard()
+    {
+        // La carte refuse la surface sans être perdue : sans signalement, chaque image retomberait sur le processeur en silence.
+        using var from = Marked(edge: 150, lineTop: 40);
+        using var to = Marked(edge: 250, lineTop: 60);
+        var transition = new ViewTransition(from, +1, ViewTransition.Duration);
+        var reasons = new List<string>();
+        transition.GpuFailed += reasons.Add;
+        var device = new FakeGpuDevice { FailCreate = true };
+
+        using var cpu = transition.Compose(to, Half);
+        using var first = transition.Compose(to, Half, device);
+        using var second = transition.Compose(to, Half, device);
+
+        Assert.Equal(cpu.Bytes, first.Bytes);
+        Assert.Equal(cpu.Bytes, second.Bytes);
+        Assert.Single(reasons);
+        Assert.Equal(1, device.SurfaceRequests);
+        Assert.False(device.IsLost);
     }
 
     private static void AssertNear(SKColor expected, SKColor actual, int tolerance = 3)

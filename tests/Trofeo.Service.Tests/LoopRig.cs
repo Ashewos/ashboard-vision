@@ -57,6 +57,27 @@ internal sealed class TrackedBackground(SKColor color) : IBackground
     }
 }
 
+/// <summary>Une vidéo qui dit où elle en est et sur quelle carte elle se décode.</summary>
+internal sealed class SeekableVideo(TimeSpan position, long? decoderLuid, long? refusedLuid = null) : IBackground, ISeekableBackground
+{
+    private readonly ColorBackground _inner = new(SKColors.Red);
+    public bool Disposed { get; private set; }
+    public TimeSpan Position { get; } = position;
+    public long? DecoderLuid { get; } = decoderLuid;
+    public long? RefusedLuid { get; } = refusedLuid;
+    public bool IsAnimated => true;
+    public SKImage Current => _inner.Current;
+    public int Version => 1;
+    public bool Advance(TimeSpan elapsed) => false;
+    public TimeSpan? UntilNextFrame => TimeSpan.FromMilliseconds(80);
+
+    public void Dispose()
+    {
+        Disposed = true;
+        _inner.Dispose();
+    }
+}
+
 /// <summary>Banc d'essai de la boucle avec deux types de modules (« fake » et « other ») dont les instances sont suivies.</summary>
 internal sealed class LoopRig : IDisposable
 {
@@ -75,7 +96,7 @@ internal sealed class LoopRig : IDisposable
         }
     }
 
-    public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 10, 24, 12, 0, 0, TimeSpan.Zero));
+    public FakeTimeProvider Time { get; }
     public FakeUsbTransportFactory Usb { get; } = new();
     public ScreenDevice Screen { get; }
     public FrameScheduler Scheduler { get; }
@@ -85,16 +106,20 @@ internal sealed class LoopRig : IDisposable
 
     /// <param name="extraFactories">Des types de modules en plus de « fake » et « other ».</param>
     /// <param name="secrets">Le coffre de chaque type ; par défaut un coffre en mémoire neuf à chaque appel.</param>
+    /// <param name="acceleration">Le contrôleur d'accélération, qui reste à l'appelant : à libérer après le banc.</param>
+    /// <param name="time">L'horloge du banc ; à donner aussi au contrôleur pour que leurs temps avancent ensemble.</param>
     public LoopRig(
         DashboardLayout? layout = null, IBackground? background = null, ThemeDefinition? theme = null,
         IReadOnlyList<IModuleFactory>? extraFactories = null, Func<string, ISecretStore>? secrets = null,
-        DisplayedViewStore? viewStore = null)
+        DisplayedViewStore? viewStore = null, AccelerationController? acceleration = null,
+        FakeTimeProvider? time = null)
     {
+        Time = time ?? new FakeTimeProvider(new DateTimeOffset(2026, 10, 24, 12, 0, 0, TimeSpan.Zero));
         Screen = new ScreenDevice(Usb, Time, static () => []);
         Scheduler = new FrameScheduler(Time);
         IModuleFactory[] factories = [new ProbeFactory("fake", this), new ProbeFactory("other", this), .. extraFactories ?? []];
         Registry = new ModuleRegistry(factories, secrets ?? (_ => new FakeSecretStore()));
-        Loop = new DisplayLoop(layout ?? Layout(Place(A, "fake")), Registry, Screen, Scheduler, Time, theme, background, viewStore);
+        Loop = new DisplayLoop(layout ?? Layout(Place(A, "fake")), Registry, Screen, Scheduler, Time, theme, background, viewStore, acceleration);
     }
 
     public static JsonElement Json(string json = "{}") => JsonDocument.Parse(json).RootElement.Clone();

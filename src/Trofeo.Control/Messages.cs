@@ -34,13 +34,34 @@ public sealed record FrameInfo(int FramesSent, double RenderMs, double SendMs);
 
 public sealed record SensorInfo(bool PawnIoInstalled, bool HelperInstalled, bool HelperConnected);
 
+/// <summary>Une carte graphique que l'on peut choisir : ce que l'on enregistre dans les réglages pour la reconnaître, et son nom.</summary>
+public sealed record GpuAdapterEntry(int VendorId, int DeviceId, int SubSysId, string Name);
+
+/// <summary>Le genre de problème de la carte graphique (voir <see cref="AccelerationInfo.ProblemKind"/>).</summary>
+public enum LinkAccelerationProblem { Failure, Slow, Gone }
+
+/// <summary>
+/// L'accélération matérielle vue par la fenêtre. <paramref name="Available"/> : une carte graphique compatible existe (faux : la fenêtre
+/// grise l'interrupteur) ; <paramref name="AdapterName"/> : la carte réellement utilisée (<c>null</c> : le processeur fait tout) ;
+/// <paramref name="Drawing"/> et <paramref name="VideoDecoding"/> : ce qui passe vraiment par la carte ; <paramref name="Problem"/> : une
+/// phrase écrite pour être lue telle quelle (panne, carte absente, carte trop lente), <c>null</c> sans problème ;
+/// <paramref name="Adapters"/> : les cartes que l'on peut choisir, la première étant celle que « Automatique » prend ;
+/// <paramref name="ProblemKind"/> et <paramref name="ProblemAt"/> : le genre du problème (panne, lenteur, carte absente) et l'heure où
+/// la phrase en cours a été posée, <c>null</c> sans problème ou d'un service qui ne les envoie pas.
+/// </summary>
+public sealed record AccelerationInfo(
+    bool Available, bool Enabled, string? AdapterName, bool Drawing, bool VideoDecoding, string? Problem,
+    IReadOnlyList<GpuAdapterEntry> Adapters, LinkAccelerationProblem? ProblemKind = null, DateTimeOffset? ProblemAt = null);
+
 /// <summary>
 /// L'état du service. <paramref name="CurrentViewId"/> est la vue affichée sur l'écran en ce moment ;
 /// <paramref name="RefusedShortcutKeys"/> les touches que Windows a refusées au dernier enregistrement des raccourcis (écrites comme
-/// dans la disposition, par exemple « Ctrl+Alt+Right ») ; vide si tout est enregistré.
+/// dans la disposition, par exemple « Ctrl+Alt+Right ») ; vide si tout est enregistré. <paramref name="Acceleration"/> est l'état de
+/// l'accélération matérielle (<c>null</c> : un service d'avant le protocole 5 ne le dit pas).
 /// </summary>
 public sealed record ServiceStatus(ScreenInfo Screen, bool Emulated, IReadOnlyList<ModuleState> Modules,
-    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors, Guid CurrentViewId, IReadOnlyList<string> RefusedShortcutKeys);
+    ProcessInfo Process, FrameInfo Frames, SensorInfo Sensors, Guid CurrentViewId, IReadOnlyList<string> RefusedShortcutKeys,
+    AccelerationInfo? Acceleration = null);
 
 /// <summary>Ce que le service répond quand on lui demande si une combinaison de touches est libre (<see cref="IControlHandler.TestShortcutKeysAsync"/>).</summary>
 public enum ShortcutKeyState
@@ -91,11 +112,15 @@ public enum LinkCommunityState { Ready, NeedsApproval, Changed, NeedsNewerApp, T
 /// (<see cref="ModuleUpdatePreparation"/>), qui télécharge le paquet. <paramref name="DevFolderPath"/> est le dossier de travail d'un module
 /// du mode développeur (le même texte que dans <see cref="CommunityOverview.DevFolders"/>) ; <c>null</c> pour un module installé.
 /// <paramref name="Shortcuts"/> sont les raccourcis que son manifeste déclare (<c>null</c> : le service ne les a pas dits).
+/// <paramref name="StopCount"/> est le nombre d'arrêts brusques de son hôte depuis le démarrage du service et <paramref name="LastStopAt"/>
+/// l'heure du dernier (<c>0</c> et <c>null</c> : aucun, ou un service qui ne les dit pas) ; <paramref name="SetAsideAt"/> est l'heure de
+/// sa mise de côté (<c>null</c> : il ne l'est pas, ou on ne sait pas quand).
 /// </summary>
 public sealed record CommunityModuleInfo(
     string Id, string Name, string Author, string Description, string? Version, LinkCommunityState State, string? Message,
     IReadOnlyList<ModulePermission> Declared, IReadOnlyList<ModulePermission> Granted, bool FromDevFolder,
-    string? UpdateVersion, string? UpdateNotes, string? DevFolderPath = null, IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null);
+    string? UpdateVersion, string? UpdateNotes, string? DevFolderPath = null, IReadOnlyList<ModuleShortcutInfo>? Shortcuts = null,
+    int StopCount = 0, DateTimeOffset? LastStopAt = null, DateTimeOffset? SetAsideAt = null);
 
 /// <summary>
 /// Ce que le service a lu dans le paquet d'une mise à jour qu'il vient de télécharger et de vérifier (clic sur « Mettre à jour »). Si

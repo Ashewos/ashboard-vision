@@ -31,6 +31,9 @@ public sealed record LoopModule(Guid InstanceId, string TypeId, ModuleStatus Sta
 /// <summary>
 /// L'état de la boucle, lisible depuis n'importe quel fil. <paramref name="Emulated"/> : pas d'écran, mais l'aperçu est
 /// alimenté quand même. <paramref name="RenderMs"/> et <paramref name="SendMs"/> : durées récentes (moyenne glissante) de
-/// rendu (composition et encodage) et d'envoi d'une image.
+/// rendu (composition et encodage) et d'envoi d'une image. <paramref name="Acceleration"/> : l'état de l'accélération matérielle ;
+/// <c>null</c> quand la boucle tourne sans contrôleur (outils, tests).
 /// </summary>
-public sealed record LoopStatus(bool Emulated, IReadOnlyList<LoopModule> Modules, int FramesSent, double RenderMs, double SendMs);
+public sealed record LoopStatus(
+    bool Emulated, IReadOnlyList<LoopModule> Modules, int FramesSent, double RenderMs, double SendMs,
+    AccelerationStatus? Acceleration = null);

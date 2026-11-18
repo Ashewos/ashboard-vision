@@ -233,9 +233,14 @@ public sealed class FakeServiceLink : IServiceLink
     /// <summary>Si posé, la lecture des modules lève cette erreur.</summary>
     public ControlException? CommunityFailure { get; set; }
 
+    /// <summary>Si posé, rend la lecture des modules à la place de <see cref="Community"/> (un test la fait attendre).</summary>
+    public Func<Task<CommunityOverview>>? OnCommunity { get; set; }
+
     public Task<CommunityOverview> GetCommunityAsync()
     {
         ModuleCalls.Add("community");
+        if (OnCommunity is not null)
+            return OnCommunity();
         if (CommunityFailure is not null)
             return Task.FromException<CommunityOverview>(CommunityFailure);
         return Task.FromResult(Community);

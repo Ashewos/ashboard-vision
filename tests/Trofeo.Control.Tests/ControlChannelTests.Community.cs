@@ -188,7 +188,7 @@ public partial class ControlChannelTests
         server.Start();
 
         var ex = await Assert.ThrowsAsync<ProtocolMismatchException>(() => ConnectAsync(name));
-        Assert.Contains("version 4", ex.Message);
+        Assert.Contains($"version {ControlPipe.ProtocolVersion}", ex.Message);
         Assert.Contains("version 3", ex.Message);
     }
 
@@ -249,6 +249,46 @@ public partial class ControlChannelTests
                 module.UpdateVersion, module.UpdateNotes, module.DevFolderPath));
         Assert.Equal(expected.Declared, module.Declared);
         Assert.Equal(expected.Granted, module.Granted);
+    }
+
+    [Fact]
+    public async Task CommunityModuleInfo_RoundTripsStops()
+    {
+        var stoppedAt = new DateTimeOffset(2026, 11, 17, 9, 30, 15, TimeSpan.Zero);
+        var asideAt = new DateTimeOffset(2026, 11, 17, 9, 31, 0, TimeSpan.Zero);
+        var handler = new FakeHandler
+        {
+            CommunityToReturn = new CommunityOverview(
+                [SampleModule() with { StopCount = 3, LastStopAt = stoppedAt, SetAsideAt = asideAt }], @"C:\Modules", false, [], false),
+        };
+        var (server, client) = await StartAsync(handler);
+        using var _ = server;
+        await using var __ = client;
+
+        var module = Assert.Single((await client.GetCommunityAsync(CancellationToken.None)).Modules);
+
+        Assert.Equal((3, stoppedAt, asideAt), (module.StopCount, module.LastStopAt, module.SetAsideAt));
+    }
+
+    [Fact]
+    public async Task CommunityModuleInfo_FromAServiceThatDoesNotSendStops_GivesZeroAndNull()
+    {
+        var name = NewPipeName();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await using var server = await ServeRawAsync(name, (type, id) => type switch
+        {
+            "hello" => Reply(id, "hello", "\"welcome\":{\"serviceVersion\":\"1.0.0\",\"protocolVersion\":" + ControlPipe.ProtocolVersion + ",\"types\":[]}"),
+            _ => Reply(id, "community",
+                "\"community\":{\"modules\":[{\"id\":\"alex.demo\",\"name\":\"Démo\",\"author\":\"Alex\",\"description\":\"D\",\"version\":\"1.0.0\","
+                + "\"state\":\"SetAside\",\"declared\":[],\"granted\":[],\"fromDevFolder\":false}],"
+                + "\"modulesRoot\":\"D:/Modules\",\"developerMode\":false,\"devFolders\":[],\"storeTampered\":false}"),
+        }, cts.Token);
+        await using var client = await ConnectAsync(name);
+
+        var module = Assert.Single((await client.GetCommunityAsync(cts.Token)).Modules);
+
+        Assert.Equal(LinkCommunityState.SetAside, module.State);
+        Assert.Equal((0, (DateTimeOffset?)null, (DateTimeOffset?)null), (module.StopCount, module.LastStopAt, module.SetAsideAt));
     }
 
     [Fact]

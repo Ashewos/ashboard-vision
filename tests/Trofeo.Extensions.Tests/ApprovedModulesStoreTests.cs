@@ -61,6 +61,65 @@ public sealed class ApprovedModulesStoreTests : IDisposable
     }
 
     [Fact]
+    public void SaveThenLoad_RoundTripsTheSetAsideTime()
+    {
+        var store = NewStore();
+        var at = new DateTimeOffset(2026, 11, 17, 9, 30, 15, TimeSpan.Zero);
+        var module = Sample().Modules[1] with { SetAsideAt = at };
+
+        store.Save(Sample() with { Modules = [Sample().Modules[0], module] });
+        var load = store.Load();
+
+        Assert.False(load.Tampered);
+        Assert.Null(load.Modules.Modules[0].SetAsideAt);
+        Assert.Equal(at, load.Modules.Modules[1].SetAsideAt);
+        Assert.Empty(_warnings);
+    }
+
+    [Fact]
+    public void Store_LegacyFileWithoutSetAsideAt_LoadsAndVerifies()
+    {
+        // Un fichier écrit avant ce champ : son « data » n'a pas de setAsideAt, et son sceau couvre ce texte tel quel.
+        var store = NewStore();
+        store.Save(ApprovedModules.Empty); // crée la clé
+        var key = System.Security.Cryptography.ProtectedData.Unprotect(
+            File.ReadAllBytes(KeyPath), ApprovedModulesStore.Entropy, System.Security.Cryptography.DataProtectionScope.CurrentUser);
+        const string data = """
+            {
+              "modulesRoot": "D:/Modules",
+              "developerMode": false,
+              "devFolders": [],
+              "modules": [
+                {
+                  "id": "alex.demo",
+                  "version": "0.1.0",
+                  "directory": "D:/Modules/alex.demo/0.1.0",
+                  "contentHash": "sha256:def",
+                  "granted": [],
+                  "setAsideReason": "Trop de pannes",
+                  "repository": null
+                }
+              ]
+            }
+            """;
+        var mac = Convert.ToBase64String(System.Security.Cryptography.HMACSHA256.HashData(key, System.Text.Encoding.UTF8.GetBytes(data)));
+        File.WriteAllText(FilePath, "{\n  \"data\": " + data + ",\n  \"mac\": \"" + mac + "\"\n}\n");
+
+        var load = store.Load();
+
+        Assert.False(load.Tampered);
+        Assert.False(load.Unreadable);
+        var module = Assert.Single(load.Modules.Modules);
+        Assert.Equal("Trop de pannes", module.SetAsideReason);
+        Assert.Null(module.SetAsideAt);
+        Assert.Empty(_warnings);
+
+        // Réécrite, la liste garde son contenu et reste valide (le sceau est refait sur le nouveau texte).
+        store.Save(load.Modules);
+        Assert.False(store.Load().Tampered);
+    }
+
+    [Fact]
     public void Save_WritesPermissionsAsManifestNames()
     {
         NewStore().Save(Sample());

@@ -2,6 +2,54 @@
 
 Les versions sont numérotées selon [SemVer](https://semver.org/lang/fr/) : les bêtas s'écrivent `1.0.0-beta.N`, les stables `1.0.0`, `1.1.0`, etc. Le texte de chaque section sert de notes à la version GitHub du même numéro.
 
+## 1.2.0-beta.3
+
+Troisième bêta de la 1.2.0 : le logiciel peut maintenant **dessiner l'image et décoder les vidéos avec la carte graphique**, par Direct3D 12, quelle que soit la marque de la carte. C'est ce qui doit alléger le thème Liquid Glass avancé sur un fond animé. Les vues, les noms de cases, les raccourcis et les thèmes des bêtas précédentes sont inchangés.
+
+### L'accélération matérielle
+
+- Le **dessin de l'image** passe sur la carte pour les quatre thèmes : fond (image, GIF, Aurore, vidéo), panneaux, modules, verre de Liquid Glass et de Liquid Glass avancé (ombres et pastilles comprises), glissement entre les vues avec son flou. Le verre avancé se calcule alors sur la carte, au lieu d'être réparti sur les cœurs du processeur.
+- Le **décodage des vidéos** passe aussi sur la carte (Media Foundation, sur la même carte que le dessin). Quand les deux sont activés, l'image décodée va au dessin sans repasser par le processeur.
+- La compression JPEG de l'image envoyée à l'écran, elle, reste sur le processeur : elle coûte peu.
+- C'est une API standard de Windows, pas du code propre à un fabricant : Intel, NVIDIA, AMD ou autre, toute carte compatible Direct3D 12 convient (niveau de fonctionnalités 11_0 au moins).
+- Sans carte compatible (machine virtuelle, vieux PC, pilote de base), rien ne change : tout reste calculé sur le processeur, comme avant.
+- Sans accélération, Classique, Liquid Glass, Pixel et Liquid Glass avancé restent identiques au pixel près à la beta.2. Sur la carte, l'image ne diffère de celle du processeur que de quelques niveaux de couleur sur 255 : ça ne se voit pas.
+
+### La section « Accélération matérielle » dans Paramètres
+
+- Dans **Paramètres**, une nouvelle section, après « Images par seconde » : l'accélération est activée par défaut.
+- L'interrupteur **Utiliser la carte graphique** coupe ou rallume tout. Coupé, la liste et les cases sont grisées et tout se calcule sur le processeur.
+- La liste **Carte** propose « Automatique » suivi de chaque carte trouvée. **Automatique** prend la première carte matérielle dans l'ordre « économie d'énergie » de Windows, en général **la carte intégrée** : la carte dédiée n'est pas tenue éveillée pour rien.
+- Deux cases : **Dessin de l'image (thèmes, verre, fonds animés)** et **Décodage des vidéos**. Tu peux les cocher dans toutes les combinaisons.
+- Une ligne d'état dit ce que le logiciel fait vraiment (« Sur Intel(R) Graphics : dessin et vidéos. »). En cas de problème, une phrase en couleur d'avertissement en donne la raison. Sans carte compatible, l'interrupteur est grisé : « Aucune carte graphique compatible : tout se calcule sur le processeur. »
+- Les changements s'appliquent tout de suite, sans redémarrer le service. Si une vidéo joue, elle est rouverte avec le nouveau décodeur et reprend à sa position, sans image noire entre les deux.
+- Une carte que tu as choisie est retrouvée d'un démarrage à l'autre par son fabricant, son modèle et son nom. Si elle a disparu (carte retirée, `layout.json` copié d'un autre PC), le logiciel prend Automatique et te le dit dans la fenêtre.
+- Le canal entre la fenêtre et le service passe au **protocole 5** : la fenêtre et le service doivent être de la même version, ce qui est toujours le cas avec l'installateur.
+
+### Le repli sur le processeur
+
+- Si la carte a un problème (pilote mis à jour ou planté, carte désactivée ou retirée), l'image en cours est **refaite sur le processeur** : l'écran ne reste jamais noir ni figé. La fenêtre le dit, avec la raison. Le dessin seul se replie : les vidéos gardent la carte, sauf si c'est leur décodage qui échoue.
+- Le logiciel **retente la carte toutes les 5 minutes**, au plus 3 fois de suite. Le compte repart de zéro après une heure sans problème. Un changement des réglages relance aussi un essai.
+- En **Automatique**, une carte qui met plus de 83 ms par image en moyenne pendant 10 s (le temps d'une image à 12 images par seconde) est jugée trop lente : le logiciel passe à la carte suivante s'il y en a une, puis le dessin passe au processeur (les vidéos gardent la carte). Une carte que tu as choisie toi-même est toujours gardée ; la fenêtre signale seulement qu'elle est lente.
+- Une vidéo que la carte refuse de décoder (format non pris en charge) est décodée par le processeur, sans toucher au dessin, jusqu'à ce que tu changes de carte ; la ligne d'état ne parle alors plus de vidéos sur la carte.
+
+### Des réglages propres à ce PC
+
+- Les réglages sont dans le champ `Acceleration` de `layout.json` (voir `docs/utilisation-avancee.md`). Un fichier qui n'en a pas prend les valeurs par défaut : activée, carte Automatique, dessin et décodage cochés.
+- Ils sont propres à la machine : **« Exporter la disposition » ne les emporte pas**, et importer une disposition garde les réglages d'accélération de ce PC.
+
+### Ce que ça change pour le processeur
+
+- Le coût du thème Liquid Glass avancé sur un fond animé avec l'accélération est **à mesurer** sur le PC d'Alex (pour mémoire : environ 14,5 % du processeur sans accélération, à la beta.2). Les chiffres seront ajoutés ici.
+
+### La cloche des notifications
+
+- Une **cloche dans l'en-tête de la fenêtre** rassemble les mises à jour (le logiciel et les modules complémentaires) et les pannes (module arrêté brusquement ou mis de côté, carte graphique en panne). Chaque notification se supprime d'une croix, et revient si l'événement est nouveau (une autre version qui sort, une deuxième panne).
+
+### Licences
+
+- Le dessin et le décodage sur la carte passent par [Vortice.Direct3D12, Vortice.DXGI et Vortice.Direct3D11](https://github.com/amerkoleci/Vortice.Windows) (MIT), cités dans le README, section « Licences tierces », et dans le fichier de licences copié à côté du programme.
+
 ## 1.2.0-beta.2
 
 Deuxième bêta de la 1.2.0 : un quatrième thème, **Liquid Glass avancé**, dont le verre courbe vraiment le fond sur ses bords. Les vues, les noms de cases et les raccourcis de la beta.1 sont inchangés.

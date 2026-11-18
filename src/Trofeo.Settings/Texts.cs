@@ -408,6 +408,30 @@ public static class Texts
     /// <summary>Valeur du curseur au maximum.</summary>
     public static string SettingsFpsMax => Get();
     /// <summary>Titre de section.</summary>
+    public static string SettingsAcceleration => Get();
+    /// <summary>Interrupteur général de l'accélération.</summary>
+    public static string AccelerationUse => Get();
+    /// <summary>Nom de la liste des cartes graphiques.</summary>
+    public static string AccelerationAdapter => Get();
+    /// <summary>Choix de la carte quand le service n'en a nommé aucune.</summary>
+    public static string AccelerationAuto => Get();
+    /// <summary>Choix de la carte ; {0} : la carte que le choix automatique prend.</summary>
+    public static string AccelerationAutoNamed => Get();
+    /// <summary>Case : le dessin passe par la carte graphique.</summary>
+    public static string AccelerationDrawing => Get();
+    /// <summary>Case : le décodage des vidéos passe par la carte graphique.</summary>
+    public static string AccelerationVideo => Get();
+    /// <summary>État ; {0} : la carte utilisée.</summary>
+    public static string AccelerationStateBoth => Get();
+    /// <summary>État ; {0} : la carte utilisée.</summary>
+    public static string AccelerationStateDrawing => Get();
+    /// <summary>État ; {0} : la carte utilisée.</summary>
+    public static string AccelerationStateVideo => Get();
+    /// <summary>État : la carte ne sert à rien en ce moment.</summary>
+    public static string AccelerationStateCpu => Get();
+    /// <summary>Aucune carte Direct3D 12 : l'interrupteur est grisé.</summary>
+    public static string AccelerationNone => Get();
+    /// <summary>Titre de section.</summary>
     public static string SettingsPreview => Get();
     /// <summary>Interrupteur.</summary>
     public static string SettingsRealTime => Get();
@@ -737,4 +761,28 @@ public static class Texts
     public static string ConsumptionShow => Get();
     /// <summary>Quand le service ne répond pas à la lecture de la consommation.</summary>
     public static string ConsumptionFailed => Get();
+    /// <summary>Cloche : une mise à jour du logiciel est proposée. {0} : la version.</summary>
+    public static string NotificationAppUpdate => Get();
+    /// <summary>Cloche : une mise à jour d'un module complémentaire est proposée. {0} : le module, {1} : la version.</summary>
+    public static string NotificationModuleUpdate => Get();
+    /// <summary>Cloche : un module complémentaire s'est arrêté brusquement (une fois). {0} : le module.</summary>
+    public static string NotificationModuleStopped => Get();
+    /// <summary>Cloche : un module complémentaire s'est arrêté brusquement plusieurs fois. {0} : le module, {1} : le nombre d'arrêts.</summary>
+    public static string NotificationModuleStoppedTimes => Get();
+    /// <summary>Cloche : un module complémentaire a été mis de côté. {0} : le module.</summary>
+    public static string NotificationModuleSetAside => Get();
+    /// <summary>Cloche : lien vers la mise à jour du logiciel (onglet Paramètres).</summary>
+    public static string NotificationLinkUpdate => Get();
+    /// <summary>Cloche : lien vers la section des modules complémentaires (onglet Paramètres).</summary>
+    public static string NotificationLinkModule => Get();
+    /// <summary>Cloche : lien vers l'onglet Paramètres.</summary>
+    public static string NotificationLinkSettings => Get();
+    /// <summary>Cloche de l'en-tête : bulle d'aide et nom pour l'accessibilité.</summary>
+    public static string NotificationsName => Get();
+    /// <summary>Cloche de l'en-tête : nom pour l'accessibilité quand il y a des notifications ({0} : leur nombre).</summary>
+    public static string NotificationsNameCount => Get();
+    /// <summary>Cloche : nom (et bulle d'aide) de la croix d'une notification.</summary>
+    public static string NotificationDismiss => Get();
+    /// <summary>Cloche : le panneau quand il n'y a aucune notification.</summary>
+    public static string NotificationsEmpty => Get();
 }

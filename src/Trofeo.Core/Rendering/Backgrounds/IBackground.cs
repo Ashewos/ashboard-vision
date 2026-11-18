@@ -24,6 +24,43 @@ public interface IBackground : IDisposable
     TimeSpan? UntilNextFrame { get; }
 }
 
+/// <summary>
+/// Un fond qui sait où il en est et qui l'a décodé : le service peut le rouvrir à la même position quand la carte qui décode
+/// ses images change (réglages, panne de la carte, nouvel essai).
+/// </summary>
+public interface ISeekableBackground
+{
+    /// <summary>L'instant de la vidéo montré en ce moment, depuis son début : la position où reprendre quand on la rouvre.</summary>
+    TimeSpan Position { get; }
+
+    /// <summary>
+    /// L'identifiant (LUID) de la carte graphique qui décode les images ; <c>null</c> : le processeur les décode.
+    /// Seule la carte qui décode réellement compte : un décodage par la carte qui a échoué à l'ouverture donne <c>null</c>.
+    /// </summary>
+    long? DecoderLuid { get; }
+
+    /// <summary>
+    /// La carte qui a refusé de décoder cette vidéo (à l'ouverture, ou en cours de lecture) et que le processeur a remplacée ;
+    /// <c>null</c> si aucune. Tant que la carte voulue est celle-là, rouvrir la vidéo ne servirait qu'à échouer de nouveau : le service
+    /// ne la rouvre que si la carte voulue change.
+    /// </summary>
+    long? RefusedLuid { get; }
+}
+
+/// <summary>
+/// Un fond dont l'image est déjà sur la carte graphique (vidéo décodée par la carte) : le compositeur la prend telle quelle,
+/// sans la rapatrier sur le processeur puis la renvoyer.
+/// </summary>
+public interface IGpuFrameSource
+{
+    /// <summary>
+    /// L'image courante du fond sur <paramref name="device"/>, recadrée comme <see cref="IBackground.Current"/>, ou <c>null</c> si elle
+    /// n'est pas sur cette carte (le compositeur prend alors <see cref="IBackground.Current"/>). L'appelant en devient propriétaire :
+    /// il la libère avant l'appareil. Appelée depuis le fil de l'affichage, comme tout ce que fait un fond.
+    /// </summary>
+    SKImage? TryGetGpuFrame(IGpuDevice device);
+}
+
 /// <summary>Aides communes aux fonds : recadrage, décodage d'une image fixe, textes d'avertissement.</summary>
 internal static class BackgroundSupport
 {
@@ -82,6 +119,19 @@ internal static class BackgroundSupport
         canvas.Concat(in matrix);
         canvas.DrawImage(source, SKRect.Create(0, 0, source.Width, source.Height), Sampling);
         canvas.Restore();
+    }
+
+    /// <summary>
+    /// Comme <see cref="DrawCover(SKCanvas, SKImage, SKEncodedOrigin)"/> pour la partie <paramref name="area"/> de
+    /// <paramref name="source"/> seulement (le reste est du bourrage de décodeur) : le recadrage d'une image qui est déjà sur
+    /// la carte, qu'on ne peut pas tailler sans la copier.
+    /// </summary>
+    public static void DrawCover(SKCanvas canvas, SKImage source, SKRectI area)
+    {
+        float scale = Math.Max((float)GridGeometry.Width / area.Width, (float)GridGeometry.Height / area.Height);
+        float w = area.Width * scale, h = area.Height * scale;
+        float left = (GridGeometry.Width - w) / 2f, top = (GridGeometry.Height - h) / 2f;
+        canvas.DrawImage(source, SKRect.Create(area.Left, area.Top, area.Width, area.Height), SKRect.Create(left, top, w, h), Sampling, null);
     }
 
     /// <summary>Vrai si l'orientation échange la largeur et la hauteur (rotation d'un quart de tour, ou transposition).</summary>

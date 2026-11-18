@@ -5,4 +5,9 @@
     <ProjectReference Include="..\Trofeo.TestDoubles\Trofeo.TestDoubles.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Le petit écrivain de GIF des tests de fonds animés de Core, partagé tel quel pour GpuCompositionTests. -->
+    <Compile Include="..\Trofeo.Core.Tests\TinyGif.cs" Link="TinyGif.cs" />
+  </ItemGroup>
+
 </Project>

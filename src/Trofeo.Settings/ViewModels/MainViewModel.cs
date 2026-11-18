@@ -32,6 +32,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         SettingsTab = new SettingsTabViewModel(
             link, Session, PreferencesStore, system ?? SystemServices.None, picker, time);
         Pill = new ScreenPillViewModel(link);
+        Notifications = new NotificationsViewModel(link, PreferencesStore, time ?? TimeProvider.System);
+        Notifications.Navigate += OnNotificationNavigate;
         FirstRun = new FirstRunViewModel(link, Session, PreferencesStore, SettingsTab, Pill, secrets ?? new NoSecretAccess(), time);
         _isFirstRunVisible = !preferences.FirstRunDone;
         Document = document;
@@ -67,8 +69,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>La pastille de l'écran de l'en-tête (la première étape de l'assistant montre la même).</summary>
     public ScreenPillViewModel Pill { get; }
 
+    /// <summary>La cloche de l'en-tête : les mises à jour et les pannes, avec leur croix.</summary>
+    public NotificationsViewModel Notifications { get; }
+
     /// <summary>L'assistant de première ouverture.</summary>
     public FirstRunViewModel FirstRun { get; }
+
+    // Le lien d'une notification : l'onglet Paramètres s'ouvre (et, pour un module complémentaire, sa section vient à l'écran). Si l'onglet
+    // ne se choisit pas (l'assistant de première ouverture est là), rien d'autre ne se passe.
+    private void OnNotificationNavigate(NotificationTarget target)
+    {
+        if (!ShowsTabs)
+            return;
+        SelectedTab = SettingsTab;
+        if (!ReferenceEquals(SelectedTab, SettingsTab))
+            return;
+        if (target == NotificationTarget.CommunityModules)
+            SettingsTab.RequestCommunityView();
+    }
 
     /// <summary>L'assistant remplace les onglets : vrai tant que <see cref="EditorPreferences.FirstRunDone"/> est faux. « Terminer » le ferme, « Relancer l'assistant » (Paramètres) le rouvre.</summary>
     [ObservableProperty]
@@ -309,6 +327,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _link.FrameReceived -= ShowFrame;
         Session.Changed -= RefreshBanner;
         PreferencesStore.Changed -= OnPreferencesChanged;
+        Notifications.Navigate -= OnNotificationNavigate;
+        Notifications.Dispose();
         FirstRun.Dispose();
         LayoutTab.Dispose();
         AppearanceTab.Dispose();

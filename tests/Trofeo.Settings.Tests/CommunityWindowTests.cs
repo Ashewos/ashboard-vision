@@ -54,8 +54,8 @@ public sealed class CommunityWindowTests : IDisposable
 
         using var model = NewModel();
 
-        Assert.True(model.SettingsTab.Community.ShowsDeveloperBanner);   // une seule lecture à l'ouverture, pour le bandeau
-        Assert.Equal(1, _link.ModuleCalls.Count(c => c == "community"));
+        Assert.True(model.SettingsTab.Community.ShowsDeveloperBanner);   // une seule lecture à l'ouverture pour le bandeau, et une pour la cloche
+        Assert.Equal(2, _link.ModuleCalls.Count(c => c == "community"));
         Assert.Equal(0, Reads);
         await Task.CompletedTask;
     }
@@ -70,10 +70,10 @@ public sealed class CommunityWindowTests : IDisposable
         Assert.DoesNotContain("community", _link.ModuleCalls);
 
         _link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());
-        _link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());   // l'état revient chaque seconde : une seule lecture
+        _link.Set(LinkState.Connected, SampleData.Welcome(), SampleData.Status());   // l'état revient chaque seconde : une seule lecture chacun
 
         Assert.True(model.SettingsTab.Community.ShowsDeveloperBanner);
-        Assert.Equal(1, _link.ModuleCalls.Count(c => c == "community"));
+        Assert.Equal(2, _link.ModuleCalls.Count(c => c == "community"));             // celle du bandeau et celle de la cloche
     }
 
     [AvaloniaFact]

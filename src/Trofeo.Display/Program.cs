@@ -8,6 +8,7 @@ using Trofeo.Core.Rendering;
 using Trofeo.Core.Secrets;
 using Trofeo.Core.Shortcuts;
 using Trofeo.Device;
+using Trofeo.Display.Gpu;
 using Trofeo.Display.Video;
 using Trofeo.Distribution;
 using Trofeo.Extensions;
@@ -207,6 +208,17 @@ static class Program
         };
 
         using var scheduler = new FrameScheduler(TimeProvider.System); // déclaré avant la boucle : libéré après elle
+
+        // L'accélération matérielle : choisit la carte et garde l'appareil de dessin. Déclarée avant la boucle (libérée après elle,
+        // dont les compositeurs se servent de l'appareil) ; les réglages sont appliqués ici, avant le fond, puis à chaque rechargement.
+        using var acceleration = new AccelerationController(new D3D12GpuDeviceFactory(), TimeProvider.System, Warn);
+        acceleration.Apply(layout.Acceleration);
+        var accelerationStatus = acceleration.Status;
+        Trace.TraceInformation(
+            accelerationStatus.Adapter is { } card
+                ? $"Accélération matérielle : « {card.Id.Name} » (dessin {(accelerationStatus.Drawing ? "sur la carte" : "sur le processeur")}, vidéos {(accelerationStatus.VideoDecoding ? "sur la carte" : "sur le processeur")})."
+                : $"Accélération matérielle : processeur seul ({(accelerationStatus.Available ? "coupée ou en échec" : "aucune carte graphique compatible")}).");
+
         // Apparence et fond : ce que la disposition demande, au démarrage comme à chaque rechargement. Les avertissements
         // vont au journal et au rechargement en cours.
         var buildWarnings = new WarningSink();
@@ -215,9 +227,17 @@ static class Program
             Warn(message);
             buildWarnings.Warn(message);
         };
-        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current) =>
-            LoopConfigFactory.Build(
-                next, new SkiaSystemFonts(), path => MediaFoundationBackground.TryOpen(path, warnAndCollect), warnAndCollect, current);
+        // La vidéo se décode sur la carte que les réglages de cette disposition donneraient (sans rien changer au contrôleur : il n'est
+        // appliqué que par la boucle). Une vidéo gardée qui se décode ailleurs est rouverte à sa position, une fois ; le rechargement que
+        // lève ensuite le contrôleur la trouve déjà sur la bonne carte.
+        LoopConfig BuildConfig(DashboardLayout next, LoopConfig? current)
+        {
+            var videoCard = acceleration.VideoAdapterFor(next.Acceleration);
+            return LoopConfigFactory.Build(
+                next, new SkiaSystemFonts(),
+                (path, startAt) => MediaFoundationBackground.TryOpen(path, warnAndCollect, new VideoDecodeOptions(videoCard, startAt)),
+                warnAndCollect, current, videoCard?.Luid);
+        }
 
         // Les hôtes des modules complémentaires suivent le plafond d'images et l'apparence de la disposition : au démarrage ici, puis
         // à chaque rechargement par le handler (BuildConfig ne tourne que si l'apparence change).
@@ -230,7 +250,8 @@ static class Program
 
         // La boucle devient propriétaire du fond et le libère après elle.
         var viewStore = new DisplayedViewStore(Path.Combine(AppPaths.SettingsDir, "vue-affichee.json"), TimeProvider.System);
-        using var loop = new DisplayLoop(layout, registry, screen, scheduler, TimeProvider.System, theme, config.Background, viewStore);
+        using var loop = new DisplayLoop(
+            layout, registry, screen, scheduler, TimeProvider.System, theme, config.Background, viewStore, acceleration);
         using var cts = new CancellationTokenSource();
         loop.Start(cts.Token);
 
@@ -262,7 +283,15 @@ static class Program
             var meter = new ProcessMeter(SampleProcess, TimeProvider.System, Environment.ProcessorCount);
             using var handler = new ServiceControlHandler(
                 store, loop, registry, () => ServiceControlHandler.ToScreenInfo(screen.Status), () => ReadSensors(sensorPipe),
-                meter, BuildConfig, hotkeys?.Host, community, buildWarnings, config, updates);
+                meter, BuildConfig, hotkeys?.Host, community, buildWarnings, config, updates,
+                videoDecoder: next => acceleration.VideoAdapterFor(next.Acceleration)?.Luid,
+                acceleration: () => acceleration.Status);
+
+            // La carte des vidéos change (panne, nouvel essai, carte trop lente) : la disposition est relue comme pour un rechargement
+            // demandé par la fenêtre. Sur un autre fil : l'événement peut venir du fil de la boucle, qui ne doit pas s'y attendre.
+            Action onChoiceChanged = () => _ = Task.Run(() => ReloadAfterAccelerationChangeAsync(handler));
+            acceleration.EffectiveChoiceChanged += onChoiceChanged;
+            using var choiceSubscription = new ActionDisposable(() => acceleration.EffectiveChoiceChanged -= onChoiceChanged);
             using var control = StartControl(handler);
 
             if (installed is { } current) StartUserSetup(current, cts.Token);
@@ -335,6 +364,26 @@ static class Program
             window?.Dispose();
             return null;
         }
+    }
+
+    /// <summary>Relit la disposition après un changement de carte graphique ; une panne ici est journalisée, jamais levée.</summary>
+    private static async Task ReloadAfterAccelerationChangeAsync(ServiceControlHandler handler)
+    {
+        try
+        {
+            var result = await handler.ReloadAsync(CancellationToken.None).ConfigureAwait(false);
+            if (!result.Applied) Trace.TraceWarning($"Accélération matérielle : la disposition n'a pas été relue : {result.Error}");
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceError($"Accélération matérielle : la disposition n'a pas pu être relue : {ex}");
+        }
+    }
+
+    /// <summary>Fait quelque chose à la libération (ici : se désabonner avant que le gestionnaire soit libéré).</summary>
+    private sealed class ActionDisposable(Action onDispose) : IDisposable
+    {
+        public void Dispose() => onDispose();
     }
 
     /// <summary>Libère le routeur (qui retire les raccourcis) avant la fenêtre qui les portait.</summary>

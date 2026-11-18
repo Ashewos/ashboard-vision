@@ -112,6 +112,32 @@ public sealed partial class ServiceControlHandlerTests
     }
 
     [Fact]
+    public void ToModuleInfo_CarriesStopsAndSetAsideAt()
+    {
+        using var rig = new Rig();
+        var stoppedAt = new DateTimeOffset(2026, 11, 17, 9, 30, 0, TimeSpan.Zero);
+        var asideAt = new DateTimeOffset(2026, 11, 17, 9, 31, 0, TimeSpan.Zero);
+        var approval = new ApprovedModule("alex.demo", "1.1.0", @"C:\Modules\alex.demo\1.1.0", "hash", Internet, "Mis de côté", "alex/demo", asideAt);
+        rig.Community.Entries =
+        [
+            Entry("alex.demo", CommunityState.SetAside, "Mis de côté", approval: approval),
+            Entry("alex.dev", CommunityState.SetAside, "Mis de côté", dev: true, folder: @"C:\dev\mon-module"),
+            Entry("alex.calme"),
+        ];
+        rig.Community.Stops["alex.demo"] = new ModuleStops(3, stoppedAt);
+        rig.Community.Stops["alex.dev"] = new ModuleStops(2, stoppedAt);
+
+        var modules = rig.Handler.GetCommunity().Modules;
+
+        var installed = modules.Single(m => m.Id == "alex.demo");
+        Assert.Equal((3, stoppedAt, asideAt), (installed.StopCount, installed.LastStopAt, installed.SetAsideAt));
+        var dev = modules.Single(m => m.Id == "alex.dev"); // sans validation : la mise de côté est datée de son dernier arrêt
+        Assert.Equal((2, stoppedAt, stoppedAt), (dev.StopCount, dev.LastStopAt, dev.SetAsideAt));
+        var calm = modules.Single(m => m.Id == "alex.calme");
+        Assert.Equal((0, (DateTimeOffset?)null, (DateTimeOffset?)null), (calm.StopCount, calm.LastStopAt, calm.SetAsideAt));
+    }
+
+    [Fact]
     public void GetCommunity_NoUpdateOffered_NothingIsProposed()
     {
         using var rig = new Rig();

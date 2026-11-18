@@ -38,10 +38,20 @@ namespace Trofeo.Display;
 /// son fond (une vidéo ne repart pas de zéro, une image n'est pas rouverte).
 /// </param>
 /// <param name="updates">Les mises à jour ; <c>null</c> : le service tourne sans (l'état reste « inconnu » et rien ne s'installe).</param>
+/// <param name="videoDecoder">
+/// Le LUID de la carte qui doit décoder la vidéo de cette disposition (<c>null</c> : le processeur). Quand la vidéo en place se décode
+/// ailleurs (réglages de l'accélération changés, carte tombée en panne), le rechargement refait le fond même si l'apparence est la
+/// même. <c>null</c> (le délégué) : la carte des vidéos ne compte pas.
+/// </param>
+/// <param name="acceleration">
+/// L'état de l'accélération matérielle (celui de <see cref="AccelerationController.Status"/>) ; <c>null</c> : le service ne dit rien
+/// de l'accélération à la fenêtre.
+/// </param>
 public sealed class ServiceControlHandler(
     LayoutStore store, DisplayLoop loop, ModuleRegistry registry, Func<ScreenInfo> screen, Func<SensorInfo> sensors,
     ProcessMeter meter, Func<DashboardLayout, LoopConfig?, LoopConfig> buildConfig, IHotkeyHost? hotkeys, ICommunityModules community,
-    WarningSink? buildWarnings = null, LoopConfig? initialConfig = null, UpdateService? updates = null)
+    WarningSink? buildWarnings = null, LoopConfig? initialConfig = null, UpdateService? updates = null,
+    Func<DashboardLayout, long?>? videoDecoder = null, Func<AccelerationStatus>? acceleration = null)
     : IControlHandler, IDisposable
 {
     /// <summary>Le plafond d'images de la boucle (<see cref="DisplayLoop"/>) : un hôte de module n'a aucune raison d'en écrire davantage.</summary>
@@ -99,8 +109,21 @@ public sealed class ServiceControlHandler(
         return new ServiceStatus(
             screen(), status.Emulated, modules, meter.Read(),
             new FrameInfo(status.FramesSent, status.RenderMs, status.SendMs), sensors(), loop.CurrentViewId,
-            hotkeys?.RefusedKeys ?? []);
+            hotkeys?.RefusedKeys ?? [], acceleration is null ? null : ToAccelerationInfo(acceleration()));
     }
+
+    /// <summary>L'état de l'accélération tel que la fenêtre de réglage le connaît : les cartes ne gardent que ce qu'on enregistre et leur nom.</summary>
+    public static AccelerationInfo ToAccelerationInfo(AccelerationStatus status) => new(
+        status.Available, status.Enabled, status.Adapter?.Id.Name, status.Drawing, status.VideoDecoding, status.Problem,
+        status.Adapters.Select(a => new GpuAdapterEntry(a.Id.VendorId, a.Id.DeviceId, a.Id.SubSysId, a.Id.Name)).ToList(),
+        status.ProblemKind switch
+        {
+            AccelerationProblemKind.Failure => LinkAccelerationProblem.Failure,
+            AccelerationProblemKind.Slow => LinkAccelerationProblem.Slow,
+            AccelerationProblemKind.Gone => LinkAccelerationProblem.Gone,
+            _ => null,
+        },
+        status.ProblemAt);
 
     /// <summary>L'état du lien avec l'écran tel que la fenêtre de réglage le connaît.</summary>
     public static ScreenInfo ToScreenInfo(ScreenStatus status) => new(
@@ -125,9 +148,11 @@ public sealed class ServiceControlHandler(
             var warnings = new List<string>(loaded.Warnings);
 
             LoopConfig config;
-            if (_applied is { } applied && Equals(layout.Appearance, _appliedAppearance))
+            if (_applied is { } applied && Equals(layout.Appearance, _appliedAppearance)
+                && (videoDecoder is null || !LoopConfigFactory.DecoderIsStale(applied, videoDecoder(layout), out _)))
             {
-                // Même apparence : mêmes instances de thème et de fond, la boucle n'en change aucun.
+                // Même apparence : mêmes instances de thème et de fond, la boucle n'en change aucun (sauf une vidéo qui se décode
+                // sur une autre carte que celle voulue : elle est rouverte plus bas).
                 config = new LoopConfig(layout, applied.Theme, applied.Background)
                 {
                     BackgroundWarnings = applied.BackgroundWarnings,
@@ -330,12 +355,17 @@ public sealed class ServiceControlHandler(
     {
         var manifest = entry.Manifest;
         var update = community.UpdateFor(entry.Id);
+        var stops = community.StopsFor(entry.Id);
+        // Un module mis de côté sans validation (dossier de développement) n'a pas d'heure enregistrée : c'est celle de son dernier arrêt.
+        var setAsideAt = entry.Approval is { } approval ? approval.SetAsideAt
+            : entry.State == CommunityState.SetAside ? stops?.LastAt : null;
         return new CommunityModuleInfo(
             entry.Id, manifest?.Name ?? entry.Id, manifest?.Author ?? "", manifest?.Description ?? "",
             manifest?.Version ?? entry.Approval?.Version, Enum.Parse<LinkCommunityState>(entry.State.ToString()), entry.Message,
             manifest?.Permissions ?? [], community.GrantedTo(entry), entry.FromDevFolder,
             UpdateVersion: update?.Version, UpdateNotes: update?.Notes,
-            DevFolderPath: entry.FromDevFolder ? entry.Directory : null, Shortcuts: ToShortcutInfos(manifest?.Shortcuts));
+            DevFolderPath: entry.FromDevFolder ? entry.Directory : null, Shortcuts: ToShortcutInfos(manifest?.Shortcuts),
+            StopCount: stops?.Count ?? 0, LastStopAt: stops?.LastAt, SetAsideAt: setAsideAt);
     }
 
     private static List<ModuleShortcutInfo> ToShortcutInfos(IEnumerable<ModuleShortcut>? shortcuts) =>

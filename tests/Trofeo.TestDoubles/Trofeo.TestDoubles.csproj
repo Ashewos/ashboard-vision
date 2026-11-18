@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Trofeo.ModuleKit\Trofeo.ModuleKit.csproj" />
     <ProjectReference Include="..\..\src\Trofeo.Device\Trofeo.Device.csproj" />
+    <ProjectReference Include="..\..\src\Trofeo.Core\Trofeo.Core.csproj" />
   </ItemGroup>
 
 </Project>

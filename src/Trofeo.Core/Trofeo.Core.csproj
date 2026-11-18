@@ -11,6 +11,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Trofeo.Core.Tests" />
     <InternalsVisibleTo Include="Trofeo.Display" />
+    <InternalsVisibleTo Include="Trofeo.Display.Tests" />
     <!-- Les aides de test du SDK dessinent la vraie pastille du verre avancé avec le compositeur (FrameComposer.ComposeCaseLayer). -->
     <InternalsVisibleTo Include="AshboardVision.Sdk.Testing" />
   </ItemGroup>

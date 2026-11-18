@@ -777,6 +777,54 @@
     <value>12 (le maximum de l'écran)</value>
     <comment>Valeur du curseur au maximum.</comment>
   </data>
+  <data name="SettingsAcceleration" xml:space="preserve">
+    <value>Accélération matérielle</value>
+    <comment>Titre de section.</comment>
+  </data>
+  <data name="AccelerationUse" xml:space="preserve">
+    <value>Utiliser la carte graphique</value>
+    <comment>Interrupteur général de l'accélération.</comment>
+  </data>
+  <data name="AccelerationAdapter" xml:space="preserve">
+    <value>Carte</value>
+    <comment>Nom de la liste des cartes graphiques.</comment>
+  </data>
+  <data name="AccelerationAuto" xml:space="preserve">
+    <value>Automatique</value>
+    <comment>Choix de la carte quand le service n'en a nommé aucune.</comment>
+  </data>
+  <data name="AccelerationAutoNamed" xml:space="preserve">
+    <value>Automatique ({0})</value>
+    <comment>Choix de la carte ; {0} : la carte que le choix automatique prend.</comment>
+  </data>
+  <data name="AccelerationDrawing" xml:space="preserve">
+    <value>Dessin de l'image (thèmes, verre, fonds animés)</value>
+    <comment>Case : le dessin passe par la carte graphique.</comment>
+  </data>
+  <data name="AccelerationVideo" xml:space="preserve">
+    <value>Décodage des vidéos</value>
+    <comment>Case : le décodage des vidéos passe par la carte graphique.</comment>
+  </data>
+  <data name="AccelerationStateBoth" xml:space="preserve">
+    <value>Sur {0} : dessin et vidéos.</value>
+    <comment>État ; {0} : la carte utilisée.</comment>
+  </data>
+  <data name="AccelerationStateDrawing" xml:space="preserve">
+    <value>Sur {0} : dessin.</value>
+    <comment>État ; {0} : la carte utilisée.</comment>
+  </data>
+  <data name="AccelerationStateVideo" xml:space="preserve">
+    <value>Sur {0} : vidéos.</value>
+    <comment>État ; {0} : la carte utilisée.</comment>
+  </data>
+  <data name="AccelerationStateCpu" xml:space="preserve">
+    <value>Tout se calcule sur le processeur.</value>
+    <comment>État : la carte ne sert à rien en ce moment.</comment>
+  </data>
+  <data name="AccelerationNone" xml:space="preserve">
+    <value>Aucune carte graphique compatible : tout se calcule sur le processeur.</value>
+    <comment>Aucune carte Direct3D 12 : l'interrupteur est grisé.</comment>
+  </data>
   <data name="SettingsPreview" xml:space="preserve">
     <value>Aperçu</value>
     <comment>Titre de section.</comment>
@@ -1436,5 +1484,53 @@
   <data name="ConsumptionFailed" xml:space="preserve">
     <value>Impossible de lire la consommation pour le moment.</value>
     <comment>Quand le service ne répond pas à la lecture de la consommation.</comment>
+  </data>
+  <data name="NotificationAppUpdate" xml:space="preserve">
+    <value>Ashboard Vision {0} est disponible.</value>
+    <comment>Cloche : une mise à jour du logiciel est proposée. {0} : la version.</comment>
+  </data>
+  <data name="NotificationModuleUpdate" xml:space="preserve">
+    <value>{0} {1} est disponible.</value>
+    <comment>Cloche : une mise à jour d'un module complémentaire est proposée. {0} : le module, {1} : la version.</comment>
+  </data>
+  <data name="NotificationModuleStopped" xml:space="preserve">
+    <value>{0} s'est arrêté brusquement et a été relancé.</value>
+    <comment>Cloche : un module complémentaire s'est arrêté brusquement (une fois). {0} : le module.</comment>
+  </data>
+  <data name="NotificationModuleStoppedTimes" xml:space="preserve">
+    <value>{0} s'est arrêté brusquement et a été relancé ({1} fois).</value>
+    <comment>Cloche : un module complémentaire s'est arrêté brusquement plusieurs fois. {0} : le module, {1} : le nombre d'arrêts.</comment>
+  </data>
+  <data name="NotificationModuleSetAside" xml:space="preserve">
+    <value>{0} a été mis de côté après des arrêts répétés.</value>
+    <comment>Cloche : un module complémentaire a été mis de côté. {0} : le module.</comment>
+  </data>
+  <data name="NotificationLinkUpdate" xml:space="preserve">
+    <value>Voir la mise à jour</value>
+    <comment>Cloche : lien vers la mise à jour du logiciel (onglet Paramètres).</comment>
+  </data>
+  <data name="NotificationLinkModule" xml:space="preserve">
+    <value>Voir le module</value>
+    <comment>Cloche : lien vers la section des modules complémentaires (onglet Paramètres).</comment>
+  </data>
+  <data name="NotificationLinkSettings" xml:space="preserve">
+    <value>Voir les réglages</value>
+    <comment>Cloche : lien vers l'onglet Paramètres.</comment>
+  </data>
+  <data name="NotificationsName" xml:space="preserve">
+    <value>Notifications</value>
+    <comment>Cloche de l'en-tête : bulle d'aide et nom pour l'accessibilité.</comment>
+  </data>
+  <data name="NotificationsNameCount" xml:space="preserve">
+    <value>Notifications ({0})</value>
+    <comment>Cloche de l'en-tête : nom pour l'accessibilité quand il y a des notifications ({0} : leur nombre).</comment>
+  </data>
+  <data name="NotificationDismiss" xml:space="preserve">
+    <value>Supprimer la notification</value>
+    <comment>Cloche : nom (et bulle d'aide) de la croix d'une notification.</comment>
+  </data>
+  <data name="NotificationsEmpty" xml:space="preserve">
+    <value>Rien de nouveau.</value>
+    <comment>Cloche : le panneau quand il n'y a aucune notification.</comment>
   </data>
 </root>

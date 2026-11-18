@@ -285,6 +285,7 @@ public sealed class ApprovedModulesStore
             Granted = ToNames(m.Granted),
             SetAsideReason = m.SetAsideReason,
             Repository = m.Repository,
+            SetAsideAt = m.SetAsideAt,
         })],
     };
 
@@ -294,7 +295,7 @@ public sealed class ApprovedModulesStore
         [.. (dto.DevFolders ?? []).Select(f => new DevFolder(Required(f.Path), ToPermissions(f.Granted)))],
         [.. (dto.Modules ?? []).Select(m => new ApprovedModule(
             Required(m.Id), Required(m.Version), Required(m.Directory), Required(m.ContentHash),
-            ToPermissions(m.Granted), m.SetAsideReason, m.Repository))]);
+            ToPermissions(m.Granted), m.SetAsideReason, m.Repository, m.SetAsideAt))]);
 
     private static string Required(string? value) => value ?? throw new FormatException("Un champ obligatoire manque.");
 
@@ -350,5 +351,7 @@ public sealed class ApprovedModulesStore
         public string? SetAsideReason { get; set; }
 
         public string? Repository { get; set; }
+
+        public DateTimeOffset? SetAsideAt { get; set; }
     }
 }

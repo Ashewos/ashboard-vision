@@ -38,6 +38,32 @@
                            Margin="16,0,0,0" Text="{Binding MaxFpsText}" />
               </Grid>
             </StackPanel>
+
+            <!-- L'accélération matérielle : l'interrupteur, la carte, les deux cases, l'état (et le problème, tel que le service le dit). -->
+            <StackPanel Name="AccelerationPanel" Spacing="10" DataContext="{Binding Acceleration}" x:DataType="vm:AccelerationSectionViewModel">
+              <TextBlock Classes="section" Text="{x:Static t:Texts.SettingsAcceleration}" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Classes="name" Text="{x:Static t:Texts.AccelerationUse}" VerticalAlignment="Center" Margin="0,0,24,0" />
+                <ToggleSwitch Grid.Column="1" Name="AccelerationSwitch" OnContent="" OffContent="" VerticalAlignment="Center"
+                              AutomationProperties.Name="{x:Static t:Texts.AccelerationUse}"
+                              IsEnabled="{Binding CanSwitch}" IsChecked="{Binding Enabled}" />
+              </Grid>
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                <TextBlock Grid.Column="0" Classes="name" Text="{x:Static t:Texts.AccelerationAdapter}" VerticalAlignment="Center" />
+                <ComboBox Grid.Column="1" Name="AdapterBox" HorizontalAlignment="Stretch" AutomationProperties.Name="{x:Static t:Texts.AccelerationAdapter}"
+                          IsEnabled="{Binding CanChooseDetails}" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedAdapter}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AccelerationAdapterItem">
+                      <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </Grid>
+              <CheckBox Name="DrawingCheck" Content="{x:Static t:Texts.AccelerationDrawing}" IsEnabled="{Binding CanChooseDetails}" IsChecked="{Binding Drawing}" />
+              <CheckBox Name="VideoCheck" Content="{x:Static t:Texts.AccelerationVideo}" IsEnabled="{Binding CanChooseDetails}" IsChecked="{Binding VideoDecoding}" />
+              <TextBlock Name="AccelerationState" Classes="muted" TextWrapping="Wrap" Text="{Binding StateText}" IsVisible="{Binding HasStateText}" />
+              <TextBlock Name="AccelerationProblem" Classes="warning" TextWrapping="Wrap" Text="{Binding Problem}" IsVisible="{Binding HasProblem}" />
+            </StackPanel>
           </StackPanel>
         </Border>
 

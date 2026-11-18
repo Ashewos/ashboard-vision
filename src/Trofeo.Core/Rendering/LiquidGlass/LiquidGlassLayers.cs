@@ -19,6 +19,14 @@ namespace Trofeo.Core.Rendering;
 /// précédente, ou n'en a pas (<see cref="IsReady"/> rend faux, l'appelant dessine alors le verre simple), et
 /// <see cref="Ready"/> prévient quand une couche est arrivée. Un fond animé calcule toujours sur place : chaque image du fond
 /// est déjà nouvelle. L'effet n'est jamais utilisé par deux fils à la fois.
+/// <para>
+/// Avec un <see cref="IGpuDevice"/>, tout se calcule sur la carte, sur place, sur le fil de l'affichage (le seul qui touche
+/// l'appareil) : pas de fil à part, <c>inBackground</c> est ignoré. Les couches, les pastilles et les copies floutées sont des
+/// images de la carte, libérées en même temps que sur le processeur. Les pastilles ne sont pas gardées d'une image à l'autre :
+/// leur case est prise en instantané à la première pastille de l'image (<see cref="PaintPill(SKCanvas, SKSurface, SKRect, SKRect)"/>).
+/// La luminance de la garde de lisibilité se mesure sur une copie réduite au quart, rapatriée par <c>ReadPixels</c> : la seule
+/// lecture de la carte en cours d'image, une fois par couche calculée.
+/// </para>
 /// </summary>
 internal sealed class LiquidGlassLayers : IDisposable
 {
@@ -100,7 +108,7 @@ internal sealed class LiquidGlassLayers : IDisposable
     /// copiée (le fond peut être libéré pendant le calcul) ; la copie et sa version floutée sont libérées dès que plus aucun
     /// calcul ne s'en sert.
     /// </summary>
-    private sealed class Scene(IBackground background, int version, bool sync, Action<int> track)
+    private sealed class Scene(IBackground background, int version, bool sync, Action<int> track, IGpuDevice? gpu)
     {
         private readonly object _lock = new();
         private SKImage? _owned;
@@ -159,7 +167,7 @@ internal sealed class LiquidGlassLayers : IDisposable
                 if (_blurred is not null && _sigma == sigma) return _blurred;
 
                 DropBlurLocked();
-                _blurred = Blur(sharp, sigma);
+                _blurred = Blur(sharp, sigma, gpu);
                 track(1);
                 _sigma = sigma;
                 return _blurred;
@@ -202,7 +210,8 @@ internal sealed class LiquidGlassLayers : IDisposable
     }
 
     private readonly bool _inBackground;
-    private readonly LiquidGlassEffect _effect = new();
+    private readonly IGpuDevice? _gpu;
+    private readonly LiquidGlassEffect _effect;
     private readonly object _effectGate = new(); // l'effet et le flou : un seul fil à la fois
 
     // L'effet des pastilles n'appartient qu'au fil de l'affichage : une pastille n'attend jamais le fil à part.
@@ -227,15 +236,27 @@ internal sealed class LiquidGlassLayers : IDisposable
     private int _liveImages;
     private int _workerFailures;
 
-    /// <param name="inBackground">Vrai : les couches d'un fond fixe se calculent sur un fil à part.</param>
+    /// <param name="inBackground">Vrai : les couches d'un fond fixe se calculent sur un fil à part. Ignoré avec une carte.</param>
     /// <param name="report">Reçoit, sur le fil de l'affichage, l'échec d'un calcul fait sur le fil à part.</param>
-    public LiquidGlassLayers(bool inBackground = false, Action<string>? report = null)
+    /// <param name="gpu">
+    /// La carte qui calcule le verre, ou <c>null</c> pour le processeur. L'appareil appartient à l'appelant, qui ne le libère
+    /// qu'après ces couches ; il ne se sert que du fil de l'affichage.
+    /// </param>
+    public LiquidGlassLayers(bool inBackground = false, Action<string>? report = null, IGpuDevice? gpu = null)
     {
-        _inBackground = inBackground;
+        _gpu = gpu;
+        _inBackground = inBackground && gpu is null; // la carte n'est touchée que par le fil de l'affichage : tout se calcule sur place
         _report = report;
+        _effect = new LiquidGlassEffect(gpu);
     }
 
     private readonly Action<string>? _report;
+
+    /// <summary>
+    /// L'image du fond déjà sur la carte (vidéo décodée par la carte), que le verre prend à la place de <see cref="IBackground.Current"/>
+    /// : l'image entière ne repasse pas par le processeur. Posé par le compositeur quand le verre est sur la carte.
+    /// </summary>
+    internal Func<IBackground, SKImage?>? GpuBackgroundFrame { get; set; }
 
     /// <summary>Une couche calculée sur le fil à part est prête. Levé depuis ce fil.</summary>
     public event Action? Ready;
@@ -257,6 +278,9 @@ internal sealed class LiquidGlassLayers : IDisposable
     /// et copies floutées. Retombe à 0 après <see cref="Dispose"/>, une fois le fil à part arrêté (tests).
     /// </summary>
     internal int LiveImages => Volatile.Read(ref _liveImages);
+
+    /// <summary>Vrai : les couches se calculent sur la carte graphique (tests).</summary>
+    internal bool OnGpu => _gpu is not null;
 
     /// <summary>Combien de calculs ont échoué sur le fil à part (tests).</summary>
     internal int WorkerFailures => Volatile.Read(ref _workerFailures);
@@ -290,7 +314,7 @@ internal sealed class LiquidGlassLayers : IDisposable
         if (_scene is null || !ReferenceEquals(_scene.Background, background) || _scene.Version != background.Version)
         {
             DropSyncBlur();
-            _scene = new Scene(background, background.Version, sync: !_inBackground || background.IsAnimated, Track);
+            _scene = new Scene(background, background.Version, sync: !_inBackground || background.IsAnimated, Track, _gpu);
         }
 
         foreach (var slot in _slots.Values)
@@ -360,6 +384,7 @@ internal sealed class LiquidGlassLayers : IDisposable
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(frame);
         if (frame.BytesPerPixel != 4) throw new ArgumentException("L'image doit avoir 4 octets par pixel.", nameof(frame));
+        if (_gpu is not null) throw new InvalidOperationException("Avec une carte graphique, la pastille se dessine d'après la surface de l'image.");
         if (_scene is null) throw new InvalidOperationException("BeginFrame n'a pas été appelé.");
 
         if (!IsFinite(pill) || !IsFinite(caseRect)) return;
@@ -390,18 +415,87 @@ internal sealed class LiquidGlassLayers : IDisposable
         var kept = pills.Find(p => p.Shape == shape && p.Settings == settings);
         if (kept is null)
         {
-            kept = new Pill(shape, settings, ComputePill(slot, frame, shape, settings));
+            EnsureSceneImage(slot, frame);
+            kept = new Pill(shape, settings, ComputePill(slot, shape, settings));
             pills.Add(kept);
         }
         kept.Used = true;
 
+        DrawPill(canvas, area, kept.Image, shape);
+    }
+
+    /// <summary>
+    /// La variante de la carte de <see cref="PaintPill(SKCanvas, SKPixmap, SKRect, SKRect)"/> : <paramref name="frame"/> est la
+    /// surface de la carte sur laquelle <paramref name="canvas"/> dessine, dont aucun pixel n'est relu.
+    /// <list type="bullet">
+    /// <item>La case est prise en instantané (<see cref="SKSurface.Snapshot(SKRectI)"/>, une copie qui ne bouge plus quand
+    /// l'image continue de se peindre) au premier appel de l'image pour cette case : ni le contenu du module, ni une autre
+    /// pastille. L'instantané et sa copie floutée sont partagés par les pastilles de la case et libérés à la fin de l'image.</item>
+    /// <item>Les pastilles sont recalculées à chaque image, sans comparer de pixels ni en garder d'une image à l'autre : la
+    /// comparaison, qui demanderait de relire la carte, coûterait plus que le calcul sur la carte. Chacune est libérée dès qu'elle
+    /// est posée.</item>
+    /// <item>Forme, coupe à la case, opacité et pastilles ignorées : comme sur le processeur.</item>
+    /// </list>
+    /// </summary>
+    /// <param name="canvas">La toile de la surface, sans transformation : ses coordonnées sont celles de <paramref name="frame"/>.</param>
+    /// <param name="frame">La surface de la carte (celle de <paramref name="canvas"/>), qui a peint la case jusqu'ici.</param>
+    /// <param name="caseRect">Le rectangle de la case, à l'écran.</param>
+    /// <param name="pill">Le rectangle de l'élément choisi, à l'écran.</param>
+    public void PaintPill(SKCanvas canvas, SKSurface frame, SKRect caseRect, SKRect pill)
+    {
+        ArgumentNullException.ThrowIfNull(canvas);
+        ArgumentNullException.ThrowIfNull(frame);
+        if (_gpu is null) throw new InvalidOperationException("Sans carte graphique, la pastille se dessine d'après les pixels de l'image.");
+        if (_scene is null) throw new InvalidOperationException("BeginFrame n'a pas été appelé.");
+
+        if (!IsFinite(pill) || !IsFinite(caseRect)) return;
+
+        // La surface commence en (0, 0) : la case y est coupée ; son bas et sa droite le sont par l'instantané.
+        var area = Snap(caseRect);
+        var rounded = SKRectI.Round(area);
+        var wanted = new SKRectI(Math.Max(0, rounded.Left), Math.Max(0, rounded.Top), rounded.Right, rounded.Bottom);
+        var shape = SKRect.Intersect(SKRect.Intersect(Snap(pill), area), wanted);
+        if (!(shape.Width >= MinPillSide) || !(shape.Height >= MinPillSide)) return;
+        if (Ensure(caseRect) is not { } slot) return;
+
+        if (!slot.SceneChecked)
+        {
+            DropSceneImages(slot); // les images d'une image précédente, qui n'est pas allée jusqu'à sa fin
+            if (frame.Snapshot(wanted) is not { } scene) return;
+
+            slot.SceneSharp = scene;
+            Track(1);
+            slot.SceneArea = new SKRectI(wanted.Left, wanted.Top, wanted.Left + scene.Width, wanted.Top + scene.Height);
+            slot.SceneChecked = true;
+        }
+
+        shape = SKRect.Intersect(shape, slot.SceneArea);
+        if (!(shape.Width >= MinPillSide) || !(shape.Height >= MinPillSide)) return;
+
+        float half = shape.Height / 2f;
+        var settings = _settings with { CornerRadius = half, ZRadius = Math.Min(_settings.ZRadius, half), ShadowOpacity = 0f };
+        var image = ComputePill(slot, shape, settings);
+        try
+        {
+            DrawPill(canvas, area, image, shape);
+        }
+        finally
+        {
+            image.Dispose(); // la carte garde la texture tant que le dessin qui s'en sert n'est pas fini
+            Track(-1);
+        }
+    }
+
+    /// <summary>Pose l'image d'une pastille en <paramref name="shape"/>, coupée au contour arrondi de la case <paramref name="area"/>.</summary>
+    private void DrawPill(SKCanvas canvas, SKRect area, SKImage image, SKRect shape)
+    {
         int saved = canvas.Save();
         try
         {
             float radius = Math.Max(0f, Math.Min(_settings.CornerRadius, Math.Min(area.Width, area.Height) / 2f));
             using var clip = new SKRoundRect(area, radius);
             canvas.ClipRoundRect(clip, SKClipOperation.Intersect, true);
-            canvas.DrawImage(kept.Image, shape.Left, shape.Top);
+            canvas.DrawImage(image, shape.Left, shape.Top);
         }
         finally
         {
@@ -500,12 +594,12 @@ internal sealed class LiquidGlassLayers : IDisposable
     /// <summary>
     /// La copie floutée de <paramref name="sharp"/>, à pleine taille, bords prolongés (le flou ne s'assombrit pas vers
     /// l'extérieur). Une copie au quart, agrandie, s'écarte trop du flou plein pour les petits flous : voir
-    /// <c>QuarterBlur_MatchesFullBlur</c>.
+    /// <c>QuarterBlur_MatchesFullBlur</c>. Avec <paramref name="gpu"/>, le flou se fait sur la carte et la copie en reste une image.
     /// </summary>
-    internal static SKImage Blur(SKImage sharp, float sigma)
+    internal static SKImage Blur(SKImage sharp, float sigma, IGpuDevice? gpu = null)
     {
         var info = new SKImageInfo(sharp.Width, sharp.Height, SKImageInfo.PlatformColorType, SKAlphaType.Premul);
-        using var surface = SKSurface.Create(info)
+        using var surface = gpu?.CreateSurface(info) ?? SKSurface.Create(info)
             ?? throw new InvalidOperationException("Impossible de créer la surface du flou du verre.");
         using var blur = SKImageFilter.CreateBlur(sigma, sigma, SKShaderTileMode.Clamp);
         using var paint = new SKPaint { ImageFilter = blur, BlendMode = SKBlendMode.Src };
@@ -555,21 +649,26 @@ internal sealed class LiquidGlassLayers : IDisposable
         return scene;
     }
 
+    /// <summary>Fait l'image de la case à partir de la copie de ses pixels (le processeur), une fois par image.</summary>
+    private void EnsureSceneImage(Slot slot, SKPixmap frame)
+    {
+        if (slot.SceneSharp is not null) return;
+
+        var area = slot.SceneArea;
+        var info = new SKImageInfo(area.Width, area.Height, frame.ColorType, frame.AlphaType);
+        slot.SceneSharp = SKImage.FromPixelCopy(info, slot.Scene!, area.Width * 4)
+            ?? throw new InvalidOperationException("Impossible de copier la case pour sa pastille.");
+        Track(1);
+    }
+
     /// <summary>
-    /// La pastille de <paramref name="shape"/>, qui déforme la case de <paramref name="slot"/>. L'image de la case et sa copie
-    /// floutée sont faites une fois pour toutes les pastilles de la case dans cette image. Fil de l'affichage.
+    /// La pastille de <paramref name="shape"/>, qui déforme la case de <paramref name="slot"/> (son image est déjà faite). La copie
+    /// floutée de la case est faite une fois pour toutes les pastilles de la case dans cette image. Fil de l'affichage.
     /// </summary>
-    private SKImage ComputePill(Slot slot, SKPixmap frame, SKRect shape, GlassSettings settings)
+    private SKImage ComputePill(Slot slot, SKRect shape, GlassSettings settings)
     {
         var area = slot.SceneArea;
-        if (slot.SceneSharp is null)
-        {
-            var info = new SKImageInfo(area.Width, area.Height, frame.ColorType, frame.AlphaType);
-            slot.SceneSharp = SKImage.FromPixelCopy(info, slot.Scene!, area.Width * 4)
-                ?? throw new InvalidOperationException("Impossible de copier la case pour sa pastille.");
-            Track(1);
-        }
-        var sharp = slot.SceneSharp;
+        var sharp = slot.SceneSharp!;
 
         float sigma = LiquidGlassEffect.BlurSigma(settings.Blur);
         var blurred = sharp;
@@ -578,7 +677,7 @@ internal sealed class LiquidGlassLayers : IDisposable
             if (slot.SceneBlurred is null || slot.SceneSigma != sigma)
             {
                 DropSceneBlur(slot);
-                slot.SceneBlurred = Blur(sharp, sigma);
+                slot.SceneBlurred = Blur(sharp, sigma, _gpu);
                 slot.SceneSigma = sigma;
                 Track(1);
                 _pillBlurComputations++;
@@ -587,7 +686,7 @@ internal sealed class LiquidGlassLayers : IDisposable
         }
 
         // Une pastille est petite (40 000 px par case au plus) : la découper coûterait plus que le calcul d'un bloc.
-        var effect = _pillEffect ??= new LiquidGlassEffect { Strips = 1 };
+        var effect = _pillEffect ??= new LiquidGlassEffect(_gpu) { Strips = 1 };
         var image = effect.RenderGlass(sharp, blurred, new SKPoint(area.Left, area.Top), shape, settings);
         Track(1);
         _pillComputations++;
@@ -667,7 +766,7 @@ internal sealed class LiquidGlassLayers : IDisposable
             }
             if (needGlass)
             {
-                var glass = ComputeGlass(glassKey, scene, background.Current);
+                var glass = ComputeGlass(glassKey, scene, (_gpu is null ? null : GpuBackgroundFrame?.Invoke(background)) ?? background.Current);
                 Drop(slot.Glass);
                 slot.Glass = glass;
             }
@@ -701,7 +800,7 @@ internal sealed class LiquidGlassLayers : IDisposable
             Track(1);
             try
             {
-                float luminance = MeasureLuminance(sharp, image, key.Rect);
+                float luminance = _gpu is null ? MeasureLuminance(sharp, image, key.Rect) : MeasureLuminanceOnGpu(_gpu, sharp, image, key.Rect);
                 Interlocked.Increment(ref _computations);
                 return new GlassLayer(key, image, luminance);
             }
@@ -750,6 +849,41 @@ internal sealed class LiquidGlassLayers : IDisposable
         using (var paint = new SKPaint { BlendMode = SKBlendMode.Src })
         {
             canvas.DrawImage(image, new SKRect(0, 0, width, height), new SKRect(0, 0, smallWidth, smallHeight), Shrink, paint);
+        }
+
+        return Backdrop.BrightestLuminance(small, 0, 0, smallWidth, smallHeight);
+    }
+
+    /// <summary>
+    /// <see cref="MeasureLuminance"/> sur la carte : le verre est posé sur le fond et réduit au quart sur la carte, puis la petite
+    /// copie est rapatriée par <c>ReadPixels</c>, seule lecture de la carte en cours d'image. Fil de l'affichage.
+    /// </summary>
+    private static float MeasureLuminanceOnGpu(IGpuDevice gpu, SKImage sharp, SKImage glass, SKRect rect)
+    {
+        int width = glass.Width, height = glass.Height;
+        var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        int smallWidth = Math.Max(1, (width + LuminanceDivisor - 1) / LuminanceDivisor);
+        int smallHeight = Math.Max(1, (height + LuminanceDivisor - 1) / LuminanceDivisor);
+        var smallInfo = new SKImageInfo(smallWidth, smallHeight, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+        using var full = gpu.CreateSurface(info);
+        using (var source = new SKPaint { BlendMode = SKBlendMode.Src })
+        {
+            full.Canvas.DrawImage(sharp, -rect.Left, -rect.Top, source);
+            full.Canvas.DrawImage(glass, 0, 0);
+        }
+
+        using var composed = full.Snapshot();
+        using var reduced = gpu.CreateSurface(smallInfo);
+        using (var paint = new SKPaint { BlendMode = SKBlendMode.Src })
+        {
+            reduced.Canvas.DrawImage(composed, new SKRect(0, 0, width, height), new SKRect(0, 0, smallWidth, smallHeight), Shrink, paint);
+        }
+
+        using var small = new SKBitmap(smallInfo);
+        if (!reduced.ReadPixels(smallInfo, small.GetPixels(), small.RowBytes, 0, 0))
+        {
+            throw new GpuLostException(gpu.LostReason ?? "La carte graphique n'a pas rendu la copie réduite du verre.");
         }
 
         return Backdrop.BrightestLuminance(small, 0, 0, smallWidth, smallHeight);

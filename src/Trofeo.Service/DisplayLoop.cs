@@ -177,6 +177,9 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     private readonly Dictionary<IModule, Announcement> _announced = new(ReferenceEqualityComparer.Instance); // sous _lifecycleGate
     private bool _announcedScreenReady;     // l'état de l'écran vu à la dernière annonce ; fil du Tick seulement
     private FrameComposer _composer;
+    private readonly AccelerationController? _acceleration;
+    private (bool Open, long? Luid) _reportedVideo; // ce que le chef de l'accélération sait de la vidéo de fond ; fil du Tick seulement
+    private IGpuDevice? _deviceInUse;           // l'appareil que servent les compositeurs en place ; fil du Tick seulement
     private ThemeDefinition _theme;
     private IBackground _background;
     private double _configuredFps;          // le plafond de la disposition (MaxFps) ; le plafond réel peut être plus bas sans écran
@@ -241,11 +244,17 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     /// Où la vue affichée est gardée entre deux démarrages : lue ici, écrite à chaque changement de vue, vidée à l'arrêt.
     /// Absent : la boucle démarre sur la première vue et ne retient rien.
     /// </param>
+    /// <param name="acceleration">
+    /// Le chef de l'accélération matérielle : la boucle lui donne les réglages de la disposition, dessine sur son appareil et
+    /// refait ses compositeurs quand il change. Il reste à l'appelant, qui le libère après la boucle. Absent : tout sur le processeur.
+    /// </param>
     public DisplayLoop(
         DashboardLayout layout, ModuleRegistry registry, ScreenDevice screen, FrameScheduler scheduler, TimeProvider time,
-        ThemeDefinition? theme = null, IBackground? background = null, DisplayedViewStore? viewStore = null)
+        ThemeDefinition? theme = null, IBackground? background = null, DisplayedViewStore? viewStore = null,
+        AccelerationController? acceleration = null)
     {
         _registry = registry;
+        _acceleration = acceleration;
         _viewStore = viewStore;
         _screen = screen;
         _scheduler = scheduler;
@@ -257,9 +266,12 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         };
         _onStatusChanged = OnStatusChanged;
         _renderErrors = new RateLimitedErrorLog(time);
+        _acceleration?.Apply(layout.Acceleration);
+        _deviceInUse = _acceleration?.DrawingDevice;
         _composer = NewComposer();
         _theme = theme ?? Themes.ClassiqueDefinition;
         _background = background ?? new ColorBackground(_theme.DefaultBackground.Color);
+        ReportVideoDecoder();
         _backgroundStart = time.GetTimestamp(); // la lecture d'un fond animé part du démarrage de la boucle
 
         // Une disposition mal formée ne doit jamais empêcher le service de démarrer : les refus sont journalisés.
@@ -335,7 +347,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
 
             return new LoopStatus(
                 IsEmulated, modules, Volatile.Read(ref _framesSent),
-                Math.Max(0, Volatile.Read(ref _renderMs)), Math.Max(0, Volatile.Read(ref _sendMs)));
+                Math.Max(0, Volatile.Read(ref _renderMs)), Math.Max(0, Volatile.Read(ref _sendMs)), _acceleration?.Status);
         }
     }
 
@@ -742,6 +754,11 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     {
         var warnings = new List<string>();
         bool viewChanged;
+
+        // L'accélération d'abord : si la carte change, les compositeurs sont refaits avant le thème et le fond.
+        _acceleration?.Apply(config.Layout.Acceleration);
+        SyncAcceleration();
+
         lock (_lifecycleGate)
         {
             var layout = config.Layout;
@@ -780,14 +797,78 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
     }
 
     /// <summary>
-    /// Un compositeur de la boucle. Les couches de verre de « Liquid Glass avancé » s'y calculent sur un fil à part (la boucle
-    /// ne saccade pas) ; quand l'une est prête, une image est redemandée.
+    /// Un compositeur de la boucle, sur l'appareil de dessin en place (ou sur le processeur). Les couches de verre de « Liquid Glass
+    /// avancé » s'y calculent sur un fil à part (la boucle ne saccade pas) ; quand l'une est prête, une image est redemandée. Sur la
+    /// carte, le verre se calcule pendant la composition, sur le fil de la boucle. Une carte qui lâche est signalée au chef de
+    /// l'accélération ; l'image en cours sort quand même, par le processeur.
     /// </summary>
     private FrameComposer NewComposer()
     {
-        var composer = new FrameComposer(_renderErrors, backgroundGlass: true);
+        var device = _deviceInUse;
+        var composer = new FrameComposer(_renderErrors, backgroundGlass: true, gpu: device);
         composer.GlassReady += _scheduler.MarkDirty; // levé depuis le fil du calcul : MarkDirty s'appelle de n'importe quel fil
+        if (device is not null && _acceleration is { } acceleration)
+        {
+            composer.GpuFailed += reason => ReportGpuFailure(acceleration, device, reason);
+        }
+
         return composer;
+    }
+
+    /// <summary>
+    /// Une carte qui lâche pendant une composition (appelé depuis le compositeur : ne lève jamais, ne libère rien). Une panne d'un
+    /// appareil déjà remplacé n'est pas celle de l'appareil en place : on l'ignore.
+    /// </summary>
+    private static void ReportGpuFailure(AccelerationController acceleration, IGpuDevice device, string reason)
+    {
+        try
+        {
+            if (ReferenceEquals(acceleration.DrawingDevice, device)) acceleration.ReportFailure(reason);
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceError($"Échec du signalement d'une panne de la carte graphique : {ex}");
+        }
+    }
+
+    /// <summary>
+    /// Dit au chef de l'accélération où la vidéo de fond se décode vraiment (carte, ou processeur après un refus ou un repli), pour
+    /// que la fenêtre montre ce qui se passe et non ce qui est voulu. Ne l'appelle que si cela a changé.
+    /// </summary>
+    private void ReportVideoDecoder()
+    {
+        if (_acceleration is null) return;
+
+        var state = _background is ISeekableBackground seekable ? (true, seekable.DecoderLuid) : (false, (long?)null);
+        if (state == _reportedVideo) return;
+
+        _reportedVideo = state;
+        _acceleration.ReportVideoDecoder(state.Item1, state.Item2);
+    }
+
+    /// <summary>
+    /// Met les compositeurs en accord avec l'appareil de dessin du chef de l'accélération : s'il a changé (autre carte, panne,
+    /// nouvel essai, accélération coupée), les compositeurs de l'écran et des aperçus sont refaits, puis l'ancien appareil est
+    /// libéré, une fois qu'aucun compositeur ne s'en sert plus. Depuis le fil du <see cref="Tick"/> seulement.
+    /// </summary>
+    private void SyncAcceleration()
+    {
+        if (_acceleration is null) return;
+
+        ReportVideoDecoder(); // un repli du décodage en cours de lecture se voit ici, au plus tard à la boucle suivante
+
+        var device = _acceleration.DrawingDevice;
+        if (!ReferenceEquals(device, _deviceInUse))
+        {
+            _deviceInUse = device;
+            var oldComposer = _composer;
+            _composer = NewComposer();
+            DisposeQuietly(oldComposer);
+            DisposePreviewComposer(); // il sera recréé, sur le bon appareil, à la prochaine demande
+            _scheduler.MarkDirty();
+        }
+
+        _acceleration.ReleaseRetired();
     }
 
     private void ReplaceTheme(ThemeDefinition theme, IBackground background)
@@ -819,6 +900,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
             _backgroundStart = _time.GetTimestamp(); // le fond animé repart de zéro
             _backgroundDue = null;
             _backgroundRetryAt = null;
+            ReportVideoDecoder();
         }
     }
 
@@ -1199,6 +1281,8 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         RunQueued();
+        _acceleration?.Tick(); // nouvel essai après une panne, carte trop lente
+        SyncAcceleration();
 
         if (Interlocked.Exchange(ref _reconnectRequested, 0) == 1)
         {
@@ -1611,8 +1695,15 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         return _glide is not null ? NextGlideFrame() : Compose(live);
     }
 
-    private SKBitmap Compose(Live live) =>
-        _composer.Compose(live.Placements, live.Modules, _theme, _background, _time.GetLocalNow());
+    private SKBitmap Compose(Live live)
+    {
+        var start = _time.GetTimestamp();
+        var bitmap = _composer.Compose(live.Placements, live.Modules, _theme, _background, _time.GetLocalNow());
+
+        // Seule la composition entre dans la mesure (ni l'encodage ni l'envoi), et seulement quand la carte l'a faite.
+        if (_acceleration is not null && _composer.UsesGpu) _acceleration.ReportFrame(_time.GetElapsedTime(start));
+        return bitmap;
+    }
 
     /// <summary>
     /// Part de la dernière image envoyée (pas de l'ancienne vue : un glissement abandonné repart de là où il en était) vers
@@ -1630,6 +1721,7 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         _glideFrom = source;
         _glideTo = arrival;
         _glide = new ViewTransition(source, direction, ViewTransition.Duration);
+        _glide.GpuFailed += ReportGlideGpuFailure; // la carte perdue ou qui refuse le glissement : même repli et même nouvel essai que le compositeur
         _glideViewId = viewId;
         _glideStart = start;
         _glideFrames = 0;
@@ -1642,7 +1734,11 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         var glide = _glide!;
         var elapsed = _time.GetElapsedTime(_glideStart);
         _glideFrames++;
-        if (!glide.IsDone(elapsed)) return glide.Compose(_glideTo!, elapsed);
+        if (!glide.IsDone(elapsed))
+        {
+            // Le glissement se dessine sur la carte de l'écran tant que le compositeur l'a encore (sinon, sur le processeur).
+            return glide.Compose(_glideTo!, elapsed, _composer.UsesGpu ? _deviceInUse : null);
+        }
 
         var arrival = _glideTo!;
         _glideTo = null;
@@ -1650,6 +1746,12 @@ public sealed class DisplayLoop : IViewSwitcher, IDisposable
         DropGlide(log: true);
         if (stale) _scheduler.MarkDirty();
         return arrival;
+    }
+
+    /// <summary>Le glissement n'a pas pu se dessiner sur la carte : même signalement qu'une panne du compositeur (depuis le fil de la boucle).</summary>
+    private void ReportGlideGpuFailure(string reason)
+    {
+        if (_acceleration is { } acceleration && _deviceInUse is { } device) ReportGpuFailure(acceleration, device, reason);
     }
 
     /// <summary>Met fin au glissement en cours, s'il y en a un, et libère ses images (<see cref="_glideTo"/> compris, s'il reste).</summary>

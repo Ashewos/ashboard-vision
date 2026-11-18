@@ -825,7 +825,8 @@ public sealed class SettingsTabTests : IDisposable
         var texts = window.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible).Select(t => t.Text).ToList();
         foreach (var expected in new[]
                  {
-                     "Orientation", "Démarrer avec Windows", "Images par seconde", "12 (le maximum de l'écran)", "Aperçu",
+                     "Orientation", "Démarrer avec Windows", "Images par seconde", "12 (le maximum de l'écran)",
+                     "Accélération matérielle", "Utiliser la carte graphique", "Dessin de l'image (thèmes, verre, fonds animés)", "Décodage des vidéos", "Aperçu",
                      "Rendu réel 12 images/s",
                      "L'aperçu suit l'écran image par image. Il coûte un peu plus de processeur pendant que les réglages sont ouverts.",
                      "Températures du processeur", "Le pilote PawnIO n'est pas installé.", "Consommation",

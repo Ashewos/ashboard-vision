@@ -694,6 +694,112 @@ public sealed class CommunityModulesTests : IAsyncLifetime
         await TestWait.UntilAsync(() => module.Status.Health == ModuleHealth.Online);
     }
 
+    [WindowsHostFact]
+    public async Task SetAside_RecordsTheTime_AndRelaunchClearsIt()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package());
+        var module = rig.Open("alex.demo");
+        Assert.Null(rig.Approved.Modules.Single().SetAsideAt);
+
+        await CrashAsync(rig, module, 1);
+        rig.Time.Advance(TimeSpan.FromSeconds(1.1));
+        await CrashAsync(rig, module, 2);
+        rig.Time.Advance(TimeSpan.FromSeconds(2.1));
+        var asideTime = rig.Time.GetUtcNow();
+        await CrashAsync(rig, module, 3);
+
+        await TestWait.UntilAsync(() => rig.Approved.Modules.Single().SetAsideReason is not null);
+        var approval = rig.Approved.Modules.Single();
+        Assert.Equal(asideTime, approval.SetAsideAt);
+        Assert.Equal(asideTime, rig.Entry("alex.demo").Approval!.SetAsideAt);
+
+        Assert.True((await rig.Community.RelaunchAsync("alex.demo")).Ok);
+
+        approval = rig.Approved.Modules.Single();
+        Assert.Null(approval.SetAsideReason);
+        Assert.Null(approval.SetAsideAt);
+    }
+
+    [WindowsHostFact]
+    public async Task StopsFor_CountsAcrossRelaunches()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package());
+        var module = rig.Open("alex.demo");
+
+        await CrashAsync(rig, module, 1);
+        Assert.Equal(new ModuleStops(1, rig.Time.GetUtcNow()), rig.Community.StopsFor("alex.demo"));
+        rig.Time.Advance(TimeSpan.FromSeconds(1.1)); // la relance programmée du superviseur
+        await CrashAsync(rig, module, 2);
+
+        Assert.Equal(new ModuleStops(2, rig.Time.GetUtcNow()), rig.Community.StopsFor("alex.demo"));
+
+        // Le troisième arrêt (la relance automatique du superviseur n'a rien effacé) met le module de côté : le compte arrive à 3.
+        rig.Time.Advance(TimeSpan.FromSeconds(2.1));
+        await CrashAsync(rig, module, 3);
+        await TestWait.UntilAsync(() => rig.Approved.Modules.Single().SetAsideReason is not null);
+
+        Assert.Equal(new ModuleStops(3, rig.Time.GetUtcNow()), rig.Community.StopsFor("alex.demo"));
+    }
+
+    [WindowsHostFact]
+    public async Task StopsFor_ManualRelaunchOfASetAsideModule_ForgetsTheStops()
+    {
+        var rig = NewRig();
+        await InstallAsync(rig, rig.Package());
+        var module = rig.Open("alex.demo");
+        await CrashAsync(rig, module, 1);
+        rig.Time.Advance(TimeSpan.FromSeconds(1.1));
+        await CrashAsync(rig, module, 2);
+        rig.Time.Advance(TimeSpan.FromSeconds(2.1));
+        await CrashAsync(rig, module, 3);
+        await TestWait.UntilAsync(() => rig.Approved.Modules.Single().SetAsideReason is not null);
+        Assert.Equal(3, rig.Community.StopsFor("alex.demo")!.Count);
+
+        Assert.True((await rig.Community.RelaunchAsync("alex.demo")).Ok);
+
+        Assert.Null(rig.Community.StopsFor("alex.demo")); // le geste de l'utilisateur repart de zéro : pas de « relancé (3 fois) »
+        await rig.Launcher.WaitForStartAsync(4);
+        rig.Time.Advance(TimeSpan.FromMinutes(1));
+        await CrashAsync(rig, module, 4);
+        Assert.Equal(new ModuleStops(1, rig.Time.GetUtcNow()), rig.Community.StopsFor("alex.demo"));
+    }
+
+    [WindowsHostFact]
+    public async Task StopsFor_ReloadOfADevModule_ForgetsTheStops()
+    {
+        var rig = NewRig();
+        var dev = rig.NewFolder("mon-module");
+        File.WriteAllText(Path.Combine(dev, "manifest.json"), CommunityRig.ManifestJson("alex.dev", "0.1.0", Internet, null));
+        File.WriteAllText(Path.Combine(dev, "Mod.dll"), "code");
+        rig.Community.SetDeveloperMode(true);
+        Assert.True(rig.Community.AddDevFolder(dev, Internet).Ok);
+        var module = rig.Open("alex.dev");
+        await CrashAsync(rig, module, 1);
+        Assert.Equal(1, rig.Community.StopsFor("alex.dev")!.Count);
+
+        Assert.True((await rig.Community.ReloadDevModuleAsync("alex.dev")).Ok);
+
+        Assert.Null(rig.Community.StopsFor("alex.dev"));
+    }
+
+    [WindowsHostFact]
+    public async Task StopsFor_UnknownOrUninstalled_IsNull()
+    {
+        var rig = NewRig();
+        Assert.Null(rig.Community.StopsFor("nobody.here"));
+        await InstallAsync(rig, rig.Package());
+        Assert.Null(rig.Community.StopsFor("alex.demo")); // installé, sans aucun arrêt
+        var module = rig.Open("alex.demo");
+        await CrashAsync(rig, module, 1);
+        Assert.Equal(1, rig.Community.StopsFor("alex.demo")!.Count);
+
+        Assert.True((await rig.Community.UninstallAsync("alex.demo")).Ok);
+
+        Assert.Null(rig.Community.StopsFor("alex.demo"));
+    }
+
     private static async Task CrashAsync(CommunityRig rig, IModule module, int startNumber)
     {
         var host = await rig.Launcher.WaitForStartAsync(startNumber);

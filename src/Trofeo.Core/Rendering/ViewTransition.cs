@@ -24,15 +24,26 @@ public sealed class ViewTransition(SKBitmap from, int direction, TimeSpan durati
     private const float MinVisibleSigma = 0.5f;
 
     private readonly int _direction = direction >= 0 ? 1 : -1;
+    private bool _gpuFailed;
+
+    /// <summary>
+    /// Levé une seule fois, quand la carte passée à <see cref="Compose"/> est perdue ou refuse le dessin : l'image sort alors par le
+    /// processeur, et la carte n'est plus essayée pour le reste de ce glissement. L'appelant signale la panne au chef de l'accélération
+    /// (sans cela, un refus sans perte de la carte laisserait le glissement sur le processeur à chaque image, sans que rien le dise).
+    /// Levé depuis le fil qui appelle <see cref="Compose"/>.
+    /// </summary>
+    public event Action<string>? GpuFailed;
 
     /// <summary>Vrai quand le glissement a duré <see cref="Duration"/> : l'image suivante est celle de la vue d'arrivée, nette.</summary>
     public bool IsDone(TimeSpan elapsed) => elapsed >= duration;
 
     /// <summary>
     /// L'image au temps <paramref name="elapsed"/> (neuve, à libérer par l'appelant) : au départ l'ancienne vue nette, à l'arrivée la
-    /// nouvelle vue nette. <paramref name="to"/> a la taille de <c>from</c>.
+    /// nouvelle vue nette. <paramref name="to"/> a la taille de <c>from</c>. Avec <paramref name="gpu"/>, le glissement et son flou
+    /// se dessinent sur la carte, puis l'image est rapatriée ; si la carte est perdue (ou refuse une surface), l'image sort quand
+    /// même, dessinée par le processeur, et <see cref="GpuFailed"/> est levé : l'appelant décide de la suite.
     /// </summary>
-    public SKBitmap Compose(SKBitmap to, TimeSpan elapsed)
+    public SKBitmap Compose(SKBitmap to, TimeSpan elapsed, IGpuDevice? gpu = null)
     {
         ArgumentNullException.ThrowIfNull(to);
 
@@ -41,23 +52,20 @@ public sealed class ViewTransition(SKBitmap from, int direction, TimeSpan durati
         var shift = (float)Math.Round(width * Ease(progress));
         var sigma = BlurSigma(progress);
 
+        if (gpu is not null && !_gpuFailed)
+        {
+            string? failure = null;
+            var onGpu = gpu.IsLost ? null : TryComposeOnGpu(to, shift, width, sigma, gpu, out failure);
+            if (onGpu is not null) return onGpu;
+
+            AbandonGpu(failure ?? gpu.LostReason ?? "La carte graphique n'a pas dessiné le glissement.");
+        }
+
         var result = new SKBitmap(to.Width, to.Height);
         try
         {
             using var canvas = new SKCanvas(result);
-            if (sigma < MinVisibleSigma)
-            {
-                DrawBoth(canvas, to, shift, width);
-                return result;
-            }
-
-            // Les deux vues sont dessinées ensemble puis floutées d'un bloc : un flou par vue laisserait une raie sombre à la jonction
-            // (chacune s'effacerait sur son bord). Les bords de l'écran se prolongent (Clamp) au lieu de s'éteindre.
-            using var filter = SKImageFilter.CreateBlur(sigma, 0f, SKShaderTileMode.Clamp);
-            using var paint = new SKPaint { ImageFilter = filter };
-            canvas.SaveLayer(paint);
-            DrawBoth(canvas, to, shift, width);
-            canvas.Restore();
+            Draw(canvas, to, shift, width, sigma);
             return result;
         }
         catch
@@ -65,6 +73,70 @@ public sealed class ViewTransition(SKBitmap from, int direction, TimeSpan durati
             result.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Le glissement dessiné sur une surface de la carte, puis relu. <c>null</c> si la carte est perdue ou refuse la surface,
+    /// avec la raison dans <paramref name="failure"/> (si on la connaît).
+    /// </summary>
+    private SKBitmap? TryComposeOnGpu(SKBitmap to, float shift, int width, float sigma, IGpuDevice gpu, out string? failure)
+    {
+        failure = null;
+        SKBitmap? result = null;
+        try
+        {
+            var info = new SKImageInfo(to.Width, to.Height);
+            using var surface = gpu.CreateSurface(info) ?? throw new GpuLostException("La carte graphique a refusé la surface du glissement.");
+            Draw(surface.Canvas, to, shift, width, sigma);
+            gpu.Submit();
+            if (gpu.IsLost) return null;
+
+            result = new SKBitmap(info);
+            if (surface.ReadPixels(info, result.GetPixels(), result.RowBytes, 0, 0) && !gpu.IsLost) return result;
+
+            result.Dispose();
+            return null;
+        }
+        catch (GpuLostException ex)
+        {
+            result?.Dispose();
+            failure = ex.Message;
+            return null;
+        }
+        catch (Exception) when (gpu.IsLost)
+        {
+            result?.Dispose();
+            return null;
+        }
+        catch
+        {
+            result?.Dispose();
+            throw;
+        }
+    }
+
+    private void AbandonGpu(string reason)
+    {
+        _gpuFailed = true;
+        GpuFailed?.Invoke(reason);
+    }
+
+    private void Draw(SKCanvas canvas, SKBitmap to, float shift, int width, float sigma)
+    {
+        canvas.Clear(SKColors.Transparent);
+        if (sigma < MinVisibleSigma)
+        {
+            DrawBoth(canvas, to, shift, width);
+            return;
+        }
+
+        // Les deux vues sont dessinées ensemble puis floutées d'un bloc : un flou par vue laisserait une raie sombre à la jonction
+        // (chacune s'effacerait sur son bord). Les bords de l'écran se prolongent (Clamp) au lieu de s'éteindre.
+        using var filter = SKImageFilter.CreateBlur(sigma, 0f, SKShaderTileMode.Clamp);
+        using var paint = new SKPaint { ImageFilter = filter };
+        canvas.SaveLayer(paint);
+        DrawBoth(canvas, to, shift, width);
+        canvas.Restore();
     }
 
     private void DrawBoth(SKCanvas canvas, SKBitmap to, float shift, int width)

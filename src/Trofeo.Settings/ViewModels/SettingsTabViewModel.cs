@@ -14,7 +14,7 @@ namespace Trofeo.Settings.ViewModels;
 
 /// <summary>
 /// L'onglet Paramètres : l'orientation de l'écran, le démarrage avec Windows, le plafond d'images par seconde, l'aperçu en
-/// rendu réel, l'installation du pilote des températures, la consommation, l'export et l'import d'une disposition, la
+/// rendu réel, l'accélération matérielle (<see cref="AccelerationSectionViewModel"/>), l'installation du pilote des températures, la consommation, l'export et l'import d'une disposition, la
 /// version, les mises à jour (le canal Stable ou Bêta, la recherche, l'installation), et de quoi relancer l'assistant de première ouverture. Ce qui touche à la disposition (orientation, images par seconde, import) passe par <see cref="EditSession"/> : le
 /// même historique que les autres onglets. L'orientation et l'import s'enregistrent tout de suite ; le curseur, au lâcher.
 /// </summary>
@@ -58,6 +58,7 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
         _launcher = system.Launcher;
         Picker = picker;
         Community = new CommunitySectionViewModel(link, session, () => Picker, time);
+        Acceleration = new AccelerationSectionViewModel(link, session);
         _locateHelper = system.LocateHelper ?? (() => AppLocator.Find("Trofeo.SensorHelper.exe"));
         _ownMemory = system.OwnMemory ?? OwnPrivateBytes;
 
@@ -75,10 +76,41 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
         _link.Changed -= Refresh;
         _session.Changed -= Refresh;
         Community.Dispose();
+        Acceleration.Dispose();
     }
 
     /// <summary>La section « Modules complémentaires » : la liste, l'installation, la validation, les mises à jour.</summary>
     public CommunitySectionViewModel Community { get; }
+
+    /// <summary>
+    /// Combien de fois la cloche a demandé la section « Modules complémentaires » à l'écran. La vue la montre (<c>BringIntoView</c>) ; une
+    /// demande faite avant que la vue existe (l'onglet vient de s'ouvrir) reste en attente jusqu'à ce qu'elle la prenne.
+    /// </summary>
+    public int CommunityViewRequests { get; private set; }
+
+    private bool _communityViewPending;
+
+    /// <summary>Une demande vient d'être faite (la vue déjà ouverte la prend tout de suite).</summary>
+    public event Action? CommunityViewRequested;
+
+    /// <summary>La cloche demande la section des modules complémentaires.</summary>
+    public void RequestCommunityView()
+    {
+        CommunityViewRequests++;
+        _communityViewPending = true;
+        CommunityViewRequested?.Invoke();
+    }
+
+    /// <summary>La vue prend la demande en attente : vrai une seule fois par demande.</summary>
+    public bool TakeCommunityViewRequest()
+    {
+        var pending = _communityViewPending;
+        _communityViewPending = false;
+        return pending;
+    }
+
+    /// <summary>La section « Accélération matérielle » : l'interrupteur, la carte, les deux cases et l'état que le service donne.</summary>
+    public AccelerationSectionViewModel Acceleration { get; }
 
     /// <summary>Le sélecteur de fichier de la fenêtre (export, import, installeur de PawnIO) ; la vue le pose à l'ouverture.</summary>
     public IFilePicker? Picker { get; set; }
@@ -459,7 +491,8 @@ public sealed partial class SettingsTabViewModel : TabViewModel, IDisposable
             // Un fichier reçu ne choisit pas où part une clé de ce PC : les réglages des modules à secret restent ceux de ce PC.
             var (protectedLayout, keptNames) = KeepLocalSecretSettings(imported, current);
             kept = keptNames;
-            return protectedLayout with { Rotation = current.Rotation };
+            // L'accélération matérielle tient aussi à CE PC (sa carte graphique) : elle reste la mienne.
+            return protectedLayout with { Rotation = current.Rotation, Acceleration = current.Acceleration };
         }).ConfigureAwait(true);
 
         if (backupError is not null)

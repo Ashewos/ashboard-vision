@@ -47,10 +47,26 @@ public sealed class FrameComposer : IDisposable
         }
     }
 
+    /// <summary>Le format de l'image de l'écran, celui de <c>new SKBitmap(1920, 462)</c> : la surface de la carte et le bitmap rendu l'ont aussi.</summary>
+    private static readonly SKImageInfo FrameInfo = new(GridGeometry.Width, GridGeometry.Height);
+
     private readonly RateLimitedErrorLog _errors;
     private readonly Backdrop _backdrop = new();
     private readonly PanelAlphaSmoother _alpha = new(); // opacité des panneaux sur un fond animé, par rectangle
     private readonly bool _backgroundGlass;
+
+    // La carte graphique, si le service en a donné une, et la surface 1920 × 462 qu'on y garde d'une image à l'autre.
+    // Le compositeur n'est pas propriétaire de l'appareil : il ne le libère jamais.
+    private readonly IGpuDevice? _gpu;
+    private SKSurface? _target;
+    private bool _gpuFailed;
+
+    // L'image du fond quand elle est déjà sur la carte (vidéo décodée par la carte) : gardée tant que le fond et sa version ne
+    // changent pas, libérée avec le compositeur (donc avant l'appareil).
+    private SKImage? _backgroundFrame;
+    private IBackground? _backgroundFrameFor;
+    private int _backgroundFrameVersion;
+    private bool _onGpuPass;                    // vrai pendant une composition sur la carte
 
     // Les couches de « Liquid Glass avancé » : créées à la première image de ce thème, libérées dès qu'un autre thème est composé.
     private LiquidGlassLayers? _glass;
@@ -63,13 +79,30 @@ public sealed class FrameComposer : IDisposable
     /// <param name="backgroundGlass">
     /// Vrai : sur un fond fixe, les couches de verre de « Liquid Glass avancé » se calculent sur un fil à part. En attendant, une
     /// case garde sa couche précédente, ou à défaut le verre simple de Liquid Glass, et <see cref="GlassReady"/> prévient quand
-    /// une couche est prête. Faux : tout est calculé pendant <c>Compose</c>.
+    /// une couche est prête. Faux : tout est calculé pendant <c>Compose</c>. Sans effet sur la carte : le verre s'y calcule toujours
+    /// pendant <c>Compose</c>, sur le fil de l'affichage, le seul qui touche l'appareil.
     /// </param>
-    public FrameComposer(RateLimitedErrorLog? errors = null, bool backgroundGlass = false)
+    /// <param name="gpu">
+    /// La carte graphique sur laquelle dessiner, ou <c>null</c> pour tout dessiner sur le processeur (outils, tests, machine sans
+    /// carte, accélération coupée) : l'image est alors identique au pixel près à celle d'avant la carte. Le compositeur ne libère
+    /// jamais l'appareil, qui appartient au service ; il doit être libéré avant lui. Un appareil ne se sert que d'un fil à la fois.
+    /// </param>
+    public FrameComposer(RateLimitedErrorLog? errors = null, bool backgroundGlass = false, IGpuDevice? gpu = null)
     {
         _errors = errors ?? new RateLimitedErrorLog(TimeProvider.System);
         _backgroundGlass = backgroundGlass;
+        _gpu = gpu;
+        _backdrop.GpuFrame = GpuBackgroundFrame; // le flou et la luminance partent de l'image de la carte, pas du fond sur le processeur
     }
+
+    /// <summary>Vrai tant que l'appareil donné à la construction marche : les images se dessinent sur la carte, verre avancé compris.</summary>
+    public bool UsesGpu => _gpu is not null && !_gpuFailed;
+
+    /// <summary>
+    /// La carte a été abandonnée (perdue, ou une surface refusée) : le message dit pourquoi, en français. Levé une seule fois, depuis
+    /// le fil de la composition, après quoi tout se dessine sur le processeur. L'image en cours sort quand même.
+    /// </summary>
+    public event Action<string>? GpuFailed;
 
     /// <summary>
     /// Une couche de verre calculée sur le fil à part est prête : la prochaine composition la montrera. Levé depuis ce fil.
@@ -78,6 +111,9 @@ public sealed class FrameComposer : IDisposable
 
     /// <summary>Les couches de « Liquid Glass avancé » en service ; <c>null</c> hors de ce thème (tests).</summary>
     internal LiquidGlassLayers? Glass => _glass;
+
+    /// <summary>Vrai quand les couches de verre en service se calculent sur la carte graphique (tests).</summary>
+    internal bool GlassOnGpu => _glass?.OnGpu ?? false;
 
     /// <summary>Combien de couches de verre ont été calculées depuis que le thème « Liquid Glass avancé » est composé (tests).</summary>
     internal int GlassComputations => _glass?.Computations ?? 0;
@@ -128,60 +164,29 @@ public sealed class FrameComposer : IDisposable
         IBackground background,
         DateTimeOffset now)
     {
+        if (UsesGpu && TryComposeOnGpu(placements, modules, theme, background, now) is { } frame)
+        {
+            return frame;
+        }
+
+        return ComposeOnCpu(placements, modules, theme, background, now);
+    }
+
+    private SKBitmap ComposeOnCpu(
+        IReadOnlyList<ModulePlacement> placements,
+        IReadOnlyDictionary<Guid, IModule> modules,
+        ThemeDefinition theme,
+        IBackground background,
+        DateTimeOffset now)
+    {
+        _backdrop.Device = null;
+
         var bitmap = new SKBitmap(GridGeometry.Width, GridGeometry.Height);
         try
         {
             using var canvas = new SKCanvas(bitmap);
             using var pixels = bitmap.PeekPixels();
-            DrawBackground(canvas, background);
-
-            LiquidGlassLayers? glass = null;
-            if (theme.Panel.Kind == PanelKind.LiquidGlass)
-            {
-                glass = _glass ??= NewGlassLayers();
-                glass.BeginFrame(background, theme);
-                glass.PaintShadows(canvas, [.. placements.Select(placement => ModulePlace.Rect(placement, theme))]);
-            }
-            else
-            {
-                DropGlass(); // un autre thème : aucune couche ne reste en mémoire
-            }
-
-            foreach (var placement in placements)
-            {
-                var rect = ModulePlace.Rect(placement, theme);
-                PaintPanel(canvas, rect, theme, background, now);
-
-                if (!modules.TryGetValue(placement.InstanceId, out var module))
-                {
-                    continue;
-                }
-
-                if (theme.Theme.ServiceDrawsSelection)
-                {
-                    RenderOverSelections(canvas, pixels, placement, module, rect, theme, background, now);
-                    continue;
-                }
-
-                int saved = canvas.Save();
-                try
-                {
-                    PanelPainter.ClipToPanel(canvas, rect, theme); // même forme que le panneau
-                    module.Render(canvas, ModulePlace.Context(placement, theme, now));
-                }
-                catch (Exception ex)
-                {
-                    _errors.Report($"Échec du rendu du module {placement.TypeId} ({placement.InstanceId}) : {ex}");
-                    canvas.RestoreToCount(saved);
-                    PaintErrorPanel(canvas, rect, theme, background, now);
-                }
-                finally
-                {
-                    canvas.RestoreToCount(saved);
-                }
-            }
-
-            glass?.EndFrame();
+            DrawFrame(canvas, pixels, null, placements, modules, theme, background, now);
             return bitmap;
         }
         catch
@@ -191,9 +196,159 @@ public sealed class FrameComposer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Compose l'image sur la surface de la carte, puis la rapatrie dans un bitmap neuf, du même format que celui du processeur.
+    /// Rend <c>null</c>, après avoir abandonné la carte (<see cref="GpuFailed"/>), si la carte est perdue ou refuse une surface, en
+    /// cours d'image ou à l'envoi du travail : l'appelant refait alors toute l'image sur le processeur.
+    /// </summary>
+    private SKBitmap? TryComposeOnGpu(
+        IReadOnlyList<ModulePlacement> placements,
+        IReadOnlyDictionary<Guid, IModule> modules,
+        ThemeDefinition theme,
+        IBackground background,
+        DateTimeOffset now)
+    {
+        var gpu = _gpu!;
+        SKBitmap? bitmap = null;
+        _onGpuPass = true;
+        try
+        {
+            _backdrop.Device = gpu;
+            _target ??= gpu.CreateSurface(FrameInfo);
+            var canvas = _target.Canvas;
+            canvas.Clear(SKColors.Transparent);
+            DrawFrame(canvas, null, _target, placements, modules, theme, background, now); // les pastilles prennent la surface en instantané
+
+            gpu.Submit();
+            ThrowIfLost(gpu);
+
+            bitmap = new SKBitmap(FrameInfo);
+            if (!_target.ReadPixels(bitmap.Info, bitmap.GetPixels(), bitmap.RowBytes, 0, 0))
+            {
+                ThrowIfLost(gpu);
+                throw new GpuLostException("La carte graphique n'a pas rendu l'image dessinée.");
+            }
+
+            ThrowIfLost(gpu); // la lecture attend la carte : une panne en cours de route se voit ici
+            return bitmap;
+        }
+        catch (GpuLostException ex)
+        {
+            bitmap?.Dispose();
+            AbandonGpu(ex.Message);
+            return null;
+        }
+        catch (Exception) when (gpu.IsLost)
+        {
+            // Skia a pu lever autre chose qu'une GpuLostException sur une carte tombée en pleine image.
+            bitmap?.Dispose();
+            AbandonGpu(gpu.LostReason ?? "La carte graphique est perdue.");
+            return null;
+        }
+        catch
+        {
+            bitmap?.Dispose();
+            throw;
+        }
+        finally
+        {
+            _onGpuPass = false;
+        }
+    }
+
+    private static void ThrowIfLost(IGpuDevice gpu)
+    {
+        if (gpu.IsLost) throw new GpuLostException(gpu.LostReason ?? "La carte graphique est perdue.");
+    }
+
+    /// <summary>Renonce à la carte : ses surfaces sont jetées, le compositeur ne la touche plus (elle reste au service), l'événement est levé.</summary>
+    private void AbandonGpu(string reason)
+    {
+        if (_gpuFailed) return;
+
+        _gpuFailed = true;
+        _backdrop.Device = null;
+        DropBackgroundFrame();
+        DropGlass(); // ses couches sont des images de la carte : elles partent avec elle, le processeur refera les siennes
+        try
+        {
+            _target?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            _errors.Report($"Impossible de libérer la surface de la carte graphique perdue : {ex.Message}");
+        }
+
+        _target = null;
+        GpuFailed?.Invoke(reason);
+    }
+
+    /// <summary>
+    /// Peint tout l'écran sur <paramref name="canvas"/> (1920 × 462). <paramref name="pixels"/> : les pixels de l'image sur le
+    /// processeur, d'où les pastilles de verre lisent le fond ; <c>null</c> sur la carte, où <paramref name="gpuFrame"/> (la
+    /// surface de la carte que peint <paramref name="canvas"/>) les remplace. Un seul des deux est donné.
+    /// </summary>
+    private void DrawFrame(
+        SKCanvas canvas, SKPixmap? pixels, SKSurface? gpuFrame, IReadOnlyList<ModulePlacement> placements,
+        IReadOnlyDictionary<Guid, IModule> modules, ThemeDefinition theme, IBackground background, DateTimeOffset now)
+    {
+        DrawBackground(canvas, background);
+
+        LiquidGlassLayers? glass = null;
+        if (theme.Panel.Kind == PanelKind.LiquidGlass)
+        {
+            glass = GlassFor(onGpu: gpuFrame is not null);
+            glass.BeginFrame(background, theme);
+            glass.PaintShadows(canvas, [.. placements.Select(placement => ModulePlace.Rect(placement, theme))]);
+        }
+        else
+        {
+            DropGlass(); // un autre thème : aucune couche ne reste en mémoire
+        }
+
+        foreach (var placement in placements)
+        {
+            var rect = ModulePlace.Rect(placement, theme);
+            PaintPanel(canvas, rect, theme, background, now);
+
+            if (!modules.TryGetValue(placement.InstanceId, out var module))
+            {
+                continue;
+            }
+
+            if (theme.Theme.ServiceDrawsSelection)
+            {
+                RenderOverSelections(canvas, pixels, gpuFrame, placement, module, rect, theme, background, now);
+                continue;
+            }
+
+            int saved = canvas.Save();
+            try
+            {
+                PanelPainter.ClipToPanel(canvas, rect, theme); // même forme que le panneau
+                module.Render(canvas, ModulePlace.Context(placement, theme, now));
+            }
+            catch (Exception ex)
+            {
+                _errors.Report($"Échec du rendu du module {placement.TypeId} ({placement.InstanceId}) : {ex}");
+                canvas.RestoreToCount(saved);
+                PaintErrorPanel(canvas, rect, theme, background, now);
+            }
+            finally
+            {
+                canvas.RestoreToCount(saved);
+            }
+        }
+
+        glass?.EndFrame();
+    }
+
     public void Dispose()
     {
         DropGlass();
+        DropBackgroundFrame();
+        _target?.Dispose();
+        _target = null;
         _backdrop.Dispose();
         _legacyBackground?.Dispose();
         _legacyBackground = null;
@@ -206,8 +361,8 @@ public sealed class FrameComposer : IDisposable
     /// pastille ni dessin : le panneau d'erreur.
     /// </summary>
     private void RenderOverSelections(
-        SKCanvas canvas, SKPixmap pixels, ModulePlacement placement, IModule module, SKRect rect, ThemeDefinition theme,
-        IBackground background, DateTimeOffset now)
+        SKCanvas canvas, SKPixmap? pixels, SKSurface? gpuFrame, ModulePlacement placement, IModule module, SKRect rect,
+        ThemeDefinition theme, IBackground background, DateTimeOffset now)
     {
         var context = ModulePlace.Context(placement, theme, now);
         var selections = new SelectionList();
@@ -225,7 +380,8 @@ public sealed class FrameComposer : IDisposable
 
         using (picture)
         {
-            PaintSelectionsThenPicture(canvas, pixels, placement.TypeId, placement.InstanceId, rect, theme, context.Bounds.Location, selections, picture);
+            PaintSelectionsThenPicture(
+                canvas, pixels, gpuFrame, placement.TypeId, placement.InstanceId, rect, theme, context.Bounds.Location, selections, picture);
         }
     }
 
@@ -250,8 +406,8 @@ public sealed class FrameComposer : IDisposable
     /// au-delà, la pilule claire. Ce chemin sert aux modules natifs, à ceux de la communauté et aux aides de test du SDK.
     /// </summary>
     private void PaintSelectionsThenPicture(
-        SKCanvas canvas, SKPixmap pixels, string typeId, Guid instanceId, SKRect rect, ThemeDefinition theme, SKPoint offset,
-        SelectionList selections, SKPicture picture)
+        SKCanvas canvas, SKPixmap? pixels, SKSurface? gpuFrame, string typeId, Guid instanceId, SKRect rect, ThemeDefinition theme,
+        SKPoint offset, SelectionList selections, SKPicture picture)
     {
         int saved = canvas.Save();
         try
@@ -272,19 +428,20 @@ public sealed class FrameComposer : IDisposable
                 }
 
                 budget -= area;
-                PaintSelection(canvas, pixels, rect, pill, opacity, theme, glass: true);
+                PaintSelection(canvas, pixels, gpuFrame, rect, pill, opacity, theme, glass: true);
             }
 
             // Les pilules claires passent après les pastilles de verre : le verre déforme la case nue, et reste gardé en mémoire
             // d'une image à l'autre même si ces pilules changent.
             foreach (var (pill, opacity) in overBudget ?? [])
             {
-                PaintSelection(canvas, pixels, rect, pill, opacity, theme, glass: false);
+                PaintSelection(canvas, pixels, gpuFrame, rect, pill, opacity, theme, glass: false);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!IsGpuFailure(ex, gpuFrame))
         {
-            // Une pastille qui échoue ne prive pas le module de son dessin.
+            // Une pastille qui échoue ne prive pas le module de son dessin. Une carte perdue, elle, remonte : l'image se refait
+            // sur le processeur.
             _errors.Report($"Échec du dessin de la pastille du module {typeId} ({instanceId}) : {ex}");
         }
         finally
@@ -323,6 +480,8 @@ public sealed class FrameComposer : IDisposable
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(render);
 
+        _backdrop.Device = null; // le calque se peint sur le processeur, comme sans carte
+
         var area = GridGeometry.ModuleRect(0, 0, size.Columns, size.Rows, theme.Grid);
         var rect = SKRect.Create(area.Left, area.Top, area.Width, area.Height);
         var context = new ModuleRenderContext(new SKRect(0, 0, area.Width, area.Height), size, theme.Theme, textScale, now);
@@ -339,7 +498,7 @@ public sealed class FrameComposer : IDisposable
         LiquidGlassLayers? glass = null;
         if (theme.Panel.Kind == PanelKind.LiquidGlass)
         {
-            glass = _glass ??= NewGlassLayers();
+            glass = GlassFor(onGpu: false); // le calque se peint sur le processeur
             glass.BeginFrame(background, theme);
             glass.PaintShadows(frameCanvas, [rect]);
         }
@@ -353,7 +512,7 @@ public sealed class FrameComposer : IDisposable
         var selections = new SelectionList();
         using (var picture = Record(rect.Location, context, selections, render))
         {
-            PaintSelectionsThenPicture(layerCanvas, pixels, "module d'essai", Guid.Empty, rect, theme, rect.Location, selections, picture);
+            PaintSelectionsThenPicture(layerCanvas, pixels, null, "module d'essai", Guid.Empty, rect, theme, rect.Location, selections, picture);
         }
 
         glass?.EndFrame();
@@ -382,7 +541,7 @@ public sealed class FrameComposer : IDisposable
     /// pilule claire aussi, sans aucun calcul de verre, avec la même coupe et le même calque d'opacité.
     /// </summary>
     private void PaintSelection(
-        SKCanvas canvas, SKPixmap pixels, SKRect rect, SKRect pill, float opacity, ThemeDefinition theme, bool glass)
+        SKCanvas canvas, SKPixmap? pixels, SKSurface? gpuFrame, SKRect rect, SKRect pill, float opacity, ThemeDefinition theme, bool glass)
     {
         if (opacity < 1f)
         {
@@ -392,7 +551,7 @@ public sealed class FrameComposer : IDisposable
             int layer = canvas.SaveLayer(rect, veil);
             try
             {
-                PaintSelection(canvas, pixels, rect, pill, 1f, theme, glass);
+                PaintSelection(canvas, pixels, gpuFrame, rect, pill, 1f, theme, glass);
             }
             finally
             {
@@ -404,8 +563,17 @@ public sealed class FrameComposer : IDisposable
 
         if (glass && theme.Panel.Kind == PanelKind.LiquidGlass && _glass is { } layers)
         {
-            layers.PaintPill(canvas, pixels, rect, pill);
-            return;
+            if (pixels is not null && !layers.OnGpu)
+            {
+                layers.PaintPill(canvas, pixels, rect, pill);
+                return;
+            }
+
+            if (gpuFrame is not null && layers.OnGpu)
+            {
+                layers.PaintPill(canvas, gpuFrame, rect, pill);
+                return;
+            }
         }
 
         var shape = SKRect.Intersect(pill, rect);
@@ -432,12 +600,28 @@ public sealed class FrameComposer : IDisposable
         return (long)Math.Ceiling((double)shape.Width * shape.Height);
     }
 
-    private LiquidGlassLayers NewGlassLayers()
+    /// <summary>
+    /// Les couches de verre en service, du bon côté : sur la carte (images de la carte, calculées sur place) ou sur le
+    /// processeur. Un changement de côté (le calque d'essai du SDK, la carte abandonnée) les jette : elles ne passent pas de l'un à l'autre.
+    /// </summary>
+    private LiquidGlassLayers GlassFor(bool onGpu)
     {
-        var layers = new LiquidGlassLayers(_backgroundGlass, _errors.Report);
+        if (_glass is { } existing && existing.OnGpu != onGpu) DropGlass();
+
+        return _glass ??= NewGlassLayers(onGpu);
+    }
+
+    private LiquidGlassLayers NewGlassLayers(bool onGpu)
+    {
+        var layers = new LiquidGlassLayers(_backgroundGlass, _errors.Report, onGpu ? _gpu : null);
+        if (onGpu) layers.GpuBackgroundFrame = GpuBackgroundFrame;
         layers.Ready += OnGlassReady;
         return layers;
     }
+
+    /// <summary>Une panne de la carte, à laisser remonter : seulement sur la carte (sur le processeur, un échec de pastille reste un échec de pastille).</summary>
+    private bool IsGpuFailure(Exception ex, SKSurface? gpuFrame) =>
+        gpuFrame is not null && (ex is GpuLostException || (_gpu?.IsLost ?? false));
 
     private void OnGlassReady() => GlassReady?.Invoke();
 
@@ -450,11 +634,41 @@ public sealed class FrameComposer : IDisposable
         _glass = null;
     }
 
-    // L'image courante du fond n'est jamais gardée : elle n'est valable que pour cette image de l'écran.
-    private static void DrawBackground(SKCanvas canvas, IBackground background)
+    // Sur la carte, une vidéo décodée par la carte est prise telle quelle (aucune copie par le processeur) ; sinon c'est Current.
+    private void DrawBackground(SKCanvas canvas, IBackground background)
     {
         using var paint = new SKPaint { BlendMode = SKBlendMode.Src };
-        canvas.DrawImage(background.Current, 0, 0, paint);
+        canvas.DrawImage(GpuBackgroundFrame(background) ?? background.Current, 0, 0, paint);
+    }
+
+    /// <summary>
+    /// L'image du fond déjà sur la carte, ou <c>null</c> (fond du processeur, autre carte, composition sur le processeur). Calculée
+    /// une fois par image du fond, gardée jusqu'à la suivante.
+    /// </summary>
+    private SKImage? GpuBackgroundFrame(IBackground background)
+    {
+        if (!_onGpuPass || _gpu is null || background is not IGpuFrameSource source) return null;
+
+        if (_backgroundFrame is not null && ReferenceEquals(_backgroundFrameFor, background) && _backgroundFrameVersion == background.Version)
+        {
+            return _backgroundFrame;
+        }
+
+        DropBackgroundFrame();
+        _backgroundFrame = source.TryGetGpuFrame(_gpu);
+        if (_backgroundFrame is not null)
+        {
+            _backgroundFrameFor = background;
+            _backgroundFrameVersion = background.Version;
+        }
+        return _backgroundFrame;
+    }
+
+    private void DropBackgroundFrame()
+    {
+        _backgroundFrame?.Dispose();
+        _backgroundFrame = null;
+        _backgroundFrameFor = null;
     }
 
     /// <summary>
@@ -484,13 +698,13 @@ public sealed class FrameComposer : IDisposable
         var blurred = theme.Panel.Kind == PanelKind.Glass ? _backdrop.Get(background, theme.Panel) : null;
         if (!theme.LegibilityGuard)
         {
-            PanelPainter.Paint(canvas, rect, theme, blurred, background.Current);
+            PanelPainter.Paint(canvas, rect, theme, blurred, null); // garde coupée : le fond ne sert pas (et ne se rapatrie pas)
             return;
         }
 
         float target = PanelPainter.TargetAlpha(theme, _backdrop.BrightestLuminance(background, rect));
         float alpha = background.IsAnimated ? _alpha.Smooth(rect, target, now) : target;
-        PanelPainter.Paint(canvas, rect, theme, blurred, background.Current, alpha: alpha);
+        PanelPainter.Paint(canvas, rect, theme, blurred, null, alpha: alpha); // l'opacité est donnée : le fond ne sert pas
     }
 
     /// <summary>
@@ -510,7 +724,7 @@ public sealed class FrameComposer : IDisposable
             alpha = background.IsAnimated ? _alpha.Smooth(rect, target, now) : target;
         }
 
-        PanelPainter.Paint(canvas, rect, theme, null, background.Current, alpha: alpha);
+        PanelPainter.Paint(canvas, rect, theme, null, null, alpha: alpha);
     }
 
     /// <summary>Efface ce que le module a pu peindre avant d'échouer, puis affiche le message d'erreur.</summary>

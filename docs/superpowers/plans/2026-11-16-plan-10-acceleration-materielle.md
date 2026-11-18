@@ -56,7 +56,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 
 ---
 
-### Tâche 1 : les réglages `Acceleration`
+### Task 1: les réglages `Acceleration`
 
 **Fichiers :**
 - Créer : `src/Trofeo.Core/Layout/AccelerationSettings.cs`
@@ -81,7 +81,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 - [ ] **Étape 4 :** `dotnet test tests/Trofeo.Core.Tests` et `dotnet test tests/Trofeo.Settings.Tests` ; attendu : tout passe.
 - [ ] **Étape 5 : commit** `feat(disposition): réglages d'accélération matérielle, propres à la machine`.
 
-### Tâche 2 : les cartes et l'appareil Direct3D 12
+### Task 2: les cartes et l'appareil Direct3D 12
 
 **Fichiers :**
 - Créer : `src/Trofeo.Core/Rendering/IGpuDevice.cs` (interface et `GpuLostException`), `src/Trofeo.Display/Gpu/GpuAdapters.cs`, `src/Trofeo.Display/Gpu/D3D12GpuDevice.cs`, `src/Trofeo.Service/GpuAdapterInfo.cs`
@@ -120,7 +120,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 - [ ] **Étape 4 :** `dotnet test tests/Trofeo.Display.Tests` ; attendu : tout passe (ou sauté avec « Direct3D 12 absent »).
 - [ ] **Étape 5 : commit** `feat(gpu): cartes graphiques et appareil Direct3D 12 pour Skia`.
 
-### Tâche 3 : la composition sur la carte
+### Task 3: la composition sur la carte
 
 **Fichiers :**
 - Modifier : `src/Trofeo.Core/Rendering/FrameComposer.cs`, `src/Trofeo.Core/Rendering/Backdrop.cs`, `src/Trofeo.Core/Rendering/PanelPainter.cs` (vers la ligne 242), `src/Trofeo.Core/Rendering/ViewTransition.cs`
@@ -150,7 +150,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 - [ ] **Étape 4 :** `dotnet test tests/Trofeo.Core.Tests` et `dotnet test tests/Trofeo.Display.Tests` ; attendu : tout passe.
 - [ ] **Étape 5 : commit** `feat(rendu): composition de l'image sur la carte graphique, repli sur le processeur`.
 
-### Tâche 4 : le verre avancé et les pastilles sur la carte
+### Task 4: le verre avancé et les pastilles sur la carte
 
 **Fichiers :**
 - Modifier : `src/Trofeo.Core/Rendering/LiquidGlass/LiquidGlassEffect.cs`, `src/Trofeo.Core/Rendering/LiquidGlass/LiquidGlassLayers.cs`, `src/Trofeo.Core/Rendering/FrameComposer.cs` (`RenderOverSelections`)
@@ -175,7 +175,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 - [ ] **Étape 4 :** `dotnet test tests/Trofeo.Core.Tests` et `dotnet test tests/Trofeo.Display.Tests` ; attendu : tout passe, empreintes comprises.
 - [ ] **Étape 5 : commit** `feat(verre): verre avancé et pastilles calculés sur la carte graphique`.
 
-### Tâche 5 : le contrôleur d'accélération, branché dans le service
+### Task 5: le contrôleur d'accélération, branché dans le service
 
 **Fichiers :**
 - Créer : `src/Trofeo.Service/AccelerationController.cs`, `src/Trofeo.Service/IGpuDeviceFactory.cs`, `src/Trofeo.Service/AccelerationStatus.cs`, `src/Trofeo.Display/Gpu/D3D12GpuDeviceFactory.cs`
@@ -226,7 +226,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 - [ ] **Étape 4 :** `dotnet test tests/Trofeo.Service.Tests`, puis toute la solution (`dotnet test`) ; attendu : tout passe.
 - [ ] **Étape 5 : commit** `feat(service): choix de la carte, repli et nouvel essai de l'accélération matérielle`.
 
-### Tâche 6 : le décodage des vidéos sur la carte
+### Task 6: le décodage des vidéos sur la carte
 
 **Fichiers :**
 - Créer : `src/Trofeo.Display/Video/VideoDecodeOptions.cs`, `src/Trofeo.Display/Video/SharedVideoFrame.cs` (texture partagée Direct3D 11 → 12 et barrière)
@@ -259,7 +259,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 - [ ] **Étape 4 :** `dotnet test tests/Trofeo.Display.Tests` et `dotnet test tests/Trofeo.Service.Tests` ; attendu : tout passe (les tests vidéo sautés sans carte matérielle).
 - [ ] **Étape 5 : commit** `feat(video): décodage par la carte graphique, partagé avec le dessin`.
 
-### Tâche 7 : le canal de contrôle et la section de la fenêtre
+### Task 7: le canal de contrôle et la section de la fenêtre
 
 **Fichiers :**
 - Modifier : `src/Trofeo.Control/ControlPipe.cs` (protocole 5), `src/Trofeo.Control/Messages.cs`, `src/Trofeo.Service/ServiceControlHandler.cs`, `src/Trofeo.Settings/Views/SettingsTabView.axaml`, `src/Trofeo.Settings/ViewModels/SettingsTabViewModel.cs`, `src/Trofeo.Settings/Resources/Strings.resx`, `tools/Trofeo.SettingsPreview` (une image de la section)
@@ -295,7 +295,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 - [ ] **Étape 4 :** `dotnet test tests/Trofeo.Control.Tests`, `dotnet test tests/Trofeo.Settings.Tests` ; attendu : tout passe.
 - [ ] **Étape 5 : commit** `feat(reglages): section Accélération matérielle dans Paramètres`.
 
-### Tâche 8 : documentation et notes de version
+### Task 8: documentation et notes de version
 
 **Fichiers :**
 - Modifier : `CHANGELOG.md`, `docs/utilisation-avancee.md`, `README.md` (FAQ et licences tierces), `Directory.Build.props` (`<Version>1.2.0-beta.3</Version>`)
@@ -310,7 +310,7 @@ Voici les cinq cas que la conception implique sans qu'une tâche les teste natur
 - [ ] **Étape 3 :** `dotnet test tests/Trofeo.Distribution.Tests` (les tests des notes de version) ; attendu : tout passe.
 - [ ] **Étape 4 : commit** `docs: notes de la 1.2.0-beta.3, accélération matérielle`.
 
-### Tâche 9 : sur le PC d'Alex (session principale, pas de sous-agent)
+### Task 9: sur le PC d'Alex (session principale, pas de sous-agent)
 
 - [ ] **Étape 1 : fusion.** Après la relecture finale, fusionner `plan-10-gpu` dans `Canary` (`--no-ff`) avec l'accord d'Alex. Alex construit l'installateur (`pwsh -NoExit -File installer\build.ps1 -Version 1.2.0-beta.3`) et l'installe.
 - [ ] **Étape 2 : mesures**, avec l'outil du plan 9 (changer `layout.json` par `\\localhost\C$\…`, `ReloadAsync`, mesurer 30 s après 10 s, remettre le fichier d'origine), en ajoutant `Acceleration` aux scénarios et l'utilisation de la carte (compteurs « GPU Engine » du processus `Trofeo.Display`, moteurs 3D et VideoDecode) :
