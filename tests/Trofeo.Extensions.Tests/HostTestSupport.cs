@@ -237,6 +237,8 @@ internal sealed class FakeHostProcess : IHostProcess
     private readonly Dictionary<Guid, (IntPtr View, int Width, int Height)> _views = [];
     private readonly Task _reader;
 
+    private int _outputClosing;
+
     private readonly bool _readInput;
     private readonly Action<FakeHostProcess, HostMessage>? _onMessage;
 
@@ -315,6 +317,7 @@ internal sealed class FakeHostProcess : IHostProcess
     /// </summary>
     public void CloseOutput()
     {
+        Volatile.Write(ref _outputClosing, 1);
         try
         {
             _out.Dispose();
@@ -327,6 +330,7 @@ internal sealed class FakeHostProcess : IHostProcess
     /// <summary>L'hôte s'arrête : le tube vers le service se ferme, et le processus est fini.</summary>
     public void Exit(int code)
     {
+        Volatile.Write(ref _outputClosing, 1); // avant la fermeture : un écrivain qui la subit doit pouvoir la reconnaître
         try
         {
             _out.Dispose();
@@ -342,13 +346,37 @@ internal sealed class FakeHostProcess : IHostProcess
         _exited.TrySetResult(code);
     }
 
-    public Task SendAsync(HostMessage message) => HostSide.SendAsync(message, CancellationToken.None);
+    /// <summary>
+    /// Écrit un message dans le tube du service. Si ce message fait tuer l'hôte (un <see cref="Failure"/>, par exemple), le service
+    /// peut le lire, réagir et fermer ce tube avant que l'écriture ait fini de rendre la main (le vidage qui suit l'écriture, sur une
+    /// machine chargée) : le message est alors bien parti, et cette fermeture n'est pas une erreur du test.
+    /// </summary>
+    public async Task SendAsync(HostMessage message)
+    {
+        var closedBefore = Volatile.Read(ref _outputClosing) != 0;
+        try
+        {
+            await HostSide.SendAsync(message, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException) when (!closedBefore && Volatile.Read(ref _outputClosing) != 0)
+        {
+            // le service a déjà lu le message et arrêté l'hôte
+        }
+    }
 
     /// <summary>Écrit des octets quelconques dans le tube du service (un hôte qui ne parle pas le protocole).</summary>
     public void WriteRaw(byte[] bytes)
     {
-        _out.Write(bytes);
-        _out.Flush();
+        var closedBefore = Volatile.Read(ref _outputClosing) != 0;
+        try
+        {
+            _out.Write(bytes);
+            _out.Flush();
+        }
+        catch (ObjectDisposedException) when (!closedBefore && Volatile.Read(ref _outputClosing) != 0)
+        {
+            // Comme pour SendAsync : le service a lu ces octets, jugé le flux illisible et tué l'hôte avant que le vidage ait lieu.
+        }
     }
 
     /// <summary>Peint l'image du tampon dans la section de l'instance (comme l'hôte) puis l'annonce. L'hôte doit avoir reçu <see cref="Open"/>.</summary>
