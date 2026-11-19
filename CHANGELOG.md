@@ -61,7 +61,7 @@ Mesuré sur un PC à 20 cœurs, avec une carte graphique intégrée Intel et une
 
 ### Correction
 
-- **La température du processeur ne disparaît plus quand le processeur est très chargé.** L'assistant des capteurs tournait en priorité « sous la normale » : sous une forte charge, il se taisait quelques secondes, et le tableau de bord affichait « Temp. CPU : installe le pilote » jusqu'à ce que la charge retombe. Il tourne désormais en priorité normale (la tâche planifiée est refaite à l'installation).
+- **La température du processeur tient bien mieux quand le processeur est très chargé.** L'assistant des capteurs tournait en priorité « sous la normale » : sous une forte charge, il se taisait quelques secondes, et le tableau de bord affichait « Temp. CPU : installe le pilote » jusqu'à ce que la charge retombe. Il tourne désormais en priorité normale, à égalité avec les autres programmes (la tâche planifiée est refaite à l'installation).
 
 ### Licences
 

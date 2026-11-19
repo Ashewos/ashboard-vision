@@ -180,6 +180,7 @@ public class D3D12GpuDeviceTests
         var adapters = GpuAdapters.List();
 
         Assert.DoesNotContain(adapters, a => a.Id.Name.Contains("Microsoft Basic Render Driver", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(adapters, a => a.Id.VendorId == 0x1414 && a.Id.DeviceId == 0x8C); // WARP, quel que soit son nom
         Assert.All(adapters, a => Assert.False(string.IsNullOrWhiteSpace(a.Id.Name)));
     }
 
