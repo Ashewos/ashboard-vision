@@ -52,7 +52,9 @@ public class TaskDefinitionTests
         Assert.Equal("PT0S", Text(settings, "ExecutionTimeLimit"));
         Assert.Equal("PT1M", Text(settings, "RestartOnFailure", "Interval"));
         Assert.Equal("3", Text(settings, "RestartOnFailure", "Count"));
-        Assert.Equal("7", Text(settings, "Priority"));
+        // Priorité normale : sous 7 (sous la normale), une forte charge affamait l'assistant plus de 3 s et le service
+        // retombait sur sa lecture locale, sans température du processeur.
+        Assert.Equal("5", Text(settings, "Priority"));
         Assert.Equal("true", Text(settings, "Hidden"));
 
         var actions = task.Element(Ns + "Actions")!;

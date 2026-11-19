@@ -59,6 +59,10 @@ Mesuré sur un PC à 20 cœurs, avec une carte graphique intégrée Intel et une
 
 - Une **cloche dans l'en-tête de la fenêtre** rassemble les mises à jour (le logiciel et les modules complémentaires) et les pannes (module arrêté brusquement ou mis de côté, carte graphique en panne). Chaque notification se supprime d'une croix, et revient si l'événement est nouveau (une autre version qui sort, une deuxième panne).
 
+### Correction
+
+- **La température du processeur ne disparaît plus quand le processeur est très chargé.** L'assistant des capteurs tournait en priorité « sous la normale » : sous une forte charge, il se taisait quelques secondes, et le tableau de bord affichait « Temp. CPU : installe le pilote » jusqu'à ce que la charge retombe. Il tourne désormais en priorité normale (la tâche planifiée est refaite à l'installation).
+
 ### Licences
 
 - Le dessin et le décodage sur la carte passent par [Vortice.Direct3D12, Vortice.DXGI et Vortice.Direct3D11](https://github.com/amerkoleci/Vortice.Windows) (MIT), cités dans le README, section « Licences tierces », et dans le fichier de licences copié à côté du programme.

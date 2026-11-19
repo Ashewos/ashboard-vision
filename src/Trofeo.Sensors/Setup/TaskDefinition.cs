@@ -37,7 +37,9 @@ public static class TaskDefinition
                 new XElement(Ns + "Enabled", "true"),
                 new XElement(Ns + "Hidden", "true"),
                 new XElement(Ns + "ExecutionTimeLimit", "PT0S"),
-                new XElement(Ns + "Priority", "7"),
+                // 5 = priorité normale. Le défaut du planificateur (7, sous la normale) laisse une forte charge affamer
+                // l'assistant : plus de 3 s sans relevé, le service lit les capteurs lui-même, sans température du processeur.
+                new XElement(Ns + "Priority", "5"),
                 new XElement(Ns + "RestartOnFailure",
                     new XElement(Ns + "Interval", "PT1M"),
                     new XElement(Ns + "Count", "3"))),
